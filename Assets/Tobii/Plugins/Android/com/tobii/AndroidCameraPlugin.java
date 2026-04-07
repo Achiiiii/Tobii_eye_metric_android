@@ -10,8 +10,7 @@
   permission is obtained from Tobii AB.
 */
 
-//package com.tobii.camera;
-package com.tobii.camera;
+package com.tobii;
 
 import android.app.Activity;
 import android.content.Context;
@@ -23,6 +22,8 @@ import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.CaptureResult;
+import android.hardware.camera2.TotalCaptureResult;
 import android.media.Image;
 import android.media.ImageReader;
 import android.os.Handler;
@@ -44,8 +45,6 @@ import java.math.RoundingMode;
 import android.util.Size;
 import java.lang.Math;
 import com.unity3d.player.UnityPlayerActivity;
-import java.util.Collections;
-import java.util.Comparator;
 
 public class AndroidCameraPlugin {
     private static final String TAG = "AndroidCameraPlugin";
@@ -69,21 +68,122 @@ public class AndroidCameraPlugin {
     private static final Object imageLock = new Object();
     private static int rotationCompensation = 0;
     private static String selectedCameraId;
+    private static CaptureRequest.Builder captureRequestBuilder;
+    private static long lastAfTriggerTimeMillis = 0;
+
+    public static void triggerAutoFocus() {
+        if (captureSession == null || captureRequestBuilder == null || backgroundHandler == null) return;
+        try {
+            Log.d(TAG, "[AF] Forcing autofocus re-trigger");
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF);
+            captureSession.capture(captureRequestBuilder.build(), null, backgroundHandler);
+
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+            captureSession.capture(captureRequestBuilder.build(), null, backgroundHandler);
+
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
+            captureSession.setRepeatingRequest(captureRequestBuilder.build(), afCaptureCallback, backgroundHandler);
+        } catch (CameraAccessException e) {
+            Log.e(TAG, "[AF] Failed to re-trigger autofocus: " + e.getMessage());
+        } catch (Exception e) {
+            Log.e(TAG, "[AF] Exception in triggerAutoFocus: " + e.getMessage());
+        }
+    }
+
+    // CaptureCallback to monitor AF state and re-trigger autofocus when focus is lost
+    private static CameraCaptureSession.CaptureCallback afCaptureCallback = new CameraCaptureSession.CaptureCallback() {
+        @Override
+        public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+            super.onCaptureCompleted(session, request, result);
+            Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
+            if (afState == null) return;
+
+            // If AF reports that it failed to focus or became inactive, re-trigger
+            if (afState == CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED
+                    || afState == CaptureResult.CONTROL_AF_STATE_INACTIVE
+                    || afState == CaptureResult.CONTROL_AF_STATE_PASSIVE_UNFOCUSED) {
+                long currentTime = System.currentTimeMillis();
+                if (currentTime - lastAfTriggerTimeMillis > 2000) {
+                    lastAfTriggerTimeMillis = currentTime;
+                    Log.d(TAG, "[AF] Focus lost or inactive (state=" + afState + "), re-triggering AF");
+                    triggerAutoFocus();
+                }
+            }
+        }
+    };
 
     public static void registerConfigurationChangeListener() {
-        
-        return;
+        // Get the current Unity Activity
+        Activity unityActivity = UnityPlayer.currentActivity;
+
+        if (unityActivity != null) {
+            // Register a listener for configuration changes
+            unityActivity.registerComponentCallbacks(new ComponentCallbacks2() {
+                @Override
+                public void onConfigurationChanged(Configuration newConfig) {
+                    Log.d(TAG, "Configuration Changed! " + newConfig.orientation);
+                    if (selectedCameraId == null || selectedCameraId.isEmpty())
+                    {
+                        return;
+                    }
+                    try {
+                        CameraManager cameraManager = (CameraManager) unityActivity.getSystemService(Context.CAMERA_SERVICE);
+                        CameraCharacteristics cameraCharacteristics = cameraManager.getCameraCharacteristics(selectedCameraId);
+                        int sensorOrientation = cameraCharacteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+                        int device_rotation = unityActivity.getWindowManager().getDefaultDisplay().getRotation();
+                        int rotationDegrees;
+                        switch (device_rotation) {
+                            case Surface.ROTATION_0: rotationDegrees = 0; break;
+                            case Surface.ROTATION_90: rotationDegrees = 90; break;
+                            case Surface.ROTATION_180: rotationDegrees = 180; break;
+                            case Surface.ROTATION_270: rotationDegrees = 270; break;
+                            default: rotationDegrees = 0; break;
+                        }
+                        synchronized (imageLock) {
+                            rotationCompensation = (rotationDegrees+sensorOrientation)%360;
+                            Log.d(TAG, "Configuration Changed! " + rotationCompensation);
+                        }
+                    }
+                    catch (CameraAccessException e) {
+                        Log.e(TAG, "Camera access exception: " + e.getMessage());
+                    }
+                    // Send the orientation change event to Unity
+                    //UnityPlayer.UnitySendMessage("GameManager", "OnOrientationChanged", orientation);
+                }
+                @Override
+                public void onLowMemory() {
+                    // Handle low memory if needed
+                }
+
+                @Override
+                public void onTrimMemory(int level) {
+                    // Handle memory trimming if needed
+                }
+            });
+        } else {
+            Log.e(TAG, "Unity Activity is null.");
+        }
     }
+
+    // [DEBUG] Counter to check how often getLatestImageData is called
+    private static int getLatestCallCount = 0;
+    private static int frameDeliveredCount = 0;
 
     public static Object[] getLatestImageData() {
         synchronized (imageLock) {
+            getLatestCallCount++;
+            // Log every 60 calls (~every 2 sec at 30fps polling) to avoid spam
+            if (getLatestCallCount % 60 == 0) {
+                Log.d(TAG, "[DEBUG] getLatestImageData called " + getLatestCallCount + " times, frames delivered: " + frameDeliveredCount + ", newFrameAvailable=" + newFrameAvailable);
+            }
             if (newFrameAvailable) {
-                //Log.d(TAG, "Returning new frame data");
-                byte[] image_buffer = new byte[latestImageData.length];
-                System.arraycopy(latestImageData, 0, image_buffer, 0, latestImageData.length);
+                frameDeliveredCount++;
+                Log.d(TAG, "[DEBUG] Delivering frame #" + frameDeliveredCount + " size=" + latestImageData.length + " (" + latestImageWidth + "x" + latestImageHeight + ")");
                 newFrameAvailable = false;
                 int[] widthAndHeight = new int[]{latestImageWidth, latestImageHeight};
-                return new Object[]{image_buffer, widthAndHeight};
+                return new Object[]{latestImageData, widthAndHeight};
             }
             else{
                 return null;
@@ -95,133 +195,53 @@ public class AndroidCameraPlugin {
     {
         byte[] strideless = new byte[width * height];
         for (int y = 0; y < height; y++) {
-            int srcPos = y * stride;
-            int dstPos = y * width;
-            int available = original.length - srcPos;
-            if (available <= 0) {
-                Log.w(TAG, "removeStride: Buffer exhausted at row " + y + "/" + height + 
-                      " (srcPos=" + srcPos + ", bufferLen=" + original.length + ")");
-                break;
-            }
-            int copyLen = Math.min(width, available);
-            if (copyLen < width) {
-                Log.w(TAG, "removeStride: Partial row copy at row " + y + 
-                      " (copied " + copyLen + "/" + width + " bytes)");
-            }
-            System.arraycopy(original, srcPos, strideless, dstPos, copyLen);
+            if (width >= 0)
+                System.arraycopy(original, y * stride + 0, strideless, y * width + 0, width);
         }
         return strideless;
     }
     public static byte[] rotateGrayscale90(byte[] original, int width, int height, int stride) {
         byte[] rotated = new byte[width * height];
-        int newWidth = height;
-        boolean loggedWarning = false;
+        int newWidth = height;  // After 90-degree rotation
+        int newHeight = width;
 
         for (int y = 0; y < height; y++) {
-            int rowStart = y * stride;
-            int available = original.length - rowStart;
-            if (available <= 0) {
-                if (!loggedWarning) {
-                    Log.w(TAG, "rotateGrayscale90: Buffer exhausted at row " + y + "/" + height +
-                          " (rowStart=" + rowStart + ", bufferLen=" + original.length + ")");
-                    loggedWarning = true;
-                }
-                break;
-            }
-            int pixelsToRead = Math.min(width, available);
-            if (pixelsToRead < width && !loggedWarning) {
-                Log.w(TAG, "rotateGrayscale90: Partial row at row " + y +
-                      " (available " + pixelsToRead + "/" + width + " pixels)");
-                loggedWarning = true;
-            }
-
-            for (int x = 0; x < pixelsToRead; x++) {
-                rotated[x * newWidth + (newWidth - y - 1)] = original[rowStart + x];
+            for (int x = 0; x < width; x++) {
+                rotated[x * newWidth + (newWidth - y - 1)] = original[y * stride + x];
             }
         }
+
         return rotated;
     }
     public static byte[] rotateGrayscale270(byte[] original, int width, int height, int stride) {
         byte[] rotated = new byte[width * height];
-        int newWidth = height;
-        int newHeight = width;
-        boolean loggedWarning = false;
+        int newWidth = width;  // After 270-degree rotation
+        int newHeight = height;
 
         for (int y = 0; y < height; y++) {
-            int rowStart = y * stride;
-            int available = original.length - rowStart;
-            if (available <= 0) {
-                if (!loggedWarning) {
-                    Log.w(TAG, "rotateGrayscale270: Buffer exhausted at row " + y + "/" + height +
-                          " (rowStart=" + rowStart + ", bufferLen=" + original.length + ")");
-                    loggedWarning = true;
-                }
-                break;
-            }
-            int pixelsToRead = Math.min(width, available);
-            if (pixelsToRead < width && !loggedWarning) {
-                Log.w(TAG, "rotateGrayscale270: Partial row at row " + y +
-                      " (available " + pixelsToRead + "/" + width + " pixels)");
-                loggedWarning = true;
-            }
-
-            for (int x = 0; x < pixelsToRead; x++) {
-                rotated[(newHeight - 1 - x) * newWidth + y] = original[rowStart + x];
+            for (int x = 0; x < width; x++) {
+                rotated[(newWidth - x -1 ) * newHeight + y] = original[y * stride + x];
             }
         }
+
         return rotated;
     }
     public static byte[] rotateGrayscale180(byte[] original, int width, int height, int stride) {
         byte[] rotated = new byte[width * height];
-        boolean loggedWarning = false;
+        int newWidth = width;  // After 90-degree rotation
+        int newHeight = height;
 
         for (int y = 0; y < height; y++) {
-            int rowStart = y * stride;
-            int available = original.length - rowStart;
-            if (available <= 0) {
-                if (!loggedWarning) {
-                    Log.w(TAG, "rotateGrayscale180: Buffer exhausted at row " + y + "/" + height +
-                          " (rowStart=" + rowStart + ", bufferLen=" + original.length + ")");
-                    loggedWarning = true;
-                }
-                break;
-            }
-            int pixelsToRead = Math.min(width, available);
-            if (pixelsToRead < width && !loggedWarning) {
-                Log.w(TAG, "rotateGrayscale180: Partial row at row " + y +
-                      " (available " + pixelsToRead + "/" + width + " pixels)");
-                loggedWarning = true;
-            }
-
-            for (int x = 0; x < pixelsToRead; x++) {
-                rotated[(height - y - 1) * width + (width - x - 1)] = original[rowStart + x];
+            for (int x = 0; x < width; x++) {
+                rotated[(newHeight - y - 1) * newWidth + (newWidth - x - 1)] = original[y * stride + x];
             }
         }
+
         return rotated;
     }
 
-    private static int getCurrentOrientationCompensation() {
-        Activity unityActivity = UnityPlayer.currentActivity;
-        try {
-            CameraManager cameraManager = (CameraManager) unityActivity.getSystemService(Context.CAMERA_SERVICE);
-            CameraCharacteristics cameraCharacteristics = cameraManager.getCameraCharacteristics(selectedCameraId);
-            int sensorOrientation = cameraCharacteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
-            int device_rotation = unityActivity.getWindowManager().getDefaultDisplay().getRotation();
-            int rotationDegrees;
-            switch (device_rotation) {
-                case Surface.ROTATION_0: rotationDegrees = 0; break;
-                case Surface.ROTATION_90: rotationDegrees = 90; break;
-                case Surface.ROTATION_180: rotationDegrees = 180; break;
-                case Surface.ROTATION_270: rotationDegrees = 270; break;
-                default: rotationDegrees = 0; break;
-            }
-                return (rotationDegrees+sensorOrientation)%360;
-        }
-        catch (CameraAccessException e) {
-            Log.e(TAG, "Camera access exception: " + e.getMessage());
-            return 0;
-        }
-    }
+    // [DEBUG] Count how many raw frames arrive from the camera
+    private static int rawFrameCount = 0;
 
     private static ImageReader.OnImageAvailableListener imageListener = new ImageReader.OnImageAvailableListener() {
         @Override
@@ -230,76 +250,79 @@ public class AndroidCameraPlugin {
             try {
                 image = reader.acquireLatestImage();
                 if (image == null) {
-                    Log.w(TAG, "acquireLatestImage returned null");
+                    Log.e(TAG, "[DEBUG] acquireLatestImage() returned null - camera may have dropped frame");
                     return;
                 }
 
-                int imageWidth = image.getWidth();
-                int imageHeight = image.getHeight();
-
-                Image.Plane[] planes = image.getPlanes();
-                ByteBuffer buffer = planes[0].getBuffer();
-                int stride = planes[0].getRowStride();
-
-                byte[] rawData = new byte[buffer.remaining()];
-                buffer.get(rawData);
-
-                Log.d(TAG, "imageListener: Image received - " + imageWidth + "x" + imageHeight + 
-                      ", stride=" + stride + ", bufferSize=" + rawData.length);
-
-                int rotation = getCurrentOrientationCompensation();
-                Log.d(TAG, "imageListener: Rotation compensation=" + rotation);
-
-                byte[] processedData;
-                int finalWidth, finalHeight;
-
-                if (rotation == 90) {
-                    Log.d(TAG, "imageListener: Applying 90° rotation");
-                    processedData = rotateGrayscale90(rawData, imageWidth, imageHeight, stride);
-                    finalWidth = imageHeight;
-                    finalHeight = imageWidth;
-                } else if (rotation == 270) {
-                    Log.d(TAG, "imageListener: Applying 270° rotation");
-                    processedData = rotateGrayscale270(rawData, imageWidth, imageHeight, stride);
-                    finalWidth = imageHeight;
-                    finalHeight = imageWidth;
-                } else if (rotation == 180) {
-                    Log.d(TAG, "imageListener: Applying 180° rotation");
-                    processedData = rotateGrayscale180(rawData, imageWidth, imageHeight, stride);
-                    finalWidth = imageWidth;
-                    finalHeight = imageHeight;
-                } else {
-                    // No rotation - but still need to remove stride if present
-                    Log.d(TAG, "imageListener: No rotation needed (0°)");
-                    if (stride != imageWidth) {
-                        Log.d(TAG, "imageListener: Removing stride padding (stride=" + stride + ", width=" + imageWidth + ")");
-                        processedData = removeStride(rawData, imageWidth, imageHeight, stride);
-                    } else {
-                        int expectedSize = imageWidth * imageHeight;
-                        processedData = new byte[expectedSize];
-                        int copyLen = Math.min(expectedSize, rawData.length);
-                        System.arraycopy(rawData, 0, processedData, 0, copyLen);
-                    }
-                    finalWidth = imageWidth;
-                    finalHeight = imageHeight;
+                rawFrameCount++;
+                // [DEBUG] Log every 30 raw frames (~1 sec) to confirm camera is actually sending data
+                if (rawFrameCount % 30 == 0) {
+                    Log.d(TAG, "[DEBUG] Raw frames received from camera: " + rawFrameCount);
                 }
 
-                Log.d(TAG, "imageListener: Processed data size=" + processedData.length + 
-                      ", finalDimensions=" + finalWidth + "x" + finalHeight);
+                // Get image size
+                int imgWidth = image.getWidth();
+                int imgHeight = image.getHeight();
+                Log.d(TAG, "[DEBUG] onImageAvailable: rawSize=" + imgWidth + "x" + imgHeight + " planes=" + image.getPlanes().length + " rotation=" + rotationCompensation);
+
+                Image.Plane[] planes = image.getPlanes();
+                if (planes == null || planes.length == 0) {
+                    Log.e(TAG, "[DEBUG] Image planes are null or empty!");
+                    return;
+                }
+                ByteBuffer buffer = planes[0].getBuffer();
+                int stride = planes[0].getRowStride();
+                int bufferCapacity = buffer.remaining();
+                Log.d(TAG, "[DEBUG] Y-plane: stride=" + stride + " bufferCapacity=" + bufferCapacity + " expected=" + (imgWidth * imgHeight));
+
+                // FIX: Read raw bytes from buffer FIRST, then rotate.
+                // Previously the code rotated old (stale) data before reading the new buffer.
+                byte[] rawBytes = new byte[bufferCapacity];
+                buffer.get(rawBytes);
 
                 synchronized (imageLock) {
-                    if (latestImageData.length != processedData.length) {
-                        Log.i(TAG, "imageListener: Resizing latestImageData from " + 
-                              latestImageData.length + " to " + processedData.length);
+                    byte[] processedData;
+                    int finalWidth = imgWidth;
+                    int finalHeight = imgHeight;
+
+                    if (rotationCompensation == 90) {
+                        Log.d(TAG, "[DEBUG] Applying 90-degree rotation");
+                        processedData = rotateGrayscale90(rawBytes, imgWidth, imgHeight, stride);
+                        finalWidth = imgHeight;
+                        finalHeight = imgWidth;
+                    } else if (rotationCompensation == 270) {
+                        Log.d(TAG, "[DEBUG] Applying 270-degree rotation");
+                        processedData = rotateGrayscale270(rawBytes, imgWidth, imgHeight, stride);
+                        finalWidth = imgHeight;
+                        finalHeight = imgWidth;
+                    } else if (rotationCompensation == 180) {
+                        Log.d(TAG, "[DEBUG] Applying 180-degree rotation");
+                        processedData = rotateGrayscale180(rawBytes, imgWidth, imgHeight, stride);
+                        finalWidth = imgWidth;
+                        finalHeight = imgHeight;
+                    } else {
+                        // 0 degrees - just remove stride padding if any
+                        if (stride != imgWidth) {
+                            Log.d(TAG, "[DEBUG] Removing stride padding (stride=" + stride + " width=" + imgWidth + ")");
+                            processedData = removeStride(rawBytes, imgWidth, imgHeight, stride);
+                        } else {
+                            processedData = rawBytes;
+                        }
+                        finalWidth = imgWidth;
+                        finalHeight = imgHeight;
                     }
+
                     latestImageData = processedData;
                     latestImageWidth = finalWidth;
                     latestImageHeight = finalHeight;
                     newFrameAvailable = true;
+
+                    Log.d(TAG, "[DEBUG] Frame processed and stored: " + latestImageWidth + "x" + latestImageHeight + " dataLen=" + latestImageData.length);
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "Error in onImageAvailable: " + e.getMessage(), e);
+                Log.e(TAG, "[DEBUG] Error in onImageAvailable: " + e.getMessage());
+                e.printStackTrace();
             } finally {
                 if (image != null) {
                     image.close();
@@ -365,8 +388,11 @@ public class AndroidCameraPlugin {
                         // Set control mode and exposure
                         builder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO);
 
-                        // Autofocus settings
-                        builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                        // Autofocus settings - use CONTINUOUS_VIDEO for more aggressive continuous refocusing
+                        builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+
+                        // Store builder reference for AF re-trigger callback
+                        captureRequestBuilder = builder;
 
                         // AE FPS range settings (set to 30fps for instance)
                         builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, new Range<>(30, 30));
@@ -379,9 +405,14 @@ public class AndroidCameraPlugin {
                                     Log.d(TAG, "Capture session configured");
                                     captureSession = session;
                                     try {
-                                        // Set the repeating capture request to start preview
-                                        captureSession.setRepeatingRequest(builder.build(), null, backgroundHandler);
-                                        Log.d(TAG, "Started camera preview");
+                                        // Jump-start autofocus
+                                        builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+                                        captureSession.capture(builder.build(), null, backgroundHandler);
+
+                                        // Set the repeating capture request to start preview (back to IDLE)
+                                        builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
+                                        captureSession.setRepeatingRequest(builder.build(), afCaptureCallback, backgroundHandler);
+                                        Log.d(TAG, "Started camera preview with AF monitoring");
                                     } catch (CameraAccessException e) {
                                         Log.e(TAG, "Failed to start camera preview: " + e.getMessage());
                                     }
@@ -522,32 +553,6 @@ public class AndroidCameraPlugin {
         }
     }
 
-    public static String[] getAllFrontAndBackCameraIds() {
-        Activity activity = UnityPlayer.currentActivity;
-        CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
-
-        try {
-            String[] cameraIdList = manager.getCameraIdList();
-            ArrayList<String> cameraIds = new ArrayList<>();
-
-            for (String cameraId : cameraIdList) {
-                CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
-                Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
-                if (facing != null &&
-                        (facing == CameraCharacteristics.LENS_FACING_FRONT ||
-                         facing == CameraCharacteristics.LENS_FACING_BACK)) {
-                    cameraIds.add(cameraId);
-                }
-            }
-
-            return cameraIds.toArray(new String[0]);
-
-        } catch (CameraAccessException e) {
-            Log.e(TAG, "Error accessing camera: " + e.getMessage());
-            return new String[0];
-        }
-    }
-
     public static String[] getAllCameraIds() 
     {
         Activity activity = UnityPlayer.currentActivity;
@@ -560,79 +565,38 @@ public class AndroidCameraPlugin {
             return new String[0];
         }
     }
-/*
-    public static String[] getAllCameraIds() {
-        Activity activity = UnityPlayer.currentActivity;
-        CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
-        try {
-            String[] cameraIdList = manager.getCameraIdList();
-            ArrayList<String> allCameraIds = new ArrayList<>();
 
-            for (String cameraId : cameraIdList)
-            {
-                allCameraIds.add(cameraId);
-            }
-
-            return allCameraIds.toArray(new String[0]);
-
-        } catch (CameraAccessException e) {
-            Log.e(TAG, "Error accessing camera: " + e.getMessage());
-            return new String[0]; // Return empty array if there's an error
-        }
-    }
-*/
-    private static Size getBestResolution(CameraCharacteristics cameraCharacteristics, float[] sensorWidthAndHeight) 
-    {
+    // Method to find the best resolution less than or equal to 1920x1080
+    private static Size getBestResolution(CameraCharacteristics cameraCharacteristics, float[] sensorWidthAndHeight) {
         // default resolution
         Size bestSize = new Size(1920, 1080);
-        boolean foundMatch = false;
 
         StreamConfigurationMap map = cameraCharacteristics.get(SCALER_STREAM_CONFIGURATION_MAP);
-        if (map == null) {
-            Log.e(TAG, "getBestResolution: StreamConfigurationMap is NULL. Hardware might not support Camera2.");
-            return bestSize;
-        }
+        assert map != null;
+        // Get available output sizes for YUV_420_888
+        Size[] availableSizes = map.getOutputSizes(ImageFormat.YUV_420_888);            
 
-        Size[] availableSizes = map.getOutputSizes(ImageFormat.YUV_420_888);
-        if (availableSizes == null || availableSizes.length == 0) {
-            Log.e(TAG, "getBestResolution: No available sizes found for YUV_420_888 format.");
-            return bestSize;
-        }
-
-        // Calculate Sensor Ratio
-        double rawSensorRatio = (double) sensorWidthAndHeight[0] / sensorWidthAndHeight[1];
+        // we keep the first two decimals.. cause in some systems there might be
+        // small differences (3rd, 4th decimal etc) and then will not be possible
+        // to find a resolution that matches the sensor's ratio.    
         DecimalFormat df = new DecimalFormat("#.##");
         df.setRoundingMode(RoundingMode.FLOOR);
-        String sensor_ratio_str = df.format(rawSensorRatio);
-
-        Log.d(TAG, "getBestResolution: --- Target Search Started ---");
-        Log.d(TAG, "getBestResolution: Sensor Dimensions: " + sensorWidthAndHeight[0] + "x" + sensorWidthAndHeight[1]);
-        Log.d(TAG, "getBestResolution: Target Sensor Ratio (Raw): " + rawSensorRatio + " (Formatted): " + sensor_ratio_str);
+        String sensor_ratio_str = df.format((double)sensorWidthAndHeight[0]/sensorWidthAndHeight[1]);
 
         // Iterate through all available sizes
         for (Size size : availableSizes) {
-            double rawImageRatio = (double) size.getWidth() / size.getHeight();
-            String image_ratio_str = df.format(rawImageRatio);
-        
-            boolean widthCondition = size.getWidth() >= 1920;
-            boolean ratioCondition = image_ratio_str.equals(sensor_ratio_str);
-
-            // Optional: Verbose log for every size checked (Uncomment if deep debugging is needed)
-            // Log.v(TAG, "Checking: " + size.getWidth() + "x" + size.getHeight() + " | Ratio: " + image_ratio_str + " | Match: " + (widthCondition && ratioCondition));
-
-            if (widthCondition && ratioCondition) {
-                bestSize = size;
-                foundMatch = true;
-                Log.i(TAG, "getBestResolution: MATCH FOUND! Selected: " + size.getWidth() + "x" + size.getHeight());
-                break;
+            String image_ratio_str = df.format((double)size.getWidth()/(double)size.getHeight());
+            if (size.getWidth() >= 1920 )
+            {
+                if (image_ratio_str.equals(sensor_ratio_str))
+                {
+                    bestSize = size;
+                    break;
+                }
             }
         }
-
-        if (!foundMatch) {
-            Log.w(TAG, "getBestResolution: No resolution >= 1920px matched the sensor ratio (" + sensor_ratio_str + "). Falling back to default: " + bestSize.getWidth() + "x" + bestSize.getHeight());
-        }
-
-        return bestSize;
+        
+        return bestSize; // Returns the best matching size or null if none found
     }
 
     private static void startBackgroundThread() {

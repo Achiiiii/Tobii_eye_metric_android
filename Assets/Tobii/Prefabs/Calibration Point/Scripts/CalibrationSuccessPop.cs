@@ -1,7 +1,7 @@
 /*
-  COPYRIGHT 2024 - PROPERTY OF TOBII AB
+  COPYRIGHT 2025 - PROPERTY OF TOBII AB
   -------------------------------------
-  2015 TOBII AB - KARLSROVAGEN 2D, DANDERYD 182 53, SWEDEN - All Rights Reserved.
+  2025 TOBII AB - KARLSROVAGEN 2D, DANDERYD 182 53, SWEDEN - All Rights Reserved.
 
   NOTICE:  All information contained herein is, and remains, the property of Tobii AB and its suppliers, if any.
   The intellectual and technical concepts contained herein are proprietary to Tobii AB and its suppliers and may be
@@ -61,7 +61,7 @@ public class CalibrationSuccessPop : MonoBehaviour
     void Start()
     {
         spheres = new List<GameObject>();
-        randomTargetPositions = new List<Vector3>(); 
+        randomTargetPositions = new List<Vector3>();
 
         duplicateMaterial = new Material(material);
         Color materialColor = duplicateMaterial.color;
@@ -70,16 +70,26 @@ public class CalibrationSuccessPop : MonoBehaviour
 
         for (int i = 0; i < sphereCount; i++)
         {
-            GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            // Create sphere manually without CreatePrimitive to avoid SphereCollider dependency
+            GameObject sphere = new GameObject($"PopSphere_{i}");
+            MeshFilter meshFilter = sphere.AddComponent<MeshFilter>();
+            MeshRenderer meshRenderer = sphere.AddComponent<MeshRenderer>();
+
+            // Use Unity's built-in sphere mesh
+            meshFilter.mesh = Resources.GetBuiltinResource<Mesh>("Sphere.fbx");
+            meshRenderer.material = duplicateMaterial;
+
             sphere.transform.parent = transform;
             sphere.transform.localPosition = new Vector3(0, 0, 0);
-            sphere.transform.localScale = new Vector3(sphereRadius, sphereRadius, sphereRadius);
-            sphere.GetComponent<MeshRenderer>().material = duplicateMaterial;
+            
+            // Unity's built-in sphere has diameter of 2 (radius 1), so scale by 0.5 to match CreatePrimitive behavior
+            float scale = sphereRadius * 0.5f;
+            sphere.transform.localScale = new Vector3(scale, scale, scale);
             spheres.Add(sphere);
 
             float x = UnityEngine.Random.Range(-sphereDistance, sphereDistance);
-            float y = UnityEngine.Random.Range(-sphereDistance, sphereDistance); 
-            float z = UnityEngine.Random.Range(-sphereDistance, sphereDistance); 
+            float y = UnityEngine.Random.Range(-sphereDistance, sphereDistance);
+            float z = UnityEngine.Random.Range(-sphereDistance, sphereDistance);
 
             Vector3 vector = new Vector3(x, y, z);
             randomTargetPositions.Add(vector);

@@ -40,7 +40,7 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
     {
         if (Application.platform == RuntimePlatform.Android)
         {
-            pluginClass = new AndroidJavaClass("com.tobii.camera.AndroidCameraPlugin");
+            pluginClass = new AndroidJavaClass("com.tobii.AndroidCameraPlugin");
         }
     }
 
@@ -114,7 +114,7 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
             try
             {
                 if (pluginClass == null)
-                    pluginClass = new AndroidJavaClass("com.tobii.camera.AndroidCameraPlugin");
+                    pluginClass = new AndroidJavaClass("com.tobii.AndroidCameraPlugin");
 
                 float[] cameraParameters = pluginClass.CallStatic<float[]>("initAndGetCameraParameters", cameraID);
 
@@ -187,8 +187,8 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
                                 data = dataPtr
                             };
 
-                            // Debug.Log("Frame captured: " + frame.timestamp_us + " " + frame.width + "x" + frame.height + " " +
-                            //     frame.stride + " " + frame.data_size + " " + frame.data);
+                            //Debug.Log("Frame captured: " + frame.timestamp_us + " " + frame.width + "x" + frame.height + " " +
+                            //    frame.stride + " " + frame.data_size + " " + frame.data);
 
                             mcclient_frame_format_type formatType = mcclient_frame_format_type.MCCLIENT_FRAME_FORMAT_GRAY16;
 
@@ -215,5 +215,21 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
     {
         if (mediaCaptureEvent != null)
             mediaCaptureEvent.RemoveAllListeners();
+    }
+
+    public void TriggerAutoFocus()
+    {
+        if (Application.platform == RuntimePlatform.Android && pluginClass != null && isInitialized)
+        {
+            try
+            {
+                pluginClass.CallStatic("triggerAutoFocus");
+                Debug.Log("TriggerAutoFocus called from C#");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error calling triggerAutoFocus: {e.Message}");
+            }
+        }
     }
 }

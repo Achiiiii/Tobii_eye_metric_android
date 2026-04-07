@@ -10,16 +10,17 @@
   permission is obtained from Tobii AB.
 */
 
+using AOT;
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Tobii.StreamEngine;
 using UnityEngine;
 using UnityEngine.Events;
-using System.Linq;
 using static TobiiProcessor.Interop;
-using AOT;
-using System.Runtime.InteropServices;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 #if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
 using UnityEngine.InputSystem; // Needed for Keyboard.current
 #endif
@@ -51,8 +52,18 @@ public class StreamEngineDevice : MonoBehaviour
     // Aspect ratio of the camera image as determined by arriving image data
     private Vector2 lastAspectRatio = Vector2.zero;
 
-    // Webcam related UI elements to be hidden when not in use
+    // Webcam related elements to be hidden/disabled when not in use
+    [Tooltip("Nexus Capture Clients, will be disabled when hardware tracker in use.")]
+    public GameObject nexusCaptureClients;
+
+    // Webcam related UI elements to be hidden/disabled when not in use
+    [Tooltip("Webcam related UI elements, will be disabled when hardware tracker in use.")]
     public GameObject webcamUI;
+
+    // Head pose visualisation elements
+    [Tooltip("Head pose visualisation elements, will be disabled when head pose is not available.")]
+    [SerializeField]
+    private GameObject headPoseVisualisation;
 
     // Tobii Stream Engine context
     public IntPtr DeviceContext => _streamEngineContext.DeviceContext;
@@ -86,8 +97,9 @@ public class StreamEngineDevice : MonoBehaviour
         Debug.Log($"[Processor] {level.ToString().Split('_').Last()} {text}");
     }
 
-    void Start()
+    IEnumerator Start()
     {
+        // Assign the callbacks
         _gazeCallback = OnGaze;
         _headPoseCallback = OnHeadPose;
         _gazePointCallback = On5LGazePoint;
@@ -98,7 +110,7 @@ public class StreamEngineDevice : MonoBehaviour
         {
             err += "Missing license file\n";
             Debug.LogError("Failed to load license file");
-            return;
+            yield break;
         }
         license = System.Text.Encoding.Unicode.GetString(seTextAsset.bytes);
 
@@ -107,8 +119,13 @@ public class StreamEngineDevice : MonoBehaviour
         if (result != tobii_error_t.TOBII_ERROR_NO_ERROR)
         {
             Debug.Log($"Failed to create API context {result}");
-            return;
+            yield break;
         }
+
+#if PLATFORM_ANDROID
+        // Bind to Android hardware tracker via TobiiAndroidBridge if available
+        yield return BindToAndroidHWTracker();
+#endif
 
         // Test for Tobii Eyetracker 5L
         tobii_eyetracker_t[] deviceList;
@@ -116,17 +133,26 @@ public class StreamEngineDevice : MonoBehaviour
         if (result != tobii_error_t.TOBII_ERROR_NO_ERROR)
         {
             Debug.Log($"Failed to find_all_eyetrackers {result}");
-            return;
+            yield break;
         }
+
+        Debug.Log("Tobii Eye Tracker device enumeration complete. " + deviceList.Length + " devices found.");
 
         // If we have a Tobii Eye Tracker device then we should use it.
         if (deviceList.Length > 0)
         {
             eyetracker5L = true;
 
-            // Hide the webcam UI
+            // Hide/disable the webcam related objects
+            if (nexusCaptureClients != null)
+                nexusCaptureClients.SetActive(false);
             if (webcamUI != null)
                 webcamUI.SetActive(false);
+
+            // Disable the AndroidWebcamCaptureClient if present
+            var androidWebcamCaptureClient = GetComponent<AndroidWebcamCaptureClient>();
+            if (androidWebcamCaptureClient != null)
+                androidWebcamCaptureClient.enabled = false;
 
             Debug.Log($"Found {deviceList.Length} Tobii Eye Tracker devices");
             for (int i = 0; i < deviceList.Length; i++)
@@ -139,9 +165,9 @@ public class StreamEngineDevice : MonoBehaviour
             if (result != tobii_error_t.TOBII_ERROR_NO_ERROR)
             {
                 Debug.Log($"Failed to connect to eye tracker with license. License error {result}");
-                return;
+                yield break;
             }
-            Debug.Log("Tobii Device context created!");
+            Debug.Log("Connected to eye tracker!");
 
             // Create StreamEngineContext
             _streamEngineContext = new StreamEngineContext(apiContext, deviceContext);
@@ -149,8 +175,9 @@ public class StreamEngineDevice : MonoBehaviour
             {
                 err += "Failed to create StreamEngineContext\n";
                 Debug.LogError("Failed to create StreamEngineContext");
-                return;
+                yield break;
             }
+            Debug.Log("Tobii Device context created!");
 
             // Set up display area asynchronously
             if (setDisplaySettingTask == null || setDisplaySettingTask.IsCompleted)
@@ -172,10 +199,48 @@ public class StreamEngineDevice : MonoBehaviour
             // Subscribe to head pose
             result = ScreenbasedInterop.tobii_head_pose_subscribe(deviceContext, _headPoseCallback, GCHandle.ToIntPtr(handle));
             if (result != tobii_error_t.TOBII_ERROR_NO_ERROR)
+            {
                 Debug.Log($"Failed to subscribe to head pose {result}. Not necessarily critical if license does not support head pose.");
+                // Hide the head visualisation if head pose is not available
+                if (headPoseVisualisation != null)
+                    headPoseVisualisation.SetActive(false);
+            }
             else
                 Debug.Log("Subscribed to head pose!");
         }
+        else
+        {
+            Debug.Log("No Tobii Eye Tracker devices found, falling back to webcam processor path.");
+        }
+    }
+
+    private IEnumerator BindToAndroidHWTracker()
+    {
+        // Ensure binder bridge is initialized
+        Debug.Log("[StreamEngineDevice] Calling TobiiAndroidBridge.Initialize()");
+        try { TobiiAndroidBridge.Initialize(); }
+        catch (Exception ex)
+        {
+            Debug.LogError("[StreamEngineDevice] Initialize() exception: " + ex.Message);
+            yield break;
+        }
+
+        // Wait briefly for binder readiness (up to 2s)
+        float deadline = Time.time + 2f;
+        int loopCount = 0;
+        while (!TobiiAndroidBridge.IsReady() && Time.time < deadline)
+        {
+            if ((++loopCount & 0x3F) == 0) // every 64 iterations
+                Debug.Log("[StreamEngineDevice] Waiting for binder... t=" + Time.time.ToString("F2"));
+            yield return null;
+        }
+
+        if (!TobiiAndroidBridge.IsReady())
+        {
+            Debug.LogWarning("[StreamEngineDevice] Binder not ready -> will rely on processor path.");
+            yield break;
+        }
+        Debug.Log("[StreamEngineDevice] Binder ready.");
     }
 
     private Task<bool> SetTrackerDisplaySettings()

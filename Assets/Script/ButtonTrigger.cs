@@ -12,6 +12,8 @@ public class ButtonTrigger : MonoBehaviour
     public AudioSource audioSource;
     private bool _isEnter = false;
     private bool _isScaleReset = true;
+    private float _delayTriggerTime = 0.1f;
+    private float _triggerTime = 1.5f;
 
     void Start()
     {
@@ -58,7 +60,7 @@ public class ButtonTrigger : MonoBehaviour
         if (_isScaleReset)
         {
             _isScaleReset = false;
-            transform.DOScale(1.2f, 1).SetEase(Ease.OutCubic).OnComplete(() =>
+            transform.DOScale(1.2f, _triggerTime).SetEase(Ease.OutCubic).OnComplete(() =>
             {
                 transform.DOScale(1, 0);
                 btn.onClick.Invoke();
@@ -75,7 +77,7 @@ public class ButtonTrigger : MonoBehaviour
 
     private IEnumerator DelayExit()
     {
-        yield return new WaitForSeconds(0.2f);
+        yield return new WaitForSeconds(_delayTriggerTime);
         if (!_isEnter)
         {
             transform.DOKill();
