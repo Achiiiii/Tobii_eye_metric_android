@@ -12,7 +12,6 @@ public class GazePointVisualizer : MonoBehaviour
     [SerializeField] private RectTransform gazeDot;       //  UI 點
     [SerializeField] private RectTransform canvasTransform; // UI canvas（需設為 Screen Space - Overlay）
     [SerializeField] private UILineRenderer uILineRenderer; // UI canvas（需設為 Screen Space - Overlay）
-    [SerializeField] private TobiiController tobiiController; // UI canvas（需設為 Screen Space - Overlay）
     [SerializeField]
     [Tooltip("This key will toggle gaze point.")]
     private KeyCode _toggleKey = KeyCode.None;
