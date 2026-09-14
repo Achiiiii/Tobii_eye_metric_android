@@ -10,6 +10,8 @@
   permission is obtained from Tobii AB.
 */
 
+using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using DG.Tweening;
 
