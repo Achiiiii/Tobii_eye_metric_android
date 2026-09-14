@@ -299,7 +299,9 @@ public class StreamEngineDevice : MonoBehaviour
                 CreateWebcamProcessor();
             }
 
+            long processStart = GazeLatencyStats.Now();
             tobii_error_t result = Interop.tobii_process_frame(deviceContext, frame);
+            GazeLatencyStats.RecordFrameProcessed(processStart);
             if (result != tobii_error_t.TOBII_ERROR_NO_ERROR)
                 Debug.LogError($"Error processing frame: {result}");
         }
@@ -401,7 +403,7 @@ public class StreamEngineDevice : MonoBehaviour
         CameraFov = fov;
     }
 
-    private Queue<Vector2> gazePointQueue = new Queue<Vector2>();
+    private Queue<(Vector2 point, long enqueuedAt)> gazePointQueue = new Queue<(Vector2 point, long enqueuedAt)>();
     private readonly object gazeQueueLock = new object();
 
     [MonoPInvokeCallback(typeof(tobii_gaze_callback_t))]
@@ -420,7 +422,7 @@ public class StreamEngineDevice : MonoBehaviour
             lock (instance.gazeQueueLock)
             {
                 if (instance.gazePointQueue.Count < 10)
-                    instance.gazePointQueue.Enqueue(point);
+                    instance.gazePointQueue.Enqueue((point, GazeLatencyStats.Now()));
             }
         }
     }
@@ -441,7 +443,7 @@ public class StreamEngineDevice : MonoBehaviour
             lock (instance.gazeQueueLock)
             {
                 if (instance.gazePointQueue.Count < 10)
-                    instance.gazePointQueue.Enqueue(point);
+                    instance.gazePointQueue.Enqueue((point, GazeLatencyStats.Now()));
             }
         }
     }
@@ -510,7 +512,8 @@ public class StreamEngineDevice : MonoBehaviour
         {
             while (gazePointQueue.Count > 0)
             {
-                var point = gazePointQueue.Dequeue();
+                var (point, enqueuedAt) = gazePointQueue.Dequeue();
+                GazeLatencyStats.RecordGazeDispatched(enqueuedAt);
                 OnGazePoint.Invoke(point);
             }
         }

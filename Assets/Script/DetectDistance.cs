@@ -75,7 +75,7 @@ public class DetectDistance : MonoBehaviour
                 _locker = false;
 
                 canvasTrackBox.SetActive(false);
-                gazeCalibrationManager.SetTrialCountDown("right");
+                gazeCalibrationManager.BeginFirstTrial();
                 Debug.Log("validate");
             }
         }
@@ -83,6 +83,8 @@ public class DetectDistance : MonoBehaviour
     }
     public void OpenLock()
     {
+        _time = 0;
+        _validateTime = 0;
         _locker = true;
     }
     private void AudioPlay(AudioClip clip)

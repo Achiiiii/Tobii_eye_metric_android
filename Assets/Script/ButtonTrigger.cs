@@ -1,28 +1,23 @@
-using System.Collections;
-using System.Collections.Generic;
-using DG.Tweening;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class ButtonTrigger : MonoBehaviour
 {
     Button btn;
-    Transform transform;
     RectTransform rect;
     public AudioSource audioSource;
     private bool _isEnter = false;
-    private bool _isScaleReset = true;
-    private float _delayTriggerTime = 0.1f;
-    private float _triggerTime = 1.5f;
-    private Image _childImage;
-    private Color _childImageColor;
-    private readonly Color _enterColor = new Color32(0x02, 0xDF, 0x82, 0xFF);
+    private bool _isArmed = true;
+    private float _dwellTime = 0f;
+    private float _exitTime = 0f;
+    private readonly float _triggerTime = 1.5f;
+    // Brief gaze jitter outside the button should not throw away dwell progress.
+    private readonly float _exitGraceTime = 0.3f;
 
     void Start()
     {
         rect = gameObject.GetComponent<RectTransform>();
         btn = gameObject.GetComponent<Button>();
-        transform = gameObject.GetComponent<Transform>();
         BoxCollider2D boxCollider = gameObject.AddComponent<BoxCollider2D>();
         float pivotX = rect.pivot.x;
         float pivotY = rect.pivot.y;
@@ -55,72 +50,72 @@ public class ButtonTrigger : MonoBehaviour
         boxCollider.offset = new Vector2(offsetX, offsetY);
         boxCollider.isTrigger = true;
         boxCollider.size = new Vector2(rect.sizeDelta.x, rect.sizeDelta.y);
-        Transform imageChild = transform.Find("Image");
-        if (imageChild)
-        {
-            _childImage = imageChild.GetComponent<Image>();
-            if (_childImage)
-                _childImageColor = _childImage.color;
-        }
         btn.onClick.AddListener(ClickAudio);
     }
+
+    void Update()
+    {
+        if (_isEnter)
+        {
+            // After triggering, the gaze has to leave the button before it can trigger again.
+            if (!_isArmed || !btn.IsInteractable())
+            {
+                if (_dwellTime > 0f)
+                    ResetDwell();
+                return;
+            }
+
+            _exitTime = 0f;
+            _dwellTime += Time.deltaTime;
+            GazeDwellIndicator.Report(this, _dwellTime / _triggerTime);
+            if (_dwellTime >= _triggerTime)
+                Trigger();
+        }
+        else if (_dwellTime > 0f)
+        {
+            _exitTime += Time.deltaTime;
+            if (_exitTime >= _exitGraceTime)
+                ResetDwell();
+        }
+    }
+
     private void OnTriggerEnter2D(Collider2D other)
     {
         _isEnter = true;
-        if (_isScaleReset)
-        {
-            _isScaleReset = false;
-            if (_childImage)
-                _childImage.DOColor(_enterColor, _triggerTime).SetEase(Ease.OutCubic);
-            transform.DOScale(1.2f, _triggerTime).SetEase(Ease.OutCubic).OnComplete(() =>
-            {
-                transform.DOScale(1, 0);
-                ResetChildImageColor();
-                btn.onClick.Invoke();
-                _isScaleReset = true;
-            });
-        }
     }
 
     private void OnTriggerExit2D(Collider2D other)
     {
         _isEnter = false;
-        StartCoroutine(DelayExit());
+        _isArmed = true;
     }
 
-    private IEnumerator DelayExit()
+    private void Trigger()
     {
-        yield return new WaitForSeconds(_delayTriggerTime);
-        if (!_isEnter)
-        {
-            transform.DOKill();
-            transform.DOScale(1, 0);
-            ResetChildImageColor();
-            _isScaleReset = true;
-        }
+        _isArmed = false;
+        _dwellTime = 0f;
+        _exitTime = 0f;
+        GazeDwellIndicator.Complete();
+        btn.onClick.Invoke();
     }
 
-    private void ResetChildImageColor()
+    private void ResetDwell()
     {
-        if (!_childImage)
-            return;
-        _childImage.DOKill();
-        _childImage.color = _childImageColor;
+        _dwellTime = 0f;
+        _exitTime = 0f;
+        GazeDwellIndicator.Release(this);
     }
+
     private void ClickAudio()
     {
         if (audioSource)
             audioSource.Play();
     }
+
     void OnDisable()
     {
-        if (transform)
-        {
-            transform.DOKill();
-            transform.DOScale(1, 0);
-        }
-        ResetChildImageColor();
         _isEnter = false;
-        _isScaleReset = true;
+        _isArmed = true;
+        ResetDwell();
     }
 }

@@ -1,0 +1,134 @@
+using UnityEngine;
+using UnityEngine.UI;
+
+// Progress ring that rides next to the gaze dot while a ButtonTrigger is being dwelled on.
+public class GazeDwellIndicator : MonoBehaviour
+{
+    private const float PopSeconds = 0.22f;
+    private const float HoldSeconds = 0.45f;
+    private const float FadeSeconds = 0.25f;
+    private static readonly Color ProgressColor = new Color32(0x1E, 0x88, 0xE5, 0xFF);
+    private static readonly Color CompleteColor = new Color32(0x43, 0xA0, 0x47, 0xFF);
+
+    private static GazeDwellIndicator _instance;
+
+    private CanvasGroup _group;
+    private Image _fill;
+    private RectTransform _badge;
+    private Object _owner;
+    private bool _completing;
+    private float _completeElapsed;
+
+    public static void Attach(Transform pointer)
+    {
+        var root = UiFactory.CreateRect("GazeDwellIndicator", pointer);
+        UiFactory.Place(root, UiFactory.Center, UiFactory.Center, new Vector2(46f, 46f), new Vector2(48f, 48f));
+        var indicator = root.gameObject.AddComponent<GazeDwellIndicator>();
+
+        var visual = UiFactory.Stretch(UiFactory.CreateRect("Visual", root));
+        indicator._group = visual.gameObject.AddComponent<CanvasGroup>();
+        indicator._group.blocksRaycasts = false;
+        indicator._group.interactable = false;
+
+        var backing = UiFactory.CreateImage("Backing", visual, UiFactory.Circle, new Color(1f, 1f, 1f, 0.9f));
+        UiFactory.Stretch(backing.rectTransform);
+        var track = UiFactory.CreateImage("Track", visual, UiFactory.Ring, new Color(0f, 0f, 0f, 0.15f));
+        UiFactory.Place(track.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(40f, 40f));
+
+        indicator._fill = UiFactory.CreateImage("Fill", visual, UiFactory.Ring, ProgressColor);
+        UiFactory.Place(indicator._fill.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(40f, 40f));
+        indicator._fill.type = Image.Type.Filled;
+        indicator._fill.fillMethod = Image.FillMethod.Radial360;
+        indicator._fill.fillOrigin = (int)Image.Origin360.Top;
+        indicator._fill.fillClockwise = true;
+
+        var badge = UiFactory.CreateImage("CompleteBadge", visual, UiFactory.Circle, CompleteColor);
+        UiFactory.Place(badge.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(40f, 40f));
+        var check = UiFactory.CreateImage("Check", badge.transform, UiFactory.Check, Color.white);
+        UiFactory.Place(check.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(30f, 30f));
+        indicator._badge = badge.rectTransform;
+
+        indicator.Hide();
+        _instance = indicator;
+    }
+
+    public static void Report(Object owner, float progress)
+    {
+        if (_instance != null)
+            _instance.ShowProgress(owner, progress);
+    }
+
+    public static void Release(Object owner)
+    {
+        if (_instance != null && !_instance._completing && _instance._owner == owner)
+            _instance.Hide();
+    }
+
+    public static void Complete()
+    {
+        if (_instance != null)
+            _instance.PlayComplete();
+    }
+
+    private void ShowProgress(Object owner, float progress)
+    {
+        // Let the completion feedback finish before showing a new dwell.
+        if (_completing)
+            return;
+        _owner = owner;
+        _group.gameObject.SetActive(true);
+        _group.alpha = 1f;
+        _fill.color = ProgressColor;
+        _fill.fillAmount = Mathf.Clamp01(progress);
+        _badge.gameObject.SetActive(false);
+    }
+
+    private void PlayComplete()
+    {
+        _owner = null;
+        _completing = true;
+        _completeElapsed = 0f;
+        _group.gameObject.SetActive(true);
+        _group.alpha = 1f;
+        _fill.color = CompleteColor;
+        _fill.fillAmount = 1f;
+        _badge.gameObject.SetActive(true);
+        _badge.localScale = Vector3.one * 0.6f;
+    }
+
+    private void Update()
+    {
+        if (!_completing)
+            return;
+
+        _completeElapsed += Time.unscaledDeltaTime;
+        float t = _completeElapsed;
+        float scale = t < 0.12f
+            ? Mathf.Lerp(0.6f, 1.15f, t / 0.12f)
+            : Mathf.Lerp(1.15f, 1f, Mathf.Clamp01((t - 0.12f) / (PopSeconds - 0.12f)));
+        _badge.localScale = Vector3.one * scale;
+
+        if (t > HoldSeconds)
+            _group.alpha = 1f - Mathf.Clamp01((t - HoldSeconds) / FadeSeconds);
+        if (t >= HoldSeconds + FadeSeconds)
+            Hide();
+    }
+
+    private void Hide()
+    {
+        _owner = null;
+        _completing = false;
+        _group.gameObject.SetActive(false);
+    }
+
+    private void OnDisable()
+    {
+        Hide();
+    }
+
+    private void OnDestroy()
+    {
+        if (_instance == this)
+            _instance = null;
+    }
+}

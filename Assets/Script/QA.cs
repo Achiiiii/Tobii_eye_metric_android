@@ -13,6 +13,7 @@ public class QA : MonoBehaviour
     public GameObject gazeCalibrationManagerGO;
     public GameObject canvasTrackBoxGO;
     public DetectDistance detectDistance;
+    public event Action Completed;
     public Image[] Q4Toggles = new Image[7];
     public Image[] Q6Toggles = new Image[5]; 
     public Image[] Q7Toggles = new Image[4]; 
@@ -198,6 +199,7 @@ public class QA : MonoBehaviour
             gazeCalibrationManagerGO.SetActive(true);
             canvasTrackBoxGO.SetActive(true);
             detectDistance.OpenLock();
+            Completed?.Invoke();
         }
         else
         {

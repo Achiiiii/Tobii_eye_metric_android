@@ -96,7 +96,7 @@ namespace Tobii
             /// </summary>
             CalibrationNotDone = 0,
             /// <summary>
-            /// Calibration has been completed successfully 
+            /// Calibration has been completed successfully
             /// </summary>
             CalibrationSuccess,
             /// <summary>
@@ -106,24 +106,24 @@ namespace Tobii
         };
 
         /// <summary>
-        /// Provides access to gaze data etc from StreamEngineDevice. 
+        /// Provides access to gaze data etc from StreamEngineDevice.
         /// </summary>
         [SerializeField]
         private StreamEngineDevice streamEngineDevice;
 
         /// <summary>
-        /// Provides access to calibration routines from StreamEngineDevice. 
+        /// Provides access to calibration routines from StreamEngineDevice.
         /// </summary>
         public StreamEngineCalibration streamEngineCalibration;
 
         /// <summary>
-        /// Prefab based on StimuliPoint component. 
+        /// Prefab based on StimuliPoint component.
         /// </summary>
         [SerializeField]
         private GameObject stimuliPrefab;
 
         /// <summary>
-        /// Group of stimuli points separated by a call to Compute and Apply. 
+        /// Group of stimuli points separated by a call to Compute and Apply.
         /// </summary>
         [SerializeField]
         [Tooltip("Group of stimuli points separated by a call to Compute and Apply.")]
@@ -165,9 +165,27 @@ namespace Tobii
         [SerializeField] private MetricTest metricTest;
         [SerializeField] private Sprite[] sampleSprites;
         [SerializeField] private Image sampleImage;
+        [SerializeField] private float gazeIntroSeconds = 3f;
+
+        public event Action CalibrationStarted;
+        /// <summary>
+        /// (1-based index within the sequence, points in the sequence, stimulus position in screen pixels)
+        /// </summary>
+        public event Action<int, int, Vector2> StimulusShown;
+        public event Action StimulusCleared;
+        public event Action CalibrationEnded;
+        public event Action CalibrationFailed;
+        public event Action<float> GazeIntroStarted;
+        public event Action GazeIntroEnded;
 
         private float _countDownTime = 5;
         private bool _countDownLocker = false;
+        private bool _isCalibrating = false;
+        private bool _objectsHidden = false;
+        private bool[] _activeBeforeCalibration;
+        private bool _deviceCalibrationActive = false;
+        private bool _stopPending = false;
+        private bool _gazeIntroShown = false;
 
         private void Awake()
         {
@@ -196,35 +214,83 @@ namespace Tobii
             StartCalibration();
         }
 
-        public void SetTrialCountDown(string side)
+        /// <summary>
+        /// Called once the head position has been confirmed by DetectDistance.
+        /// </summary>
+        public void BeginFirstTrial()
+        {
+            SetTrialCountDown(metricTest.FirstSide, true);
+        }
+
+        public void SetTrialCountDown(string side, bool headPositionConfirmed = false)
         {
             // _countDownTime = 5;
             // _countDownLocker = true;
             metricTest.gameObject.SetActive(false);
             mainCanvas.SetActive(true);
+            string coverHint;
             switch (side)
             {
                 case "right":
                     sampleImage.sprite = sampleSprites[0];
-                    PlayTTS("請先遮擋左邊眼睛，使用右眼檢測");
+                    coverHint = "請先遮擋左邊眼睛，使用右眼檢測";
                     break;
                 case "left":
                     sampleImage.sprite = sampleSprites[1];
-                    PlayTTS("請遮擋右邊眼睛，使用左眼檢測");
+                    coverHint = "請遮擋右邊眼睛，使用左眼檢測";
                     break;
                 case "both":
                     sampleImage.sprite = sampleSprites[2];
-                    PlayTTS("請勿遮擋眼睛，直接進行檢測");
+                    coverHint = "請勿遮擋眼睛，直接進行檢測";
                     break;
                 default:
                     sampleImage.sprite = sampleSprites[0];
+                    coverHint = "";
                     break;
             }
+            content.text = coverHint + "\n頭部請保持不動，稍後請依序注視<color=blue>藍色圓點</color>";
+            string headHint = headPositionConfirmed ? "頭部位置已確認，接下來請保持頭部不動。" : "請保持頭部不動。";
+            PlayTTS(headHint + coverHint);
         }
 
         public void StartCalibration()
         {
+            if (_isCalibrating)
+                return;
+            _isCalibrating = true;
             StartCoroutine(Calibrate());
+        }
+
+        /// <summary>
+        /// Abort any calibration or gaze intro in progress and return to a clean state (used by recalibration).
+        /// </summary>
+        public void ResetSession()
+        {
+            StopAllCoroutines();
+            _stopPending = false;
+            _countDownLocker = false;
+
+            foreach (var point in calibrationPoints)
+            {
+                if (point != null)
+                    Destroy(point);
+            }
+            calibrationPoints.Clear();
+
+            if (_objectsHidden)
+            {
+                for (int i = 0; i < hideTheseDuringCalibration.Length; i++)
+                    hideTheseDuringCalibration[i].SetActive(_activeBeforeCalibration[i]);
+                _objectsHidden = false;
+            }
+
+            _isCalibrating = false;
+            _gazeIntroShown = false;
+            ComponentStatus = ComponentState.Idle;
+            CalibrationStatus = CalibrationState.CalibrationNotDone;
+
+            if (_deviceCalibrationActive)
+                StartCoroutine(StopDeviceCalibration());
         }
 
         private void PlayTTS(string text)
@@ -237,45 +303,50 @@ namespace Tobii
 
         public IEnumerator Calibrate()
         {
-            foreach (var hideThisDuringCalibration in hideTheseDuringCalibration)
-                hideThisDuringCalibration.SetActive(false);
+            _isCalibrating = true;
+            while (_stopPending)
+                yield return null;
+
+            HideObjectsForCalibration();
+            CalibrationStarted?.Invoke();
 
             ComponentStatus = ComponentState.CalibrationRunning;
             var success = new ReferenceBool(false);
 
             if (streamEngineDevice.IsConnected == false)
             {
-                ComponentStatus = ComponentState.InternalError;
-                CalibrationStatus = CalibrationState.CalibrationFail;
+                FailCalibration();
                 yield break;
             }
 
             yield return streamEngineCalibration.StartCalibrationRoutine(success);
             if (success == false)
             {
-                ComponentStatus = ComponentState.InternalError;
-                CalibrationStatus = CalibrationState.CalibrationFail;
+                FailCalibration();
                 yield break;
             }
+            _deviceCalibrationActive = true;
 
             yield return streamEngineCalibration.ClearCalibrationRoutine(success);
             if (success == false)
             {
-                ComponentStatus = ComponentState.InternalError;
-                CalibrationStatus = CalibrationState.CalibrationFail;
-                streamEngineCalibration.StopCalibrationRoutine(success);
+                FailCalibration();
                 yield break;
             }
 
             foreach (var sequence in calibrationSequence)
             {
-                completeCount = 0;
-                foreach (var stimulusPoint in sequence.stimuliPoints)
+                // Show one point at a time, in a fixed order, so the user can be guided through them.
+                var points = OrderForGuidance(sequence.stimuliPoints);
+                for (int i = 0; i < points.Length; i++)
                 {
-                    // Fixed collider size (Vector2: width fraction, height fraction)
-                    AddStimulus(sequence.gazeColliderSize, stimulusPoint.screenPos);
+                    completeCount = 0;
+                    var screenPosition = AddStimulus(sequence.gazeColliderSize, points[i].screenPos);
+                    StimulusShown?.Invoke(i + 1, points.Length, screenPosition);
+                    yield return new WaitUntil(() => completeCount >= 1);
+                    StimulusCleared?.Invoke();
+                    yield return new WaitForSeconds(0.3f);
                 }
-                yield return new WaitUntil(() => completeCount >= sequence.stimuliPoints.Length);
 
                 // Compute and apply
                 yield return commit(success);
@@ -289,26 +360,94 @@ namespace Tobii
             yield return streamEngineCalibration.StopCalibrationRoutine(success);
             if (success == false)
             {
-                ComponentStatus = ComponentState.InternalError;
-                CalibrationStatus = CalibrationState.CalibrationFail;
+                FailCalibration();
                 yield break;
             }
+            _deviceCalibrationActive = false;
 
             ComponentStatus = ComponentState.Idle;
 
             foreach (var hideThisDuringCalibration in hideTheseDuringCalibration)
                 hideThisDuringCalibration.SetActive(true);
+            _objectsHidden = false;
+            _isCalibrating = false;
+            CalibrationEnded?.Invoke();
 
             mainCanvas.SetActive(true);
 
             Debug.Log("Calibration was successful");
             pointer.SetActive(true);
+
+            if (!_gazeIntroShown)
+            {
+                _gazeIntroShown = true;
+                GazeIntroStarted?.Invoke(gazeIntroSeconds);
+                yield return new WaitForSeconds(gazeIntroSeconds);
+                GazeIntroEnded?.Invoke();
+            }
+
             metricTest.gameObject.SetActive(true);
             metricTest.StartMeticTest();
             // blackTestBtn.SetActive(true);
             // colorTestBtn.SetActive(true);
             // content.text = "請問您今天想進行哪一種眼動測試呢？\n（凝視選項3秒）";
             // AudioPlay(questionAudio);
+        }
+
+        private void HideObjectsForCalibration()
+        {
+            if (!_objectsHidden)
+            {
+                _activeBeforeCalibration = new bool[hideTheseDuringCalibration.Length];
+                for (int i = 0; i < hideTheseDuringCalibration.Length; i++)
+                    _activeBeforeCalibration[i] = hideTheseDuringCalibration[i].activeSelf;
+            }
+            foreach (var hideThisDuringCalibration in hideTheseDuringCalibration)
+                hideThisDuringCalibration.SetActive(false);
+            _objectsHidden = true;
+        }
+
+        private void FailCalibration()
+        {
+            ComponentStatus = ComponentState.InternalError;
+            CalibrationStatus = CalibrationState.CalibrationFail;
+            _isCalibrating = false;
+            if (_deviceCalibrationActive)
+                StartCoroutine(StopDeviceCalibration());
+            CalibrationFailed?.Invoke();
+        }
+
+        private IEnumerator StopDeviceCalibration()
+        {
+            _stopPending = true;
+            // A data-collection task may still be running on a worker thread; give it time to finish first.
+            yield return new WaitForSeconds(0.5f);
+            var success = new ReferenceBool(false);
+            yield return streamEngineCalibration.StopCalibrationRoutine(success);
+            _deviceCalibrationActive = success == false;
+            _stopPending = false;
+        }
+
+        // Clockwise starting from the top-left point; a single point is returned as-is.
+        private static StimuliPosition[] OrderForGuidance(StimuliPosition[] points)
+        {
+            if (points.Length < 2)
+                return points;
+
+            Vector2 center = Vector2.zero;
+            foreach (var point in points)
+                center += point.screenPos;
+            center /= points.Length;
+
+            var ordered = (StimuliPosition[])points.Clone();
+            Array.Sort(ordered, (a, b) => ClockwiseFromTopLeft(a.screenPos - center).CompareTo(ClockwiseFromTopLeft(b.screenPos - center)));
+            return ordered;
+        }
+
+        private static float ClockwiseFromTopLeft(Vector2 offset)
+        {
+            float angle = Mathf.Atan2(offset.y, offset.x) * Mathf.Rad2Deg;
+            return Mathf.Repeat(135f - angle, 360f);
         }
 
         private void AudioPlay(AudioClip clip)
@@ -320,8 +459,9 @@ namespace Tobii
 
         /// <summary>
         /// Add a stimulus point at position stimulusPoint using a fixed collider size (Vector2 width/height fractions, no growth animation).
+        /// Returns the stimulus position in screen pixels.
         /// </summary>
-        private void AddStimulus(Vector2 gazeColliderSize, Vector2 stimulusPoint)
+        private Vector2 AddStimulus(Vector2 gazeColliderSize, Vector2 stimulusPoint)
         {
             var currentStimulusPoint = Instantiate(stimuliPrefab);
             var sp = currentStimulusPoint.GetComponent<StimulusPoint>();
@@ -337,6 +477,7 @@ namespace Tobii
             // Use new Vector2 overload for fixed collider size
             sp.ConfigureCollider(gazeColliderSize);
             sp.stimulusCompleteEvent.AddListener(stimulusCompleted);
+            return new Vector2(screenPosFromNormalized.x, screenPosFromNormalized.y);
         }
 
         public void stimulusCompleted()

@@ -5,10 +5,17 @@ using System.IO;
 using Tobii;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.UI;
 
 
 public class MetricTest : MonoBehaviour
 {
+    public enum TestMode
+    {
+        Single,
+        Both
+    }
+
     public RectTransform blackRT;
     public RectTransform[] sidesRT;
     public GameObject resultPage;
@@ -17,6 +24,9 @@ public class MetricTest : MonoBehaviour
     public GazeCalibrationManager gazeCalibrationManager;
     public TMPro.TMP_Text resultText;
     public AudioSource audioSource;
+
+    public TestMode Mode { get; set; } = TestMode.Single;
+    public string FirstSide => Mode == TestMode.Both ? "both" : "right";
 
     private int curLevel = 5;
     private string answerSide = null;
@@ -27,16 +37,26 @@ public class MetricTest : MonoBehaviour
     private bool hadWrong = false;
     private List<int> scoreList = new List<int>();
     private string lastSide;
+    private Button[] sideButtons;
+    private GameObject bothEyesResult;
+    private TMPro.TMP_Text bothEyesScore;
 
+    // Colour of the label band in the result background art (Group 25.png).
+    private static readonly Color ResultLabelBandColor = new Color32(0xFD, 0xEB, 0xD8, 0xFF);
+
+    [Serializable]
     public class ScoreData
     {
         public List<int> scores = new List<int>();
 
+        public string mode;
+
         public string completionTime;
 
-        public ScoreData(List<int> collectedScores)
+        public ScoreData(List<int> collectedScores, TestMode testMode)
         {
             scores = collectedScores;
+            mode = testMode == TestMode.Both ? "both" : "single";
             completionTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         }
     }
@@ -46,6 +66,9 @@ public class MetricTest : MonoBehaviour
     void Awake()
     {
         directoryPath = Application.persistentDataPath;
+        sideButtons = new Button[sidesRT.Length];
+        for (int i = 0; i < sidesRT.Length; i++)
+            sideButtons[i] = sidesRT[i].GetComponentInParent<Button>();
     }
 
     public void StartMeticTest()
@@ -53,7 +76,23 @@ public class MetricTest : MonoBehaviour
         RandomSide();
         SetAnswerTransform();
         SetLevel(curLevel);
+        // TriggerSide ignores the previous answer's direction, so don't offer it for dwelling either.
+        foreach (var button in sideButtons)
+            button.interactable = button.name != lastSide;
     }
+
+    public void ResetSession()
+    {
+        scoreList.Clear();
+        curLevel = 5;
+        score = 5;
+        correct = 0;
+        wrong = 0;
+        hadWrong = false;
+        answerSide = null;
+        lastSide = null;
+    }
+
     public void SetLevel(int level)
     {
         int sizeValue;
@@ -190,44 +229,113 @@ public class MetricTest : MonoBehaviour
         score = 5;
         curLevel = 5;
         hadWrong = false;
-        if (scoreList.Count == 1) gazeCalibrationManager.SetTrialCountDown("left");
-        else if (scoreList.Count == 2) gazeCalibrationManager.SetTrialCountDown("both");
-        else if (scoreList.Count == 3)
+
+        // Single-eye mode: right eye, then left eye. Both-eyes mode: one round with both eyes.
+        if (Mode == TestMode.Single && scoreList.Count == 1)
         {
-            SaveScoreData();
-            resultPage.SetActive(true);
+            gazeCalibrationManager.SetTrialCountDown("left");
+            return;
+        }
+        ShowFinalResult();
+    }
+
+    private void ShowFinalResult()
+    {
+        SaveScoreData();
+        resultPage.SetActive(true);
+
+        float metric;
+        bool largeEyeGap = false;
+        var robotData = new Dictionary<string, string>();
+        if (Mode == TestMode.Single)
+        {
+            ShowBothEyesLayout(false);
             rightScore.text = GetEyeMetric(scoreList[0]).ToString();
             leftScore.text = GetEyeMetric(scoreList[1]).ToString();
 
-            // 計算三次測試平均分數
-            float avg = (scoreList[0] + scoreList[1] + scoreList[2]) / 3f;
-            int avgScore = Mathf.RoundToInt(avg);
-            avgScore = Mathf.Clamp(avgScore, 1, 11);
-            float metric = GetEyeMetric(avgScore);
-            string vision_both_level = metric <= 0.3f ? "0" : (metric <= 0.5f ? "1" : "2");
-            string vision_gap_flag = Mathf.Abs(scoreList[0] - scoreList[1]) > 2 ? "1" : "0";
-            string timestamp = ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds().ToString();
-            Debug.Log("vision_gap_flag: " + vision_gap_flag);
-            Debug.Log("vision_both_level: " + vision_both_level + " (metric: " + metric.ToString() + ")");
-            Debug.Log("time: " + timestamp);
-            RobotDataSender.SendData(new Dictionary<string, string>
-            {
-                { "vision_gap_flag", vision_gap_flag },
-                { "vision_both_level", vision_both_level },
-                { "time", timestamp },
-            });
-
-            // 取得結果文字並顯示 + TTS
-            string message = GetResultMessage(metric, scoreList[0], scoreList[1]);
-            resultText.text = message;
-            PlayTTS(message);
+            // 右眼與左眼平均分數
+            int avgScore = Mathf.Clamp(Mathf.RoundToInt((scoreList[0] + scoreList[1]) / 2f), 1, 11);
+            metric = GetEyeMetric(avgScore);
+            largeEyeGap = Mathf.Abs(scoreList[0] - scoreList[1]) > 2;
+            robotData["vision_gap_flag"] = largeEyeGap ? "1" : "0";
         }
+        else
+        {
+            ShowBothEyesLayout(true);
+            metric = GetEyeMetric(scoreList[0]);
+            bothEyesScore.text = metric.ToString();
+        }
+
+        robotData["vision_both_level"] = metric <= 0.3f ? "0" : (metric <= 0.5f ? "1" : "2");
+        robotData["time"] = ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds().ToString();
+        foreach (var entry in robotData)
+            Debug.Log(entry.Key + ": " + entry.Value);
+        Debug.Log("metric: " + metric.ToString());
+        RobotDataSender.SendData(robotData);
+
+        // 取得結果文字並顯示 + TTS
+        string message = GetResultMessage(metric, largeEyeGap);
+        resultText.text = message;
+        PlayTTS(message);
     }
 
-    private string GetResultMessage(float metric, int rightEyeScore, int leftEyeScore)
+    private void ShowBothEyesLayout(bool bothEyes)
+    {
+        leftScore.gameObject.SetActive(!bothEyes);
+        rightScore.gameObject.SetActive(!bothEyes);
+        if (bothEyes && bothEyesResult == null)
+            BuildBothEyesResult();
+        if (bothEyesResult != null)
+            bothEyesResult.SetActive(bothEyes);
+    }
+
+    // The result background art has the 左眼/右眼 labels baked in; cover them and show a single both-eyes value.
+    private void BuildBothEyesResult()
+    {
+        var background = (RectTransform)resultPage.transform.Find("BG");
+        float artScale = background.rect.height / 600f;
+
+        bothEyesResult = new GameObject("BothEyesResult", typeof(RectTransform));
+        var group = (RectTransform)bothEyesResult.transform;
+        group.SetParent(background, false);
+        group.anchorMin = Vector2.zero;
+        group.anchorMax = Vector2.one;
+        group.offsetMin = Vector2.zero;
+        group.offsetMax = Vector2.zero;
+
+        foreach (float labelX in new[] { 300f, 728f })
+        {
+            var cover = new GameObject("LabelCover", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+            cover.color = ResultLabelBandColor;
+            cover.raycastTarget = false;
+            PlaceOnArt(cover.rectTransform, group, new Vector2(labelX, 255f), new Vector2(124f, 64f), artScale);
+        }
+
+        var label = Instantiate(resultText, group);
+        label.text = "雙眼視力";
+        label.fontSize = 34;
+        PlaceOnArt(label.rectTransform, group, new Vector2(400f, 342f), new Vector2(240f, 70f), artScale);
+
+        bothEyesScore = Instantiate(rightScore, group);
+        bothEyesScore.gameObject.SetActive(true);
+        PlaceOnArt(bothEyesScore.rectTransform, group, new Vector2(610f, 342f), new Vector2(247f, 70f), artScale);
+    }
+
+    // artPixel is measured in the 1024x600 background image (origin top-left).
+    private static void PlaceOnArt(RectTransform rect, Transform parent, Vector2 artPixel, Vector2 artSize, float artScale)
+    {
+        rect.SetParent(parent, false);
+        rect.anchorMin = new Vector2(0.5f, 0f);
+        rect.anchorMax = new Vector2(0.5f, 0f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = new Vector2(artPixel.x - 512f, (600f - artPixel.y) * artScale);
+        rect.sizeDelta = new Vector2(artSize.x, artSize.y * artScale);
+    }
+
+    private string GetResultMessage(float metric, bool largeEyeGap)
     {
         // 雙眼視力 score 差距 > 2 時優先使用差異提示
-        if (Mathf.Abs(leftEyeScore - rightEyeScore) > 2)
+        if (largeEyeGap)
         {
             string[] diffMsgs = new string[]
             {
@@ -291,7 +399,7 @@ public class MetricTest : MonoBehaviour
 
     public void SaveScoreData()
     {
-        ScoreData dataToSave = new ScoreData(scoreList);
+        ScoreData dataToSave = new ScoreData(scoreList, Mode);
 
         string json = JsonUtility.ToJson(dataToSave, true);
 

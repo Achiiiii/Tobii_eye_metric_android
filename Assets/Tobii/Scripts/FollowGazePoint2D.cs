@@ -25,10 +25,23 @@ public class FollowGazePoint2D : MonoBehaviour
     public bool useFiltering = true;
     private OneEuroFilter _filter = new OneEuroFilter();
 
-    // Adjusted filter parameters for more smoothing
-    private const float BETA = 0.003f;
-    private const float MIN_CUTOFF = 0.015f;
+    // The previous values (MIN_CUTOFF 0.015, BETA 0.003) made the dot trail far behind the gaze.
+    // Starting points for tuning on the device via GazeDebugOverlay.
+    [SerializeField] private float minCutoff = 0.5f;
+    [SerializeField] private float beta = 0.01f;
     private const float D_CUTOFF = 1.0f;
+
+    public float MinCutoff
+    {
+        get => minCutoff;
+        set { minCutoff = value; _filter.MinCutoff = value; }
+    }
+
+    public float Beta
+    {
+        get => beta;
+        set { beta = value; _filter.Beta = value; }
+    }
 
     // Optional: Add clamping and padding
     public bool clampToScreen = true;
@@ -73,9 +86,9 @@ public class FollowGazePoint2D : MonoBehaviour
             return;
         }
 
-        // Set basic default 1� filter values using constants
-        _filter.Beta = BETA;
-        _filter.MinCutoff = MIN_CUTOFF;
+        // Set basic default One Euro filter values
+        _filter.Beta = beta;
+        _filter.MinCutoff = minCutoff;
         _filter.DCutoff = D_CUTOFF;
 
         // Set the anchors to the center
@@ -98,7 +111,9 @@ public class FollowGazePoint2D : MonoBehaviour
 
         if (useFiltering)
         {
+            Vector2 rawScreenPosition = screenPosition;
             screenPosition = _filter.Step(Time.time, screenPosition);
+            GazeLatencyStats.RecordFilterLag(Vector2.Distance(rawScreenPosition, screenPosition));
         }
 
         // Convert screen position to canvas position
