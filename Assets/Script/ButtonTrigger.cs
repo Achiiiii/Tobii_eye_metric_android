@@ -3,11 +3,15 @@ using UnityEngine.UI;
 
 public class ButtonTrigger : MonoBehaviour
 {
+    // After any selection every dwell button pauses briefly, so a gaze left resting on an option
+    // (e.g. when the next question appears) starts a fresh dwell instead of firing immediately.
+    private const float SelectionCooldownSeconds = 1f;
+    private static float s_cooldownUntil;
+
     Button btn;
     RectTransform rect;
     public AudioSource audioSource;
     private bool _isEnter = false;
-    private bool _isArmed = true;
     private float _dwellTime = 0f;
     private float _exitTime = 0f;
     private readonly float _triggerTime = 1.5f;
@@ -57,8 +61,7 @@ public class ButtonTrigger : MonoBehaviour
     {
         if (_isEnter)
         {
-            // After triggering, the gaze has to leave the button before it can trigger again.
-            if (!_isArmed || !btn.IsInteractable())
+            if (Time.time < s_cooldownUntil || !btn.IsInteractable())
             {
                 if (_dwellTime > 0f)
                     ResetDwell();
@@ -87,12 +90,11 @@ public class ButtonTrigger : MonoBehaviour
     private void OnTriggerExit2D(Collider2D other)
     {
         _isEnter = false;
-        _isArmed = true;
     }
 
     private void Trigger()
     {
-        _isArmed = false;
+        s_cooldownUntil = Time.time + SelectionCooldownSeconds;
         _dwellTime = 0f;
         _exitTime = 0f;
         GazeDwellIndicator.Complete();
@@ -115,7 +117,6 @@ public class ButtonTrigger : MonoBehaviour
     void OnDisable()
     {
         _isEnter = false;
-        _isArmed = true;
         ResetDwell();
     }
 }

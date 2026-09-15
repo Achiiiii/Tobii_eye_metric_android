@@ -36,8 +36,6 @@ public class MetricTest : MonoBehaviour
     private int score = 5;
     private bool hadWrong = false;
     private List<int> scoreList = new List<int>();
-    private string lastSide;
-    private Button[] sideButtons;
     private GameObject bothEyesResult;
     private TMPro.TMP_Text bothEyesScore;
 
@@ -68,9 +66,6 @@ public class MetricTest : MonoBehaviour
         directoryPath = Application.persistentDataPath;
         // Neutral selection sound: the test must not signal whether an answer was right.
         audioSource.clip = UiSounds.Tick;
-        sideButtons = new Button[sidesRT.Length];
-        for (int i = 0; i < sidesRT.Length; i++)
-            sideButtons[i] = sidesRT[i].GetComponentInParent<Button>();
     }
 
     public void StartMeticTest()
@@ -78,9 +73,6 @@ public class MetricTest : MonoBehaviour
         RandomSide();
         SetAnswerTransform();
         SetLevel(curLevel);
-        // TriggerSide ignores the previous answer's direction, so don't offer it for dwelling either.
-        foreach (var button in sideButtons)
-            button.interactable = button.name != lastSide;
     }
 
     public void ResetSession()
@@ -92,7 +84,6 @@ public class MetricTest : MonoBehaviour
         wrong = 0;
         hadWrong = false;
         answerSide = null;
-        lastSide = null;
     }
 
     public void SetLevel(int level)
@@ -166,7 +157,6 @@ public class MetricTest : MonoBehaviour
 
     public void RandomSide()
     {
-        lastSide = answerSide;
         List<string> availableSides = new List<string>();
 
         foreach (string side in allSides)
@@ -180,7 +170,6 @@ public class MetricTest : MonoBehaviour
     }
     public void TriggerSide(string side)
     {
-        if (side == lastSide) return;
         audioSource.Play();
         if (side == answerSide) correct++;
         else wrong++;
@@ -245,6 +234,8 @@ public class MetricTest : MonoBehaviour
     {
         SaveScoreData();
         resultPage.SetActive(true);
+        // The result page is drawn over this object; disable it so gaze can no longer select directions.
+        gameObject.SetActive(false);
 
         float metric;
         bool largeEyeGap = false;
