@@ -11,6 +11,7 @@ public static class UiFactory
     private static Sprite _white;
     private static Sprite _circle;
     private static Sprite _ring;
+    private static Sprite _thickRing;
     private static Sprite _roundedRect;
     private static Sprite _check;
     private static Sprite _refreshArrow;
@@ -18,6 +19,7 @@ public static class UiFactory
     public static Sprite White => _white != null ? _white : (_white = MakeSprite(4, (p, size) => -1f));
     public static Sprite Circle => _circle != null ? _circle : (_circle = MakeSprite(128, CircleDistance));
     public static Sprite Ring => _ring != null ? _ring : (_ring = MakeSprite(128, RingDistance));
+    public static Sprite ThickRing => _thickRing != null ? _thickRing : (_thickRing = MakeSprite(128, (p, size) => RingDistance(p, size, 0.18f)));
     public static Sprite RoundedRect => _roundedRect != null ? _roundedRect : (_roundedRect = MakeSprite(64, RoundedRectDistance, new Vector4(24f, 24f, 24f, 24f)));
     public static Sprite Check => _check != null ? _check : (_check = MakeSprite(128, CheckDistance));
     public static Sprite RefreshArrow => _refreshArrow != null ? _refreshArrow : (_refreshArrow = MakeSprite(128, RefreshArrowDistance));
@@ -129,7 +131,12 @@ public static class UiFactory
 
     private static float RingDistance(Vector2 p, float size)
     {
-        float thickness = size * 0.11f;
+        return RingDistance(p, size, 0.11f);
+    }
+
+    private static float RingDistance(Vector2 p, float size, float thicknessFraction)
+    {
+        float thickness = size * thicknessFraction;
         float radius = size / 2f - 1f - thickness / 2f;
         return Mathf.Abs(Vector2.Distance(p, Vector2.one * (size / 2f)) - radius) - thickness / 2f;
     }

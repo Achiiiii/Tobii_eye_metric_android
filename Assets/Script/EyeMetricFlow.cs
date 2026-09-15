@@ -1,10 +1,9 @@
-using System.Collections;
 using TMPro;
 using Tobii;
 using UnityEngine;
 using UnityEngine.UI;
 
-// App-level flow: test mode menu, recalibration, calibration hints, gaze intro and the top-right HUD.
+// App-level flow: test mode menu, recalibration, back-to-home, calibration hints, gaze intro and the top-right HUD.
 public class EyeMetricFlow : MonoBehaviour
 {
     [SerializeField] private QA qa;
@@ -36,8 +35,6 @@ public class EyeMetricFlow : MonoBehaviour
     private RectTransform _stimulusBadge;
     private TextMeshProUGUI _stimulusBadgeText;
     private GameObject _gazeIntro;
-    private TextMeshProUGUI _gazeIntroCountdown;
-    private Coroutine _gazeIntroCountdownRoutine;
 
     private void Awake()
     {
@@ -46,9 +43,11 @@ public class EyeMetricFlow : MonoBehaviour
         var hudCanvas = UiFactory.CreateOverlayCanvas("HudOverlay", 20, transform);
 
         BuildCalibrationHints(_flowCanvas.transform);
+        HeadDistanceGuide.Create(_flowCanvas.transform, detectDistance, canvasTrackBox, font);
         BuildGazeIntro(_flowCanvas.transform);
         BuildModeMenu(_flowCanvas.transform);
         BuildHud(hudCanvas.transform);
+        BuildHomeButton(resultPage.transform);
 
         GazeVisual.Attach(gazePointer);
         GazeDwellIndicator.Attach(gazePointer.transform);
@@ -151,18 +150,11 @@ public class EyeMetricFlow : MonoBehaviour
 
     private void Recalibrate()
     {
-        gazeCalibrationManager.ResetSession();
-        metricTest.ResetSession();
-        metricTest.gameObject.SetActive(false);
-        resultPage.SetActive(false);
-        gazePointer.gameObject.SetActive(false);
-        HideCalibrationHints();
-        HideGazeIntro();
-
+        ResetTestSession();
         mainCanvas.SetActive(true);
         canvasTrackBox.SetActive(true);
+        // OpenLock also plays the head positioning instructions.
         detectDistance.OpenLock();
-        PlayTTS("重新校準，請調整頭部位置");
     }
 
     private void ExitApp()
@@ -172,6 +164,42 @@ public class EyeMetricFlow : MonoBehaviour
 #else
         Application.Quit();
 #endif
+    }
+
+    // ==================== Back to home (result page) ====================
+
+    private void BuildHomeButton(Transform parent)
+    {
+        // Touch only: a gaze-dwell button here could be triggered while the user reads the result.
+        // Bottom-right corner sits outside the result art's panels.
+        var button = UiFactory.CreateButton("HomeButton", parent, UiFactory.RoundedRect, Teal, GoHome);
+        ((Image)button.targetGraphic).type = Image.Type.Sliced;
+        UiFactory.Place((RectTransform)button.transform, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-12f, 12f), new Vector2(150f, 56f));
+        var label = UiFactory.CreateText("Label", button.transform, font, "回到首頁", 26f, Color.white);
+        UiFactory.Stretch(label.rectTransform);
+    }
+
+    private void GoHome()
+    {
+        ResetTestSession();
+        _recalibrateButton.SetActive(false);
+        mainCanvas.SetActive(true);
+        canvasTrackBox.SetActive(false);
+        qa.RestartQuestionnaire();
+        _modeMenu.SetActive(true);
+        PlayTTS("請選擇要進行的測驗");
+    }
+
+    private void ResetTestSession()
+    {
+        Nuwa.stopTTS();
+        gazeCalibrationManager.ResetSession();
+        metricTest.ResetSession();
+        metricTest.gameObject.SetActive(false);
+        resultPage.SetActive(false);
+        gazePointer.gameObject.SetActive(false);
+        HideCalibrationHints();
+        HideGazeIntro();
     }
 
     // ==================== Calibration hints ====================
@@ -253,41 +281,31 @@ public class EyeMetricFlow : MonoBehaviour
         UiFactory.Stretch(panel.rectTransform);
 
         var title = UiFactory.CreateText("Title", panel.transform, font, "這個紅點是您的視線位置", 40f, TextDark);
-        UiFactory.Place(title.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 60f), new Vector2(800f, 60f));
-        var subtitle = UiFactory.CreateText("Subtitle", panel.transform, font, "請試著看看四周，測驗即將開始", 26f, TextMuted);
-        UiFactory.Place(subtitle.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(800f, 44f));
-        _gazeIntroCountdown = UiFactory.CreateText("Countdown", panel.transform, TMP_Settings.defaultFontAsset, "", 72f, Teal);
-        UiFactory.Place(_gazeIntroCountdown.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -90f), new Vector2(200f, 100f));
+        UiFactory.Place(title.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 150f), new Vector2(800f, 60f));
+        var subtitle = UiFactory.CreateText("Subtitle", panel.transform, font, "請試著看看四周，準備好後請注視下方的繼續按鈕", 26f, TextMuted);
+        UiFactory.Place(subtitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 96f), new Vector2(900f, 44f));
+
+        // Centred on purpose: the test's direction buttons cover the screen edges, so the gaze
+        // resting here when the test starts cannot begin dwelling on one of them.
+        var button = UiFactory.CreateButton("ContinueButton", panel.transform, UiFactory.RoundedRect, Teal, gazeCalibrationManager.ConfirmGazeIntro);
+        ((Image)button.targetGraphic).type = Image.Type.Sliced;
+        UiFactory.Place((RectTransform)button.transform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -40f), new Vector2(220f, 90f));
+        var label = UiFactory.CreateText("Label", button.transform, font, "繼續", 40f, Color.white);
+        UiFactory.Stretch(label.rectTransform);
+        button.gameObject.AddComponent<ButtonTrigger>();
 
         _gazeIntro = panel.gameObject;
         _gazeIntro.SetActive(false);
     }
 
-    private void OnGazeIntroStarted(float seconds)
+    private void OnGazeIntroStarted()
     {
         _gazeIntro.SetActive(true);
-        PlayTTS("這個紅點是您的視線位置，請試著看看四周");
-        if (_gazeIntroCountdownRoutine != null)
-            StopCoroutine(_gazeIntroCountdownRoutine);
-        _gazeIntroCountdownRoutine = StartCoroutine(CountDown(seconds));
-    }
-
-    private IEnumerator CountDown(float seconds)
-    {
-        for (float remaining = seconds; remaining > 0f; remaining -= Time.deltaTime)
-        {
-            _gazeIntroCountdown.text = Mathf.CeilToInt(remaining).ToString();
-            yield return null;
-        }
+        PlayTTS("這個紅點是您的視線位置，請試著看看四周，準備好後，請注視下方的繼續按鈕");
     }
 
     private void HideGazeIntro()
     {
-        if (_gazeIntroCountdownRoutine != null)
-        {
-            StopCoroutine(_gazeIntroCountdownRoutine);
-            _gazeIntroCountdownRoutine = null;
-        }
         _gazeIntro.SetActive(false);
     }
 

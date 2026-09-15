@@ -23,24 +23,26 @@ public class FollowGazePoint2D : MonoBehaviour
     private RectTransform _canvasRect;
 
     public bool useFiltering = true;
-    private OneEuroFilter _filter = new OneEuroFilter();
 
-    // The previous values (MIN_CUTOFF 0.015, BETA 0.003) made the dot trail far behind the gaze.
+    // Webcam gaze is noisy: hold the dot steady within a fixation and move only on real saccades.
     // Starting points for tuning on the device via GazeDebugOverlay.
-    [SerializeField] private float minCutoff = 0.5f;
-    [SerializeField] private float beta = 0.01f;
-    private const float D_CUTOFF = 1.0f;
+    [SerializeField] private float fixationRadiusScreenFraction = 0.08f;
+    [SerializeField] private float fixationWindowSeconds = 0.5f;
+    [SerializeField] private float displaySmoothingSeconds = 0.05f;
+    private readonly FixationSmoother _smoother = new FixationSmoother();
+    private Vector2 _displayedScreenPosition;
+    private bool _hasDisplayedPosition = false;
 
-    public float MinCutoff
+    public float FixationRadiusScreenFraction
     {
-        get => minCutoff;
-        set { minCutoff = value; _filter.MinCutoff = value; }
+        get => fixationRadiusScreenFraction;
+        set => fixationRadiusScreenFraction = Mathf.Clamp(value, 0.005f, 0.5f);
     }
 
-    public float Beta
+    public float FixationWindowSeconds
     {
-        get => beta;
-        set { beta = value; _filter.Beta = value; }
+        get => fixationWindowSeconds;
+        set => fixationWindowSeconds = Mathf.Clamp(value, 0.05f, 2f);
     }
 
     // Optional: Add clamping and padding
@@ -86,11 +88,6 @@ public class FollowGazePoint2D : MonoBehaviour
             return;
         }
 
-        // Set basic default One Euro filter values
-        _filter.Beta = beta;
-        _filter.MinCutoff = minCutoff;
-        _filter.DCutoff = D_CUTOFF;
-
         // Set the anchors to the center
         _rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
         _rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
@@ -99,22 +96,22 @@ public class FollowGazePoint2D : MonoBehaviour
 
     void LateUpdate()
     {
-        // Get screen dimensions
-        float screenWidth = Screen.width;
-        float screenHeight = Screen.height;
+        Vector2 rawScreenPosition = ToScreen(_normalisedGazepoint);
+        Vector2 target = useFiltering && _smoother.HasOutput ? _smoother.Output : rawScreenPosition;
 
-        // Convert normalized coordinates to screen space and invert Y
-        Vector2 screenPosition = new Vector2(
-            _normalisedGazepoint.x * screenWidth,
-            (1 - _normalisedGazepoint.y) * screenHeight
-        );
-
-        if (useFiltering)
+        if (!_hasDisplayedPosition)
         {
-            Vector2 rawScreenPosition = screenPosition;
-            screenPosition = _filter.Step(Time.time, screenPosition);
-            GazeLatencyStats.RecordFilterLag(Vector2.Distance(rawScreenPosition, screenPosition));
+            _displayedScreenPosition = target;
+            _hasDisplayedPosition = true;
         }
+        else
+        {
+            // Short easing so jumps between fixations look like movement rather than teleporting.
+            _displayedScreenPosition = Vector2.Lerp(_displayedScreenPosition, target, 1f - Mathf.Exp(-Time.deltaTime / displaySmoothingSeconds));
+        }
+
+        Vector2 screenPosition = _displayedScreenPosition;
+        GazeLatencyStats.RecordFilterLag(Vector2.Distance(rawScreenPosition, screenPosition));
 
         // Convert screen position to canvas position
         Vector2 canvasPosition;
@@ -168,9 +165,26 @@ public class FollowGazePoint2D : MonoBehaviour
         }
     }
 
+    void OnDisable()
+    {
+        // The pointer is hidden between sessions; start from fresh samples when it shows again.
+        _smoother.Reset();
+        _hasDisplayedPosition = false;
+    }
+
     public void OnGazePoint(Vector2 normalizedGazePoint)
     {
         _normalisedGazepoint = normalizedGazePoint;
+        _smoother.FixationRadius = fixationRadiusScreenFraction * Screen.width;
+        _smoother.FixationWindowSeconds = fixationWindowSeconds;
+        _smoother.AddSample(Time.time, ToScreen(normalizedGazePoint));
+        GazeLatencyStats.RecordFixationSpread(_smoother.Spread);
+    }
+
+    private static Vector2 ToScreen(Vector2 normalizedGazePoint)
+    {
+        // Normalized gaze has its origin at the top-left; screen space at the bottom-left.
+        return new Vector2(normalizedGazePoint.x * Screen.width, (1 - normalizedGazePoint.y) * Screen.height);
     }
 
     public void OnToggleFiltering(bool value)

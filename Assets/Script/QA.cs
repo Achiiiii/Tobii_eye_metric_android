@@ -292,6 +292,17 @@ public class QA : MonoBehaviour
     }
 
     /// <summary>
+    /// 清空答案並回到第 1 題（給下一位受測者）
+    /// </summary>
+    public void RestartQuestionnaire()
+    {
+        ResetAnswers();
+        for (int i = 0; i < questions.Length; i++)
+            questions[i].SetActive(i == 0);
+        questionPage.SetActive(true);
+    }
+
+    /// <summary>
     /// 重置所有答案狀態
     /// </summary>
     public void ResetAnswers()

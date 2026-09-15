@@ -24,9 +24,9 @@ public class GazeVisual : MonoBehaviour
         originalImage.raycastTarget = false;
 
         var outline = UiFactory.CreateImage("GazeDotOutline", pointerRect, UiFactory.Circle, Color.white);
-        UiFactory.Place(outline.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(34f, 34f));
+        UiFactory.Place(outline.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(48f, 48f));
         var dot = UiFactory.CreateImage("GazeDot", pointerRect, UiFactory.Circle, DotColor);
-        UiFactory.Place(dot.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(26f, 26f));
+        UiFactory.Place(dot.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(38f, 38f));
 
         var container = UiFactory.CreateRect("GazeTrail", pointerRect.parent);
         UiFactory.Place(container, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.zero);
@@ -40,7 +40,7 @@ public class GazeVisual : MonoBehaviour
             float t = (i + 1f) / TrailLength;
             var color = new Color(DotColor.r, DotColor.g, DotColor.b, Mathf.Lerp(0.45f, 0.05f, t));
             var image = UiFactory.CreateImage("Trail" + i, container, UiFactory.Circle, color);
-            UiFactory.Place(image.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * Mathf.Lerp(20f, 6f, t));
+            UiFactory.Place(image.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * Mathf.Lerp(30f, 9f, t));
             image.gameObject.SetActive(false);
             visual._trail[i] = image;
         }

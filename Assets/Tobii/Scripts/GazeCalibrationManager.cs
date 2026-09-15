@@ -165,7 +165,6 @@ namespace Tobii
         [SerializeField] private MetricTest metricTest;
         [SerializeField] private Sprite[] sampleSprites;
         [SerializeField] private Image sampleImage;
-        [SerializeField] private float gazeIntroSeconds = 3f;
 
         public event Action CalibrationStarted;
         /// <summary>
@@ -175,7 +174,7 @@ namespace Tobii
         public event Action StimulusCleared;
         public event Action CalibrationEnded;
         public event Action CalibrationFailed;
-        public event Action<float> GazeIntroStarted;
+        public event Action GazeIntroStarted;
         public event Action GazeIntroEnded;
 
         private float _countDownTime = 5;
@@ -186,6 +185,7 @@ namespace Tobii
         private bool _deviceCalibrationActive = false;
         private bool _stopPending = false;
         private bool _gazeIntroShown = false;
+        private bool _gazeIntroConfirmed = false;
 
         private void Awake()
         {
@@ -220,6 +220,14 @@ namespace Tobii
         public void BeginFirstTrial()
         {
             SetTrialCountDown(metricTest.FirstSide, true);
+        }
+
+        /// <summary>
+        /// Called when the user selects "continue" on the gaze intro screen.
+        /// </summary>
+        public void ConfirmGazeIntro()
+        {
+            _gazeIntroConfirmed = true;
         }
 
         public void SetTrialCountDown(string side, bool headPositionConfirmed = false)
@@ -381,8 +389,9 @@ namespace Tobii
             if (!_gazeIntroShown)
             {
                 _gazeIntroShown = true;
-                GazeIntroStarted?.Invoke(gazeIntroSeconds);
-                yield return new WaitForSeconds(gazeIntroSeconds);
+                _gazeIntroConfirmed = false;
+                GazeIntroStarted?.Invoke();
+                yield return new WaitUntil(() => _gazeIntroConfirmed);
                 GazeIntroEnded?.Invoke();
             }
 

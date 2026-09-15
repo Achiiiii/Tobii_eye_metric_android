@@ -12,6 +12,8 @@ public static class GazeLatencyStats
         public long DispatchTicks;
         public long FilterLagCount;
         public double FilterLagSum;
+        public long SpreadCount;
+        public double SpreadSum;
     }
 
     private static long _frames;
@@ -20,6 +22,8 @@ public static class GazeLatencyStats
     private static long _dispatchTicks;
     private static long _filterLagCount;
     private static double _filterLagSum;
+    private static long _spreadCount;
+    private static double _spreadSum;
 
     public static long Now()
     {
@@ -45,6 +49,13 @@ public static class GazeLatencyStats
         _filterLagSum += pixels;
     }
 
+    // Main thread only.
+    public static void RecordFixationSpread(float pixels)
+    {
+        _spreadCount++;
+        _spreadSum += pixels;
+    }
+
     public static Snapshot Take()
     {
         return new Snapshot
@@ -54,7 +65,9 @@ public static class GazeLatencyStats
             GazeSamples = Interlocked.Read(ref _gazeSamples),
             DispatchTicks = Interlocked.Read(ref _dispatchTicks),
             FilterLagCount = _filterLagCount,
-            FilterLagSum = _filterLagSum
+            FilterLagSum = _filterLagSum,
+            SpreadCount = _spreadCount,
+            SpreadSum = _spreadSum
         };
     }
 

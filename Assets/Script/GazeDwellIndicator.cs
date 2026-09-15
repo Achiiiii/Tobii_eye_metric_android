@@ -1,9 +1,12 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-// Progress ring that rides next to the gaze dot while a ButtonTrigger is being dwelled on.
+// Progress ring around the gaze dot while a ButtonTrigger is being dwelled on.
 public class GazeDwellIndicator : MonoBehaviour
 {
+    // Gaze canvas reference width is 1920; on the robot's 1024-wide screen 150 units is about 80 px.
+    private const float RingSize = 150f;
+    private const float BadgeSize = 64f;
     private const float PopSeconds = 0.22f;
     private const float HoldSeconds = 0.45f;
     private const float FadeSeconds = 0.25f;
@@ -22,7 +25,7 @@ public class GazeDwellIndicator : MonoBehaviour
     public static void Attach(Transform pointer)
     {
         var root = UiFactory.CreateRect("GazeDwellIndicator", pointer);
-        UiFactory.Place(root, UiFactory.Center, UiFactory.Center, new Vector2(46f, 46f), new Vector2(48f, 48f));
+        UiFactory.Place(root, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * RingSize);
         var indicator = root.gameObject.AddComponent<GazeDwellIndicator>();
 
         var visual = UiFactory.Stretch(UiFactory.CreateRect("Visual", root));
@@ -30,22 +33,23 @@ public class GazeDwellIndicator : MonoBehaviour
         indicator._group.blocksRaycasts = false;
         indicator._group.interactable = false;
 
-        var backing = UiFactory.CreateImage("Backing", visual, UiFactory.Circle, new Color(1f, 1f, 1f, 0.9f));
-        UiFactory.Stretch(backing.rectTransform);
-        var track = UiFactory.CreateImage("Track", visual, UiFactory.Ring, new Color(0f, 0f, 0f, 0.15f));
-        UiFactory.Place(track.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(40f, 40f));
+        // Dark halo plus a light track keep the ring readable on white and on coloured backgrounds.
+        var halo = UiFactory.CreateImage("Halo", visual, UiFactory.ThickRing, new Color(0f, 0f, 0f, 0.35f));
+        UiFactory.Place(halo.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * (RingSize + 8f));
+        var track = UiFactory.CreateImage("Track", visual, UiFactory.ThickRing, new Color(1f, 1f, 1f, 0.75f));
+        UiFactory.Place(track.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * RingSize);
 
-        indicator._fill = UiFactory.CreateImage("Fill", visual, UiFactory.Ring, ProgressColor);
-        UiFactory.Place(indicator._fill.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(40f, 40f));
+        indicator._fill = UiFactory.CreateImage("Fill", visual, UiFactory.ThickRing, ProgressColor);
+        UiFactory.Place(indicator._fill.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * RingSize);
         indicator._fill.type = Image.Type.Filled;
         indicator._fill.fillMethod = Image.FillMethod.Radial360;
         indicator._fill.fillOrigin = (int)Image.Origin360.Top;
         indicator._fill.fillClockwise = true;
 
         var badge = UiFactory.CreateImage("CompleteBadge", visual, UiFactory.Circle, CompleteColor);
-        UiFactory.Place(badge.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(40f, 40f));
+        UiFactory.Place(badge.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * BadgeSize);
         var check = UiFactory.CreateImage("Check", badge.transform, UiFactory.Check, Color.white);
-        UiFactory.Place(check.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(30f, 30f));
+        UiFactory.Place(check.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * (BadgeSize * 0.72f));
         indicator._badge = badge.rectTransform;
 
         indicator.Hide();
