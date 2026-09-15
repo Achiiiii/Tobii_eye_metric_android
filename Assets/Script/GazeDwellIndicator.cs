@@ -2,22 +2,21 @@ using UnityEngine;
 using UnityEngine.UI;
 
 // Progress ring around the gaze dot while a ButtonTrigger is being dwelled on.
+// Completion feedback is deliberately neutral ("selected"), never "correct".
 public class GazeDwellIndicator : MonoBehaviour
 {
     // Gaze canvas reference width is 1920; on the robot's 1024-wide screen 150 units is about 80 px.
     private const float RingSize = 150f;
-    private const float BadgeSize = 64f;
-    private const float PopSeconds = 0.22f;
-    private const float HoldSeconds = 0.45f;
+    private const float PopSeconds = 0.2f;
+    private const float HoldSeconds = 0.3f;
     private const float FadeSeconds = 0.25f;
     private static readonly Color ProgressColor = new Color32(0x1E, 0x88, 0xE5, 0xFF);
-    private static readonly Color CompleteColor = new Color32(0x43, 0xA0, 0x47, 0xFF);
+    private static readonly Color SelectedColor = new Color32(0x64, 0xB5, 0xF6, 0xFF);
 
     private static GazeDwellIndicator _instance;
 
     private CanvasGroup _group;
     private Image _fill;
-    private RectTransform _badge;
     private Object _owner;
     private bool _completing;
     private float _completeElapsed;
@@ -45,12 +44,6 @@ public class GazeDwellIndicator : MonoBehaviour
         indicator._fill.fillMethod = Image.FillMethod.Radial360;
         indicator._fill.fillOrigin = (int)Image.Origin360.Top;
         indicator._fill.fillClockwise = true;
-
-        var badge = UiFactory.CreateImage("CompleteBadge", visual, UiFactory.Circle, CompleteColor);
-        UiFactory.Place(badge.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * BadgeSize);
-        var check = UiFactory.CreateImage("Check", badge.transform, UiFactory.Check, Color.white);
-        UiFactory.Place(check.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * (BadgeSize * 0.72f));
-        indicator._badge = badge.rectTransform;
 
         indicator.Hide();
         _instance = indicator;
@@ -82,9 +75,9 @@ public class GazeDwellIndicator : MonoBehaviour
         _owner = owner;
         _group.gameObject.SetActive(true);
         _group.alpha = 1f;
+        _group.transform.localScale = Vector3.one;
         _fill.color = ProgressColor;
         _fill.fillAmount = Mathf.Clamp01(progress);
-        _badge.gameObject.SetActive(false);
     }
 
     private void PlayComplete()
@@ -94,10 +87,8 @@ public class GazeDwellIndicator : MonoBehaviour
         _completeElapsed = 0f;
         _group.gameObject.SetActive(true);
         _group.alpha = 1f;
-        _fill.color = CompleteColor;
+        _fill.color = SelectedColor;
         _fill.fillAmount = 1f;
-        _badge.gameObject.SetActive(true);
-        _badge.localScale = Vector3.one * 0.6f;
     }
 
     private void Update()
@@ -107,10 +98,10 @@ public class GazeDwellIndicator : MonoBehaviour
 
         _completeElapsed += Time.unscaledDeltaTime;
         float t = _completeElapsed;
-        float scale = t < 0.12f
-            ? Mathf.Lerp(0.6f, 1.15f, t / 0.12f)
-            : Mathf.Lerp(1.15f, 1f, Mathf.Clamp01((t - 0.12f) / (PopSeconds - 0.12f)));
-        _badge.localScale = Vector3.one * scale;
+        float scale = t < PopSeconds * 0.5f
+            ? Mathf.Lerp(1f, 1.12f, t / (PopSeconds * 0.5f))
+            : Mathf.Lerp(1.12f, 1f, Mathf.Clamp01((t - PopSeconds * 0.5f) / (PopSeconds * 0.5f)));
+        _group.transform.localScale = Vector3.one * scale;
 
         if (t > HoldSeconds)
             _group.alpha = 1f - Mathf.Clamp01((t - HoldSeconds) / FadeSeconds);
@@ -122,6 +113,7 @@ public class GazeDwellIndicator : MonoBehaviour
     {
         _owner = null;
         _completing = false;
+        _group.transform.localScale = Vector3.one;
         _group.gameObject.SetActive(false);
     }
 

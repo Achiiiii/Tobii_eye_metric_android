@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
@@ -13,6 +14,7 @@ public static class UiFactory
     private static Sprite _ring;
     private static Sprite _thickRing;
     private static Sprite _roundedRect;
+    private static Sprite _roundedFrame;
     private static Sprite _check;
     private static Sprite _refreshArrow;
 
@@ -21,6 +23,7 @@ public static class UiFactory
     public static Sprite Ring => _ring != null ? _ring : (_ring = MakeSprite(128, RingDistance));
     public static Sprite ThickRing => _thickRing != null ? _thickRing : (_thickRing = MakeSprite(128, (p, size) => RingDistance(p, size, 0.18f)));
     public static Sprite RoundedRect => _roundedRect != null ? _roundedRect : (_roundedRect = MakeSprite(64, RoundedRectDistance, new Vector4(24f, 24f, 24f, 24f)));
+    public static Sprite RoundedFrame => _roundedFrame != null ? _roundedFrame : (_roundedFrame = MakeSprite(64, RoundedFrameDistance, new Vector4(24f, 24f, 24f, 24f)));
     public static Sprite Check => _check != null ? _check : (_check = MakeSprite(128, CheckDistance));
     public static Sprite RefreshArrow => _refreshArrow != null ? _refreshArrow : (_refreshArrow = MakeSprite(128, RefreshArrowDistance));
 
@@ -92,6 +95,37 @@ public static class UiFactory
         return label;
     }
 
+    /// <summary>
+    /// Wraps characters missing from a static font atlas (e.g. ASCII punctuation in the Chinese atlas)
+    /// in a font tag for TMP's default font, so they render instead of showing as empty boxes.
+    /// </summary>
+    public static string WithLatinFallback(string text, TMP_FontAsset font)
+    {
+        var fallback = TMP_Settings.defaultFontAsset;
+        if (string.IsNullOrEmpty(text) || fallback == null || fallback == font)
+            return text;
+
+        var builder = new StringBuilder(text.Length + 32);
+        bool inFallback = false;
+        foreach (char original in text)
+        {
+            char c = original;
+            // Full-width punctuation missing from both atlases (e.g. U+FF0F) is shown as its ASCII form.
+            if (c >= (char)0xFF01 && c <= (char)0xFF5E && !font.HasCharacter(c) && !fallback.HasCharacter(c))
+                c = (char)(c - 0xFEE0);
+            bool useFallback = !char.IsWhiteSpace(c) && !font.HasCharacter(c) && fallback.HasCharacter(c);
+            if (useFallback != inFallback)
+            {
+                builder.Append(useFallback ? "<font=\"" + fallback.name + "\">" : "</font>");
+                inFallback = useFallback;
+            }
+            builder.Append(c);
+        }
+        if (inFallback)
+            builder.Append("</font>");
+        return builder.ToString();
+    }
+
     public static Button CreateButton(string name, Transform parent, Sprite sprite, Color color, UnityAction onClick)
     {
         var image = CreateImage(name, parent, sprite, color, true);
@@ -147,6 +181,12 @@ public static class UiFactory
         float half = size / 2f;
         Vector2 q = new Vector2(Mathf.Abs(p.x - half), Mathf.Abs(p.y - half)) - Vector2.one * (half - 1f - radius);
         return new Vector2(Mathf.Max(q.x, 0f), Mathf.Max(q.y, 0f)).magnitude + Mathf.Min(Mathf.Max(q.x, q.y), 0f) - radius;
+    }
+
+    private static float RoundedFrameDistance(Vector2 p, float size)
+    {
+        const float thickness = 8f;
+        return Mathf.Abs(RoundedRectDistance(p, size) + thickness / 2f) - thickness / 2f;
     }
 
     private static float CheckDistance(Vector2 p, float size)

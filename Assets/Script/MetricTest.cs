@@ -66,6 +66,8 @@ public class MetricTest : MonoBehaviour
     void Awake()
     {
         directoryPath = Application.persistentDataPath;
+        // Neutral selection sound: the test must not signal whether an answer was right.
+        audioSource.clip = UiSounds.Tick;
         sideButtons = new Button[sidesRT.Length];
         for (int i = 0; i < sidesRT.Length; i++)
             sideButtons[i] = sidesRT[i].GetComponentInParent<Button>();

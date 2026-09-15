@@ -47,6 +47,39 @@ public class QA : MonoBehaviour
         "選項A", "選項B", "選項C", "選項D"
     };
 
+    // ========== 畫面顯示文字（只影響畫面，存檔內容不變）==========
+    [Header("畫面顯示：題目（依序 Q1~Q7）")]
+    [TextArea]
+    public string[] displayQuestionTexts = new string[7]
+    {
+        "請問您是否為糖尿病患者呢？",
+        "過去一年是否\"未\"做過眼睛檢查？",
+        "是否有視力問題，\n例如看遠看近或閱讀有困難？",
+        "是否有眼科病史，請勾選:",
+        "過去是否有做過眼科疾病的手術？",
+        "眼科病手術史，請勾選:",
+        "您是否戴著矯正器具進行測試？"
+    };
+
+    [Header("畫面顯示：是非題按鈕（依序 Q1~Q7，勾選題留空）")]
+    public string[] displayYesLabels = new string[7] { "是的", "是的", "有", "", "是的", "", "" };
+    public string[] displayNoLabels = new string[7] { "不是", "不是", "無", "", "不是", "", "" };
+
+    [Header("畫面顯示：勾選題")]
+    public string displayNextLabel = "繼續";
+    public string[] displayQ4Options = new string[7]
+    {
+        "無", "近視／遠視／散光", "弱視", "青光眼", "白內障", "黃斑部/視網膜疾病", "其他"
+    };
+    public string[] displayQ6Options = new string[5]
+    {
+        "白內障手術", "屈光手術(近視雷射等)", "青光眼手術", "黃斑部/視網膜手術", "其他"
+    };
+    public string[] displayQ7Options = new string[4]
+    {
+        "是，眼鏡", "是，隱形眼鏡", "否", "角膜塑型片（昨夜佩戴）"
+    };
+
     // ========== JSON 資料結構 ==========
     [Serializable]
     public class QuestionEntry

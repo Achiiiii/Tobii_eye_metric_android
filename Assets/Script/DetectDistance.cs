@@ -32,6 +32,7 @@ public class DetectDistance : MonoBehaviour
     public AudioClip farerAudio;
     public GameObject pointer;
     public GazeCalibrationManager gazeCalibrationManager;
+    public event System.Action HeadPositionConfirmed;
 
     public bool IsChecking => _locker;
     public float DistanceMeters { get; private set; }
@@ -87,7 +88,7 @@ public class DetectDistance : MonoBehaviour
             _locker = false;
 
             canvasTrackBox.SetActive(false);
-            gazeCalibrationManager.BeginFirstTrial();
+            HeadPositionConfirmed?.Invoke();
             Debug.Log("validate");
         }
     }
@@ -99,6 +100,12 @@ public class DetectDistance : MonoBehaviour
         _locker = true;
         PlayTTS("請將頭部距離機器人大約四十公分，臉部與螢幕保持平行。調整到畫面變成綠色後，請保持不動");
         _nextSpeechTime = Time.time + IntroSpeechSeconds;
+    }
+
+    public void CloseLock()
+    {
+        _locker = false;
+        _validateTime = 0;
     }
 
     private void UpdateZone(DistanceZone rawZone)

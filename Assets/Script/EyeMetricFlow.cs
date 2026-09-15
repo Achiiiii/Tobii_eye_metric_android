@@ -1,9 +1,11 @@
+using System.Collections;
 using TMPro;
 using Tobii;
 using UnityEngine;
 using UnityEngine.UI;
 
-// App-level flow: test mode menu, recalibration, back-to-home, calibration hints, gaze intro and the top-right HUD.
+// App-level flow: test mode menu, recalibration, back-to-home, stage transitions, calibration hints,
+// gaze intro, the top-right HUD and the robot's system alert bar.
 public class EyeMetricFlow : MonoBehaviour
 {
     [SerializeField] private QA qa;
@@ -17,34 +19,58 @@ public class EyeMetricFlow : MonoBehaviour
     [SerializeField] private Button exitButton;
     [SerializeField] private TMP_FontAsset font;
 
+    private const float HeadConfirmedSeconds = 1.8f;
+    private const float CountdownFadeSeconds = 0.25f;
+
     // The Chinese SDF atlas has no digits, so counts inside Chinese sentences use Chinese numerals.
     private static readonly string[] ChineseNumerals = { "", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十" };
     private static readonly Color TextDark = new Color32(0x1F, 0x3A, 0x5F, 0xFF);
     private static readonly Color TextMuted = new Color32(0x45, 0x5A, 0x64, 0xFF);
     private static readonly Color Teal = new Color32(0x12, 0xA1, 0x93, 0xFF);
     private static readonly Color Blue = new Color32(0x1E, 0x88, 0xE5, 0xFF);
+    private static readonly Color SuccessGreen = new Color32(0x2E, 0x9E, 0x5A, 0xFF);
+    private static readonly Color CancelGrey = new Color32(0x90, 0xA4, 0xAE, 0xFF);
     private static readonly Color IconBackground = new Color32(0xED, 0xED, 0xED, 0xEB);
     private static readonly Color IconGlyph = new Color32(0x8A, 0x8A, 0x8A, 0xFF);
 
     private Canvas _flowCanvas;
     private GameObject _modeMenu;
     private GameObject _recalibrateButton;
+    private GameObject _exitDialog;
     private GazeDebugOverlay _debugOverlay;
     private GameObject _banner;
     private TextMeshProUGUI _bannerText;
     private RectTransform _stimulusBadge;
     private TextMeshProUGUI _stimulusBadgeText;
     private GameObject _gazeIntro;
+    private GameObject _headConfirmed;
+    private RectTransform _headConfirmedBadge;
+    private CanvasGroup _testCountdown;
+    private TextMeshProUGUI _testCountdownTitle;
+    private TextMeshProUGUI _testCountdownNumber;
+    private AudioSource _sfx;
+    private AudioClip _successClip;
+    private Coroutine _headConfirmedRoutine;
+    private Coroutine _testCountdownRoutine;
+    private volatile bool _robotServiceStarted;
 
     private void Awake()
     {
+        _sfx = gameObject.AddComponent<AudioSource>();
+        _sfx.playOnAwake = false;
+        // MetricTest swaps its selection sound for a neutral tick; keep the original chime for successes.
+        _successClip = metricTest.audioSource.clip;
+
         // Flow overlay sits above the main Canvas (0) but below the gaze dot canvas (10); the HUD sits above everything.
         _flowCanvas = UiFactory.CreateOverlayCanvas("FlowOverlay", 5, transform);
         var hudCanvas = UiFactory.CreateOverlayCanvas("HudOverlay", 20, transform);
 
+        QuestionnaireText.Apply(qa, font);
         BuildCalibrationHints(_flowCanvas.transform);
         HeadDistanceGuide.Create(_flowCanvas.transform, detectDistance, canvasTrackBox, font);
+        BuildHeadConfirmed(_flowCanvas.transform);
         BuildGazeIntro(_flowCanvas.transform);
+        BuildTestCountdown(_flowCanvas.transform);
         BuildModeMenu(_flowCanvas.transform);
         BuildHud(hudCanvas.transform);
         BuildHomeButton(resultPage.transform);
@@ -56,6 +82,7 @@ public class EyeMetricFlow : MonoBehaviour
     private void OnEnable()
     {
         qa.Completed += OnQuestionnaireCompleted;
+        detectDistance.HeadPositionConfirmed += OnHeadPositionConfirmed;
         gazeCalibrationManager.CalibrationStarted += OnCalibrationStarted;
         gazeCalibrationManager.StimulusShown += OnStimulusShown;
         gazeCalibrationManager.StimulusCleared += OnStimulusCleared;
@@ -63,11 +90,15 @@ public class EyeMetricFlow : MonoBehaviour
         gazeCalibrationManager.CalibrationFailed += OnCalibrationFailed;
         gazeCalibrationManager.GazeIntroStarted += OnGazeIntroStarted;
         gazeCalibrationManager.GazeIntroEnded += HideGazeIntro;
+        gazeCalibrationManager.TestCountdownStarted += OnTestCountdownStarted;
+        gazeCalibrationManager.TestCountdownEnded += OnTestCountdownEnded;
+        Nuwa.onWikiServiceStart += OnRobotServiceStart;
     }
 
     private void OnDisable()
     {
         qa.Completed -= OnQuestionnaireCompleted;
+        detectDistance.HeadPositionConfirmed -= OnHeadPositionConfirmed;
         gazeCalibrationManager.CalibrationStarted -= OnCalibrationStarted;
         gazeCalibrationManager.StimulusShown -= OnStimulusShown;
         gazeCalibrationManager.StimulusCleared -= OnStimulusCleared;
@@ -75,11 +106,42 @@ public class EyeMetricFlow : MonoBehaviour
         gazeCalibrationManager.CalibrationFailed -= OnCalibrationFailed;
         gazeCalibrationManager.GazeIntroStarted -= OnGazeIntroStarted;
         gazeCalibrationManager.GazeIntroEnded -= HideGazeIntro;
+        gazeCalibrationManager.TestCountdownStarted -= OnTestCountdownStarted;
+        gazeCalibrationManager.TestCountdownEnded -= OnTestCountdownEnded;
+        Nuwa.onWikiServiceStart -= OnRobotServiceStart;
     }
 
     private void Start()
     {
         PlayTTS("請選擇要進行的測驗");
+        // Speech is voice-only in this app; the robot's own alert bar would cover the test UI.
+        NuwaSystemUi.SetSystemAlertsEnabled(false);
+    }
+
+    private void Update()
+    {
+        // The robot service callback arrives on a Java thread; apply the setting on the main thread.
+        if (_robotServiceStarted)
+        {
+            _robotServiceStarted = false;
+            NuwaSystemUi.SetSystemAlertsEnabled(false);
+        }
+    }
+
+    private void OnRobotServiceStart()
+    {
+        _robotServiceStarted = true;
+    }
+
+    private void OnApplicationPause(bool paused)
+    {
+        // Give the alert bar back to other robot apps while this one is in the background.
+        NuwaSystemUi.SetSystemAlertsEnabled(paused);
+    }
+
+    private void OnApplicationQuit()
+    {
+        NuwaSystemUi.SetSystemAlertsEnabled(true);
     }
 
     // ==================== Test mode menu ====================
@@ -125,7 +187,7 @@ public class EyeMetricFlow : MonoBehaviour
     {
         // Move the existing exit button onto the HUD so full-screen overlays never cover it.
         exitButton.transform.SetParent(parent, false);
-        exitButton.onClick.AddListener(ExitApp);
+        exitButton.onClick.AddListener(OnExitPressed);
 
         _debugOverlay = GazeDebugOverlay.Create(parent, gazePointer);
         NetworkSignalIcon.Create(parent, new Vector2(-66f, -20f), 36f, IconBackground, ToggleDebugOverlay);
@@ -136,6 +198,8 @@ public class EyeMetricFlow : MonoBehaviour
         UiFactory.Place(glyph.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(28f, 28f));
         _recalibrateButton = recalibrate.gameObject;
         _recalibrateButton.SetActive(false);
+
+        BuildExitDialog(parent);
     }
 
     private void ToggleDebugOverlay()
@@ -157,8 +221,47 @@ public class EyeMetricFlow : MonoBehaviour
         detectDistance.OpenLock();
     }
 
+    private void OnExitPressed()
+    {
+        if (_modeMenu.activeSelf)
+            ExitApp();
+        else
+            _exitDialog.SetActive(true);
+    }
+
+    private void BuildExitDialog(Transform parent)
+    {
+        var dim = UiFactory.CreateImage("ExitDialog", parent, null, new Color(0f, 0f, 0f, 0.55f), true);
+        UiFactory.Stretch(dim.rectTransform);
+
+        var card = UiFactory.CreateImage("Card", dim.transform, UiFactory.RoundedRect, Color.white);
+        card.type = Image.Type.Sliced;
+        UiFactory.Place(card.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(480f, 250f));
+
+        var title = UiFactory.CreateText("Title", card.transform, font, "確定要回到首頁嗎？", 32f, TextDark);
+        UiFactory.Place(title.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 55f), new Vector2(440f, 50f));
+        var subtitle = UiFactory.CreateText("Subtitle", card.transform, font, "測驗進度將不會保留", 22f, TextMuted);
+        UiFactory.Place(subtitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 10f), new Vector2(440f, 36f));
+
+        CreateDialogButton(card.transform, new Vector2(-95f, -62f), "取消", CancelGrey, () => _exitDialog.SetActive(false));
+        CreateDialogButton(card.transform, new Vector2(95f, -62f), "確定", Teal, GoHome);
+
+        _exitDialog = dim.gameObject;
+        _exitDialog.SetActive(false);
+    }
+
+    private void CreateDialogButton(Transform parent, Vector2 position, string text, Color color, UnityEngine.Events.UnityAction onClick)
+    {
+        var button = UiFactory.CreateButton(text, parent, UiFactory.RoundedRect, color, onClick);
+        ((Image)button.targetGraphic).type = Image.Type.Sliced;
+        UiFactory.Place((RectTransform)button.transform, UiFactory.Center, UiFactory.Center, position, new Vector2(170f, 60f));
+        var label = UiFactory.CreateText("Label", button.transform, font, text, 28f, Color.white);
+        UiFactory.Stretch(label.rectTransform);
+    }
+
     private void ExitApp()
     {
+        NuwaSystemUi.SetSystemAlertsEnabled(true);
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false;
 #else
@@ -166,7 +269,7 @@ public class EyeMetricFlow : MonoBehaviour
 #endif
     }
 
-    // ==================== Back to home (result page) ====================
+    // ==================== Back to home ====================
 
     private void BuildHomeButton(Transform parent)
     {
@@ -182,9 +285,9 @@ public class EyeMetricFlow : MonoBehaviour
     private void GoHome()
     {
         ResetTestSession();
+        _exitDialog.SetActive(false);
         _recalibrateButton.SetActive(false);
         mainCanvas.SetActive(true);
-        canvasTrackBox.SetActive(false);
         qa.RestartQuestionnaire();
         _modeMenu.SetActive(true);
         PlayTTS("請選擇要進行的測驗");
@@ -193,6 +296,10 @@ public class EyeMetricFlow : MonoBehaviour
     private void ResetTestSession()
     {
         Nuwa.stopTTS();
+        StopHeadConfirmed();
+        StopTestCountdown();
+        detectDistance.CloseLock();
+        canvasTrackBox.SetActive(false);
         gazeCalibrationManager.ResetSession();
         metricTest.ResetSession();
         metricTest.gameObject.SetActive(false);
@@ -200,6 +307,147 @@ public class EyeMetricFlow : MonoBehaviour
         gazePointer.gameObject.SetActive(false);
         HideCalibrationHints();
         HideGazeIntro();
+    }
+
+    // ==================== Head position confirmed ====================
+
+    private void BuildHeadConfirmed(Transform parent)
+    {
+        var panel = UiFactory.CreateImage("HeadConfirmed", parent, null, new Color32(0xEC, 0xF8, 0xF0, 0xFF), true);
+        UiFactory.Stretch(panel.rectTransform);
+
+        var badge = UiFactory.CreateImage("Badge", panel.transform, UiFactory.Circle, SuccessGreen);
+        UiFactory.Place(badge.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 70f), new Vector2(150f, 150f));
+        var check = UiFactory.CreateImage("Check", badge.transform, UiFactory.Check, Color.white);
+        UiFactory.Place(check.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(110f, 110f));
+        _headConfirmedBadge = badge.rectTransform;
+
+        var title = UiFactory.CreateText("Title", panel.transform, font, "頭部位置確認完成", 40f, SuccessGreen);
+        UiFactory.Place(title.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -40f), new Vector2(800f, 60f));
+        var subtitle = UiFactory.CreateText("Subtitle", panel.transform, font, "接下來請保持頭部不動", 28f, TextMuted);
+        UiFactory.Place(subtitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -95f), new Vector2(800f, 44f));
+
+        _headConfirmed = panel.gameObject;
+        _headConfirmed.SetActive(false);
+    }
+
+    private void OnHeadPositionConfirmed()
+    {
+        StopHeadConfirmed();
+        _headConfirmedRoutine = StartCoroutine(HeadConfirmedRoutine());
+    }
+
+    private IEnumerator HeadConfirmedRoutine()
+    {
+        _headConfirmed.SetActive(true);
+        if (_successClip != null)
+            _sfx.PlayOneShot(_successClip);
+        PlayTTS("頭部位置確認完成");
+
+        for (float t = 0f; t < HeadConfirmedSeconds; t += Time.deltaTime)
+        {
+            float scale = t < 0.18f
+                ? Mathf.Lerp(0.5f, 1.12f, t / 0.18f)
+                : Mathf.Lerp(1.12f, 1f, Mathf.Clamp01((t - 0.18f) / 0.12f));
+            _headConfirmedBadge.localScale = Vector3.one * scale;
+            yield return null;
+        }
+
+        _headConfirmed.SetActive(false);
+        _headConfirmedRoutine = null;
+        gazeCalibrationManager.BeginFirstTrial();
+    }
+
+    private void StopHeadConfirmed()
+    {
+        if (_headConfirmedRoutine != null)
+        {
+            StopCoroutine(_headConfirmedRoutine);
+            _headConfirmedRoutine = null;
+        }
+        _headConfirmed.SetActive(false);
+    }
+
+    // ==================== Test start countdown ====================
+
+    private void BuildTestCountdown(Transform parent)
+    {
+        var panel = UiFactory.CreateImage("TestCountdown", parent, null, new Color(0.12f, 0.23f, 0.37f, 0.94f), true);
+        UiFactory.Stretch(panel.rectTransform);
+        _testCountdown = panel.gameObject.AddComponent<CanvasGroup>();
+
+        _testCountdownTitle = UiFactory.CreateText("Title", panel.transform, font, "", 48f, Color.white);
+        UiFactory.Place(_testCountdownTitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 115f), new Vector2(800f, 70f));
+        var subtitle = UiFactory.CreateText("Subtitle", panel.transform, font, "即將開始，請注視畫面中央", 28f, new Color(1f, 1f, 1f, 0.85f));
+        UiFactory.Place(subtitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 58f), new Vector2(800f, 44f));
+        // The Chinese SDF atlas has no digits, so the countdown uses TMP's default font.
+        _testCountdownNumber = UiFactory.CreateText("Number", panel.transform, TMP_Settings.defaultFontAsset, "", 120f, Color.white);
+        UiFactory.Place(_testCountdownNumber.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -70f), new Vector2(300f, 160f));
+
+        panel.gameObject.SetActive(false);
+    }
+
+    private void OnTestCountdownStarted(string side, float seconds)
+    {
+        StopTestCountdown();
+        _testCountdownRoutine = StartCoroutine(TestCountdownRoutine(side, seconds));
+    }
+
+    private IEnumerator TestCountdownRoutine(string side, float seconds)
+    {
+        string title = side == "left" ? "左眼測驗" : side == "both" ? "雙眼測驗" : "右眼測驗";
+        _testCountdownTitle.text = title;
+        _testCountdown.alpha = 0f;
+        _testCountdown.gameObject.SetActive(true);
+        PlayTTS(title + "，即將開始");
+
+        int shownNumber = -1;
+        for (float t = 0f; t < seconds; t += Time.deltaTime)
+        {
+            float remaining = seconds - t;
+            int number = Mathf.CeilToInt(remaining);
+            if (number != shownNumber)
+            {
+                shownNumber = number;
+                _testCountdownNumber.text = number.ToString();
+                _sfx.PlayOneShot(UiSounds.Tick);
+            }
+
+            float intoSecond = number - remaining;
+            _testCountdownNumber.transform.localScale = Vector3.one * Mathf.Lerp(1.4f, 1f, Mathf.Clamp01(intoSecond / 0.25f));
+            _testCountdown.alpha = Mathf.Clamp01(t / CountdownFadeSeconds);
+            yield return null;
+        }
+        _testCountdownRoutine = null;
+    }
+
+    private void OnTestCountdownEnded()
+    {
+        StopTestCountdown();
+        _testCountdown.gameObject.SetActive(true);
+        _testCountdownRoutine = StartCoroutine(FadeOutTestCountdown());
+    }
+
+    private IEnumerator FadeOutTestCountdown()
+    {
+        float start = _testCountdown.alpha;
+        for (float t = 0f; t < CountdownFadeSeconds; t += Time.deltaTime)
+        {
+            _testCountdown.alpha = Mathf.Lerp(start, 0f, t / CountdownFadeSeconds);
+            yield return null;
+        }
+        _testCountdown.gameObject.SetActive(false);
+        _testCountdownRoutine = null;
+    }
+
+    private void StopTestCountdown()
+    {
+        if (_testCountdownRoutine != null)
+        {
+            StopCoroutine(_testCountdownRoutine);
+            _testCountdownRoutine = null;
+        }
+        _testCountdown.gameObject.SetActive(false);
     }
 
     // ==================== Calibration hints ====================

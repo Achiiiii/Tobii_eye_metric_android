@@ -176,6 +176,11 @@ namespace Tobii
         public event Action CalibrationFailed;
         public event Action GazeIntroStarted;
         public event Action GazeIntroEnded;
+        /// <summary>
+        /// (side: "right" / "left" / "both", countdown seconds) fired before each test round starts.
+        /// </summary>
+        public event Action<string, float> TestCountdownStarted;
+        public event Action TestCountdownEnded;
 
         private float _countDownTime = 5;
         private bool _countDownLocker = false;
@@ -186,6 +191,8 @@ namespace Tobii
         private bool _stopPending = false;
         private bool _gazeIntroShown = false;
         private bool _gazeIntroConfirmed = false;
+        private string _currentSide = "right";
+        private const float TestCountdownSeconds = 3f;
 
         private void Awake()
         {
@@ -236,6 +243,7 @@ namespace Tobii
             // _countDownLocker = true;
             metricTest.gameObject.SetActive(false);
             mainCanvas.SetActive(true);
+            _currentSide = side;
             string coverHint;
             switch (side)
             {
@@ -257,7 +265,7 @@ namespace Tobii
                     break;
             }
             content.text = coverHint + "\n頭部請保持不動，稍後請依序注視<color=blue>藍色圓點</color>";
-            string headHint = headPositionConfirmed ? "頭部位置已確認，接下來請保持頭部不動。" : "請保持頭部不動。";
+            string headHint = headPositionConfirmed ? "接下來請保持頭部不動。" : "請保持頭部不動。";
             PlayTTS(headHint + coverHint);
         }
 
@@ -394,6 +402,10 @@ namespace Tobii
                 yield return new WaitUntil(() => _gazeIntroConfirmed);
                 GazeIntroEnded?.Invoke();
             }
+
+            TestCountdownStarted?.Invoke(_currentSide, TestCountdownSeconds);
+            yield return new WaitForSeconds(TestCountdownSeconds);
+            TestCountdownEnded?.Invoke();
 
             metricTest.gameObject.SetActive(true);
             metricTest.StartMeticTest();
