@@ -126,7 +126,7 @@ public static class QuestionnaireText
 
     private static void AddCenteredQuestion(RectTransform panel, TMP_FontAsset font, string text)
     {
-        var label = UiFactory.CreateText("QuestionText", panel, font, UiFactory.WithLatinFallback(text, font), 32f, TextColor);
+        var label = UiFactory.CreateText("QuestionText", panel, font, UiFactory.WithLatinFallback(text, font), 32f, Color.white);
         label.fontStyle = FontStyles.Bold;
         label.enableAutoSizing = true;
         label.fontSizeMin = 18f;
@@ -138,7 +138,7 @@ public static class QuestionnaireText
 
     private static void AddListQuestion(RectTransform panel, TMP_FontAsset font, string text)
     {
-        var label = UiFactory.CreateText("QuestionText", panel, font, UiFactory.WithLatinFallback(text, font), 32f, TextColor, TextAlignmentOptions.MidlineLeft);
+        var label = UiFactory.CreateText("QuestionText", panel, font, UiFactory.WithLatinFallback(text, font), 32f, Color.white, TextAlignmentOptions.MidlineLeft);
         label.fontStyle = FontStyles.Bold;
         label.enableAutoSizing = true;
         label.fontSizeMin = 18f;
@@ -160,6 +160,7 @@ public static class QuestionnaireText
         UiFactory.Place(box.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(40f, 40f));
 
         var label = UiFactory.CreateText("OptionText", toggle, font, UiFactory.WithLatinFallback(text, font), 30f, TextColor, TextAlignmentOptions.MidlineLeft);
+        UiFactory.UsePlainMaterial(label);
         label.fontStyle = FontStyles.Bold;
         label.enableWordWrapping = false;
         UiFactory.Place(label.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(OptionLabelOffset, 0f), new Vector2(640f, 40f));
@@ -186,6 +187,7 @@ public static class QuestionnaireText
 
         var fill = DrawFrame((RectTransform)target, ButtonFill, 0f);
         var label = UiFactory.CreateText("Label", target, font, UiFactory.WithLatinFallback(text, font), 36f, TextColor);
+        UiFactory.UsePlainMaterial(label);
         label.fontStyle = FontStyles.Bold;
         label.enableAutoSizing = true;
         label.fontSizeMin = 18f;

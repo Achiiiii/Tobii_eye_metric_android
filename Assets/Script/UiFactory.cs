@@ -90,7 +90,6 @@ public static class UiFactory
     {
         var label = CreateRect(name, parent).gameObject.AddComponent<TextMeshProUGUI>();
         label.font = font;
-        label.fontSharedMaterial = PlainMaterial(font);
         label.text = text;
         label.fontSize = fontSize;
         label.color = color;
@@ -150,6 +149,11 @@ public static class UiFactory
         ShaderUtilities.UpdateShaderRatios(material);
         PlainMaterials[font] = material;
         return material;
+    }
+
+    public static void UsePlainMaterial(TMP_Text label)
+    {
+        label.fontSharedMaterial = PlainMaterial(label.font);
     }
 
     public static Button CreateButton(string name, Transform parent, Sprite sprite, Color color, UnityAction onClick)

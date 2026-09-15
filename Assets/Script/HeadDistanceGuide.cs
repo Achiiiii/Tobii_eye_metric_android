@@ -102,6 +102,7 @@ public class HeadDistanceGuide : MonoBehaviour
         var zone = UiFactory.CreateImage(label, scale, UiFactory.White, color);
         UiFactory.Place(zone.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(from, 0f), new Vector2(to - from, 32f));
         var text = UiFactory.CreateText("Label", zone.transform, font, label, 18f, TextDark);
+        UiFactory.UsePlainMaterial(text);
         UiFactory.Stretch(text.rectTransform);
     }
 }

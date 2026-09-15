@@ -24,8 +24,9 @@ public class EyeMetricFlow : MonoBehaviour
 
     // The Chinese SDF atlas has no digits, so counts inside Chinese sentences use Chinese numerals.
     private static readonly string[] ChineseNumerals = { "", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十" };
-    private static readonly Color TextDark = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
-    private static readonly Color TextMuted = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
+    private static readonly Color TextDark = new Color32(0x1F, 0x3A, 0x5F, 0xFF);
+    // Descriptions used to be dark grey on the outlined font material and were hard to read.
+    private static readonly Color DescriptionText = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
     private static readonly Color Teal = new Color32(0x12, 0xA1, 0x93, 0xFF);
     private static readonly Color Blue = new Color32(0x1E, 0x88, 0xE5, 0xFF);
     private static readonly Color SuccessGreen = new Color32(0x2E, 0x9E, 0x5A, 0xFF);
@@ -153,8 +154,6 @@ public class EyeMetricFlow : MonoBehaviour
         _modeMenu = background.gameObject;
 
         var title = UiFactory.CreateText("Title", background.transform, font, "視覺健康量測", 32f, Color.white);
-        // Same yellow-with-outline title style as the questionnaire and result pages.
-        title.fontSharedMaterial = font.material;
         UiFactory.Place(title.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(858f, 141f));
 
         var prompt = UiFactory.CreateText("Prompt", background.transform, font, "請選擇要進行的測驗", 28f, TextDark);
@@ -172,7 +171,8 @@ public class EyeMetricFlow : MonoBehaviour
 
         var titleText = UiFactory.CreateText("Title", card.transform, font, title, 40f, Teal);
         UiFactory.Place(titleText.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 30f), new Vector2(300f, 60f));
-        var descriptionText = UiFactory.CreateText("Description", card.transform, font, description, 22f, TextMuted);
+        var descriptionText = UiFactory.CreateText("Description", card.transform, font, description, 22f, DescriptionText);
+        UiFactory.UsePlainMaterial(descriptionText);
         UiFactory.Place(descriptionText.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -35f), new Vector2(300f, 40f));
     }
 
@@ -242,7 +242,8 @@ public class EyeMetricFlow : MonoBehaviour
 
         var title = UiFactory.CreateText("Title", card.transform, font, "確定要回到首頁嗎？", 32f, TextDark);
         UiFactory.Place(title.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 55f), new Vector2(440f, 50f));
-        var subtitle = UiFactory.CreateText("Subtitle", card.transform, font, "測驗進度將不會保留", 22f, TextMuted);
+        var subtitle = UiFactory.CreateText("Subtitle", card.transform, font, "測驗進度將不會保留", 22f, DescriptionText);
+        UiFactory.UsePlainMaterial(subtitle);
         UiFactory.Place(subtitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 10f), new Vector2(440f, 36f));
 
         CreateDialogButton(card.transform, new Vector2(-95f, -62f), "取消", CancelGrey, () => _exitDialog.SetActive(false));
@@ -326,7 +327,8 @@ public class EyeMetricFlow : MonoBehaviour
 
         var title = UiFactory.CreateText("Title", panel.transform, font, "頭部位置確認完成", 40f, SuccessGreen);
         UiFactory.Place(title.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -40f), new Vector2(800f, 60f));
-        var subtitle = UiFactory.CreateText("Subtitle", panel.transform, font, "接下來請保持頭部不動", 28f, TextMuted);
+        var subtitle = UiFactory.CreateText("Subtitle", panel.transform, font, "接下來請保持頭部不動", 28f, DescriptionText);
+        UiFactory.UsePlainMaterial(subtitle);
         UiFactory.Place(subtitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -95f), new Vector2(800f, 44f));
 
         _headConfirmed = panel.gameObject;
@@ -532,7 +534,8 @@ public class EyeMetricFlow : MonoBehaviour
 
         var title = UiFactory.CreateText("Title", panel.transform, font, "這個紅點是您的視線位置", 40f, TextDark);
         UiFactory.Place(title.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 150f), new Vector2(800f, 60f));
-        var subtitle = UiFactory.CreateText("Subtitle", panel.transform, font, "請試著看看四周，準備好後請注視下方的繼續按鈕", 26f, TextMuted);
+        var subtitle = UiFactory.CreateText("Subtitle", panel.transform, font, "請試著看看四周，準備好後請注視下方的繼續按鈕", 26f, DescriptionText);
+        UiFactory.UsePlainMaterial(subtitle);
         UiFactory.Place(subtitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 96f), new Vector2(900f, 44f));
 
         // Centred on purpose: the test's direction buttons cover the screen edges, so the gaze
