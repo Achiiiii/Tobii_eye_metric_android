@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using TMPro;
 using UnityEngine;
@@ -8,6 +9,8 @@ using UnityEngine.UI;
 public static class UiFactory
 {
     public static readonly Vector2 Center = new Vector2(0.5f, 0.5f);
+
+    private static readonly Dictionary<TMP_FontAsset, Material> PlainMaterials = new Dictionary<TMP_FontAsset, Material>();
 
     private static Sprite _white;
     private static Sprite _circle;
@@ -87,6 +90,7 @@ public static class UiFactory
     {
         var label = CreateRect(name, parent).gameObject.AddComponent<TextMeshProUGUI>();
         label.font = font;
+        label.fontSharedMaterial = PlainMaterial(font);
         label.text = text;
         label.fontSize = fontSize;
         label.color = color;
@@ -124,6 +128,28 @@ public static class UiFactory
         if (inFallback)
             builder.Append("</font>");
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// The Chinese font asset's default material has a yellow face, heavy dilate and a navy outline (title style).
+    /// Body text uses a copy without them so its vertex colour shows as-is.
+    /// </summary>
+    public static Material PlainMaterial(TMP_FontAsset font)
+    {
+        if (PlainMaterials.TryGetValue(font, out var cached) && cached != null)
+            return cached;
+
+        ShaderUtilities.GetShaderPropertyIDs();
+        var material = new Material(font.material) { name = font.material.name + " (Plain)" };
+        material.SetColor(ShaderUtilities.ID_FaceColor, Color.white);
+        material.SetFloat(ShaderUtilities.ID_FaceDilate, 0f);
+        material.SetFloat(ShaderUtilities.ID_OutlineWidth, 0f);
+        material.SetFloat(ShaderUtilities.ID_OutlineSoftness, 0f);
+        material.DisableKeyword(ShaderUtilities.Keyword_Outline);
+        material.DisableKeyword(ShaderUtilities.Keyword_Underlay);
+        ShaderUtilities.UpdateShaderRatios(material);
+        PlainMaterials[font] = material;
+        return material;
     }
 
     public static Button CreateButton(string name, Transform parent, Sprite sprite, Color color, UnityAction onClick)

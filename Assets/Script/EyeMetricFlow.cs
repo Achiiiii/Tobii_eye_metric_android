@@ -24,8 +24,8 @@ public class EyeMetricFlow : MonoBehaviour
 
     // The Chinese SDF atlas has no digits, so counts inside Chinese sentences use Chinese numerals.
     private static readonly string[] ChineseNumerals = { "", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十" };
-    private static readonly Color TextDark = new Color32(0x1F, 0x3A, 0x5F, 0xFF);
-    private static readonly Color TextMuted = new Color32(0x45, 0x5A, 0x64, 0xFF);
+    private static readonly Color TextDark = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
+    private static readonly Color TextMuted = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
     private static readonly Color Teal = new Color32(0x12, 0xA1, 0x93, 0xFF);
     private static readonly Color Blue = new Color32(0x1E, 0x88, 0xE5, 0xFF);
     private static readonly Color SuccessGreen = new Color32(0x2E, 0x9E, 0x5A, 0xFF);
@@ -153,6 +153,8 @@ public class EyeMetricFlow : MonoBehaviour
         _modeMenu = background.gameObject;
 
         var title = UiFactory.CreateText("Title", background.transform, font, "視覺健康量測", 32f, Color.white);
+        // Same yellow-with-outline title style as the questionnaire and result pages.
+        title.fontSharedMaterial = font.material;
         UiFactory.Place(title.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(858f, 141f));
 
         var prompt = UiFactory.CreateText("Prompt", background.transform, font, "請選擇要進行的測驗", 28f, TextDark);

@@ -1,5 +1,6 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.UI;
 
 // Draws the questionnaire's questions, options and buttons as text from QA's display strings,
@@ -9,7 +10,7 @@ public static class QuestionnaireText
     private static readonly Color PanelFill = new Color32(0x17, 0xAC, 0x50, 0xD9);
     private static readonly Color ButtonFill = new Color32(0xFF, 0xFF, 0xFF, 0xD9);
     private static readonly Color Border = new Color32(0x08, 0x5C, 0x91, 0xFF);
-    private static readonly Color ButtonText = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
+    private static readonly Color TextColor = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
     // The rounded sprites have 24 px slice borders; a multiplier of 2 gives ~10 px corners and a 4 px stroke.
     private const float CornerMultiplier = 2f;
     // The multi-option question art had 14 px of empty space above its panel.
@@ -32,6 +33,12 @@ public static class QuestionnaireText
             }
             else
             {
+                if (i == 5 && options.Length > toggles.Length)
+                {
+                    toggles = AddTogglesAbove(toggles, options.Length, qa.ToggleQ6Option);
+                    qa.Q6Toggles = toggles;
+                }
+
                 DrawFrame(panel, PanelFill, ListPanelTopInset);
                 AddListQuestion(panel, font, qa.displayQuestionTexts[i]);
                 for (int o = 0; o < toggles.Length && o < options.Length; o++)
@@ -66,6 +73,36 @@ public static class QuestionnaireText
         }
     }
 
+    // Clones the first option row for options that have no toggle in the scene, stacking the new rows above it.
+    private static Image[] AddTogglesAbove(Image[] toggles, int count, UnityAction<int> onToggle)
+    {
+        var first = (RectTransform)toggles[0].transform;
+        float spacing = toggles.Length > 1
+            ? first.anchoredPosition.y - ((RectTransform)toggles[1].transform).anchoredPosition.y
+            : 49f;
+
+        var result = new Image[count];
+        System.Array.Copy(toggles, result, toggles.Length);
+        for (int index = toggles.Length; index < count; index++)
+        {
+            var clone = Object.Instantiate(toggles[0].gameObject, first.parent);
+            clone.name = first.name + " (" + index + ")";
+            var rect = (RectTransform)clone.transform;
+            rect.anchoredPosition = first.anchoredPosition + new Vector2(0f, spacing * (count - index));
+
+            // The clone carries the first row's scene bindings (option 0); point it at its own option.
+            int optionIndex = index;
+            foreach (var button in clone.GetComponentsInChildren<Button>(true))
+            {
+                for (int p = 0; p < button.onClick.GetPersistentEventCount(); p++)
+                    button.onClick.SetPersistentListenerState(p, UnityEventCallState.Off);
+                button.onClick.AddListener(() => onToggle(optionIndex));
+            }
+            result[index] = clone.GetComponent<Image>();
+        }
+        return result;
+    }
+
     private static Image DrawFrame(RectTransform target, Color fillColor, float topInset)
     {
         // Keep the original Image (it may be a button's hit area) but stop drawing the baked artwork.
@@ -89,7 +126,7 @@ public static class QuestionnaireText
 
     private static void AddCenteredQuestion(RectTransform panel, TMP_FontAsset font, string text)
     {
-        var label = UiFactory.CreateText("QuestionText", panel, font, UiFactory.WithLatinFallback(text, font), 32f, Color.white);
+        var label = UiFactory.CreateText("QuestionText", panel, font, UiFactory.WithLatinFallback(text, font), 32f, TextColor);
         label.fontStyle = FontStyles.Bold;
         label.enableAutoSizing = true;
         label.fontSizeMin = 18f;
@@ -101,7 +138,7 @@ public static class QuestionnaireText
 
     private static void AddListQuestion(RectTransform panel, TMP_FontAsset font, string text)
     {
-        var label = UiFactory.CreateText("QuestionText", panel, font, UiFactory.WithLatinFallback(text, font), 32f, Color.white, TextAlignmentOptions.MidlineLeft);
+        var label = UiFactory.CreateText("QuestionText", panel, font, UiFactory.WithLatinFallback(text, font), 32f, TextColor, TextAlignmentOptions.MidlineLeft);
         label.fontStyle = FontStyles.Bold;
         label.enableAutoSizing = true;
         label.fontSizeMin = 18f;
@@ -122,7 +159,7 @@ public static class QuestionnaireText
         box.pixelsPerUnitMultiplier = CornerMultiplier;
         UiFactory.Place(box.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(40f, 40f));
 
-        var label = UiFactory.CreateText("OptionText", toggle, font, UiFactory.WithLatinFallback(text, font), 30f, Color.white, TextAlignmentOptions.MidlineLeft);
+        var label = UiFactory.CreateText("OptionText", toggle, font, UiFactory.WithLatinFallback(text, font), 30f, TextColor, TextAlignmentOptions.MidlineLeft);
         label.fontStyle = FontStyles.Bold;
         label.enableWordWrapping = false;
         UiFactory.Place(label.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(OptionLabelOffset, 0f), new Vector2(640f, 40f));
@@ -148,7 +185,7 @@ public static class QuestionnaireText
             return;
 
         var fill = DrawFrame((RectTransform)target, ButtonFill, 0f);
-        var label = UiFactory.CreateText("Label", target, font, UiFactory.WithLatinFallback(text, font), 36f, ButtonText);
+        var label = UiFactory.CreateText("Label", target, font, UiFactory.WithLatinFallback(text, font), 36f, TextColor);
         label.fontStyle = FontStyles.Bold;
         label.enableAutoSizing = true;
         label.fontSizeMin = 18f;

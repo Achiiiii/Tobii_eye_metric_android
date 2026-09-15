@@ -198,6 +198,32 @@ namespace Tobii
         {
             CalibrationStatus = CalibrationState.CalibrationNotDone;
             calibrationPoints = new List<GameObject>();
+            LayoutTrialInstructions();
+        }
+
+        // The original layout overlapped the illustration and pushed the instructions off the bottom of the screen.
+        private void LayoutTrialInstructions()
+        {
+            var imageRect = sampleImage.rectTransform;
+            imageRect.anchorMin = new Vector2(0.5f, 0.5f);
+            imageRect.anchorMax = new Vector2(0.5f, 0.5f);
+            imageRect.pivot = new Vector2(0.5f, 0.5f);
+            imageRect.anchoredPosition = new Vector2(-250f, -20f);
+            imageRect.sizeDelta = new Vector2(240f, 360f);
+            sampleImage.preserveAspect = true;
+
+            var textRect = content.rectTransform;
+            textRect.anchorMin = new Vector2(0.5f, 0.5f);
+            textRect.anchorMax = new Vector2(0.5f, 0.5f);
+            textRect.pivot = new Vector2(0.5f, 0.5f);
+            textRect.anchoredPosition = new Vector2(150f, -10f);
+            textRect.sizeDelta = new Vector2(520f, 300f);
+            content.alignment = TMPro.TextAlignmentOptions.MidlineLeft;
+            content.enableWordWrapping = true;
+            content.fontSize = 26f;
+            content.paragraphSpacing = 18f;
+            content.color = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
+            content.fontSharedMaterial = UiFactory.PlainMaterial(content.font);
         }
 
         void Update()
@@ -264,7 +290,12 @@ namespace Tobii
                     coverHint = "";
                     break;
             }
-            content.text = coverHint + "\n頭部請保持不動，稍後請依序注視<color=blue>藍色圓點</color>";
+            var lines = new List<string>();
+            if (coverHint != "")
+                lines.Add("<size=32><b>" + coverHint + "</b></size>");
+            lines.Add("頭部請保持不動，稍後請依序注視<color=#1E88E5>藍色圓點</color>");
+            lines.Add("準備好後，請按右下角的繼續按鈕");
+            content.text = string.Join("\n", lines);
             string headHint = headPositionConfirmed ? "接下來請保持頭部不動。" : "請保持頭部不動。";
             PlayTTS(headHint + coverHint);
         }

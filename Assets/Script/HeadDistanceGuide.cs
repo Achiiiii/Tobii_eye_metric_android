@@ -13,7 +13,7 @@ public class HeadDistanceGuide : MonoBehaviour
     private static readonly Color OutOfRangeColor = new Color32(0xE0, 0x6A, 0x3B, 0xFF);
     private static readonly Color InRangeZoneTint = new Color32(0xC8, 0xE6, 0xC9, 0xFF);
     private static readonly Color OutOfRangeZoneTint = new Color32(0xFF, 0xD6, 0xC4, 0xFF);
-    private static readonly Color TextDark = new Color32(0x26, 0x32, 0x38, 0xFF);
+    private static readonly Color TextDark = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
 
     private DetectDistance _detectDistance;
     private GameObject _canvasTrackBox;

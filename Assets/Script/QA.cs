@@ -15,45 +15,16 @@ public class QA : MonoBehaviour
     public DetectDistance detectDistance;
     public event Action Completed;
     public Image[] Q4Toggles = new Image[7];
-    public Image[] Q6Toggles = new Image[5]; 
-    public Image[] Q7Toggles = new Image[4]; 
+    public Image[] Q6Toggles = new Image[5];
+    public Image[] Q7Toggles = new Image[4];
 
-    // ========== 題目文字（可在 Inspector 中設定）==========
-    [Header("題目文字")]
-    public string question1Text = "第1題（是非題）";
-    public string question2Text = "第2題（是非題）";
-    public string question3Text = "第3題（是非題）";
-    public string question4Text = "第4題（7選項多選題）";
-    public string question5Text = "第5題（是非題）";
-    public string question6Text = "第6題（5選項多選題）";
-    public string question7Text = "第7題（4選項單選題）";
-
-    // ========== 選項文字（可在 Inspector 中設定）==========
-    [Header("第4題選項文字（7個）")]
-    public string[] question4Options = new string[7]
-    {
-        "選項A", "選項B", "選項C", "選項D", "選項E", "選項F", "選項G"
-    };
-
-    [Header("第6題選項文字（5個）")]
-    public string[] question6Options = new string[5]
-    {
-        "選項A", "選項B", "選項C", "選項D", "選項E"
-    };
-
-    [Header("第7題選項文字（4個）")]
-    public string[] question7Options = new string[4]
-    {
-        "選項A", "選項B", "選項C", "選項D"
-    };
-
-    // ========== 畫面顯示文字（只影響畫面，存檔內容不變）==========
-    [Header("畫面顯示：題目（依序 Q1~Q7）")]
+    // ========== 問卷文字（畫面顯示與存檔共用，可在 Inspector 中修改）==========
+    [Header("題目（依序 Q1~Q7）")]
     [TextArea]
     public string[] displayQuestionTexts = new string[7]
     {
         "請問您是否為糖尿病患者呢？",
-        "過去一年是否\"未\"做過眼睛檢查？",
+        "過去一年是否做過眼睛檢查？",
         "是否有視力問題，\n例如看遠看近或閱讀有困難？",
         "是否有眼科病史，請勾選:",
         "過去是否有做過眼科疾病的手術？",
@@ -61,19 +32,20 @@ public class QA : MonoBehaviour
         "您是否戴著矯正器具進行測試？"
     };
 
-    [Header("畫面顯示：是非題按鈕（依序 Q1~Q7，勾選題留空）")]
-    public string[] displayYesLabels = new string[7] { "是的", "是的", "有", "", "是的", "", "" };
-    public string[] displayNoLabels = new string[7] { "不是", "不是", "無", "", "不是", "", "" };
+    [Header("是非題按鈕（依序 Q1~Q7，勾選題留空）")]
+    public string[] displayYesLabels = new string[7] { "是", "是", "有", "", "是", "", "" };
+    public string[] displayNoLabels = new string[7] { "否", "否", "無", "", "否", "", "" };
 
-    [Header("畫面顯示：勾選題")]
+    [Header("勾選題")]
     public string displayNextLabel = "繼續";
     public string[] displayQ4Options = new string[7]
     {
         "無", "近視／遠視／散光", "弱視", "青光眼", "白內障", "黃斑部/視網膜疾病", "其他"
     };
-    public string[] displayQ6Options = new string[5]
+    // 場景裡原本只有 5 個勾選框；多出的選項（無）會自動複製一列並顯示在最上方
+    public string[] displayQ6Options = new string[6]
     {
-        "白內障手術", "屈光手術(近視雷射等)", "青光眼手術", "黃斑部/視網膜手術", "其他"
+        "白內障手術", "屈光手術(近視雷射等)", "青光眼手術", "黃斑部/視網膜手術", "其他", "無"
     };
     public string[] displayQ7Options = new string[4]
     {
@@ -87,7 +59,7 @@ public class QA : MonoBehaviour
         public int questionNumber;
         public string questionText;
         public string questionType;       // "是非題", "多選題", "單選題"
-        public string boolAnswer;         // 是非題答案："是" / "否"
+        public string boolAnswer;         // 是非題答案：該題「是／否」按鈕上的文字
         public List<string> multiAnswers;  // 多選題答案
         public string singleAnswer;       // 單選題答案
     }
@@ -107,16 +79,18 @@ public class QA : MonoBehaviour
     // 是非題答案 (Q1, Q2, Q3, Q5)
     private bool?[] boolAnswers = new bool?[TOTAL_QUESTIONS]; // index 0~6 對應 Q1~Q7
 
-    // 多選題答案 (Q4: 7個選項, Q6: 5個選項)
-    private bool[] q4Selections = new bool[7];
-    private bool[] q6Selections = new bool[5];
+    // 多選題答案 (Q4, Q6)，長度依選項數量
+    private bool[] q4Selections = new bool[0];
+    private bool[] q6Selections = new bool[0];
 
-    // 單選題答案 (Q7: 4個選項)
+    // 單選題答案 (Q7)
     private int q7Selection = -1; // -1 表示尚未選擇
 
     void Awake()
     {
         directoryPath = Application.persistentDataPath;
+        q4Selections = new bool[displayQ4Options.Length];
+        q6Selections = new bool[displayQ6Options.Length];
     }
 
     // ==================== 是非題（Q1, Q2, Q3, Q5）====================
@@ -145,10 +119,10 @@ public class QA : MonoBehaviour
         }
     }
 
-    // ==================== 多選題（Q4: 7個選項）====================
+    // ==================== 多選題（Q4）====================
 
     /// <summary>
-    /// 切換第4題的選項（Toggle），optionIndex: 0~6
+    /// 切換第4題的選項（Toggle），optionIndex 對應 displayQ4Options
     /// </summary>
     public void ToggleQ4Option(int optionIndex)
     {
@@ -167,10 +141,10 @@ public class QA : MonoBehaviour
         NextQuestion(3); // Q4 的 index = 3
     }
 
-    // ==================== 多選題（Q6: 5個選項）====================
+    // ==================== 多選題（Q6）====================
 
     /// <summary>
-    /// 切換第6題的選項（Toggle），optionIndex: 0~4
+    /// 切換第6題的選項（Toggle），optionIndex 對應 displayQ6Options
     /// </summary>
     public void ToggleQ6Option(int optionIndex)
     {
@@ -189,10 +163,10 @@ public class QA : MonoBehaviour
         NextQuestion(5); // Q6 的 index = 5
     }
 
-    // ==================== 單選題（Q7: 4個選項）====================
+    // ==================== 單選題（Q7）====================
 
     /// <summary>
-    /// 選擇第7題的選項，optionIndex: 0~3
+    /// 選擇第7題的選項，optionIndex 對應 displayQ7Options
     /// </summary>
     public void SelectQ7Option(int optionIndex)
     {
@@ -200,7 +174,7 @@ public class QA : MonoBehaviour
         {
             Q7Toggles[q7Selection].DOFade(0, 0);
         }
-        if (optionIndex >= 0 && optionIndex < 4)
+        if (optionIndex >= 0 && optionIndex < displayQ7Options.Length)
         {
             q7Selection = optionIndex;
         }
@@ -248,17 +222,12 @@ public class QA : MonoBehaviour
         QuestionnaireData dataToSave = new QuestionnaireData();
         dataToSave.completionTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
-        string[] questionTexts = new string[]
-        {
-            question1Text, question2Text, question3Text,
-            question4Text, question5Text, question6Text, question7Text
-        };
-
         for (int i = 0; i < TOTAL_QUESTIONS; i++)
         {
             QuestionEntry entry = new QuestionEntry();
             entry.questionNumber = i + 1;
-            entry.questionText = questionTexts[i];
+            // 畫面上的換行只為排版，存檔時去掉
+            entry.questionText = displayQuestionTexts[i].Replace("\n", "");
 
             switch (i)
             {
@@ -268,38 +237,24 @@ public class QA : MonoBehaviour
                 case 4: // Q5 是非題
                     entry.questionType = "是非題";
                     entry.boolAnswer = boolAnswers[i].HasValue
-                        ? (boolAnswers[i].Value ? "是" : "否")
+                        ? (boolAnswers[i].Value ? displayYesLabels[i] : displayNoLabels[i])
                         : "未作答";
                     break;
 
-                case 3: // Q4 多選題（7個選項）
+                case 3: // Q4 多選題
                     entry.questionType = "多選題";
-                    entry.multiAnswers = new List<string>();
-                    for (int j = 0; j < q4Selections.Length; j++)
-                    {
-                        if (q4Selections[j])
-                        {
-                            entry.multiAnswers.Add(question4Options[j]);
-                        }
-                    }
+                    entry.multiAnswers = SelectedOptions(q4Selections, displayQ4Options);
                     break;
 
-                case 5: // Q6 多選題（5個選項）
+                case 5: // Q6 多選題
                     entry.questionType = "多選題";
-                    entry.multiAnswers = new List<string>();
-                    for (int j = 0; j < q6Selections.Length; j++)
-                    {
-                        if (q6Selections[j])
-                        {
-                            entry.multiAnswers.Add(question6Options[j]);
-                        }
-                    }
+                    entry.multiAnswers = SelectedOptions(q6Selections, displayQ6Options);
                     break;
 
-                case 6: // Q7 單選題（4個選項）
+                case 6: // Q7 單選題
                     entry.questionType = "單選題";
                     entry.singleAnswer = q7Selection >= 0
-                        ? question7Options[q7Selection]
+                        ? displayQ7Options[q7Selection]
                         : "未作答";
                     break;
             }
@@ -324,6 +279,19 @@ public class QA : MonoBehaviour
         ResetAnswers();
     }
 
+    private static List<string> SelectedOptions(bool[] selections, string[] options)
+    {
+        var selected = new List<string>();
+        for (int j = 0; j < selections.Length && j < options.Length; j++)
+        {
+            if (selections[j])
+            {
+                selected.Add(options[j]);
+            }
+        }
+        return selected;
+    }
+
     /// <summary>
     /// 清空答案並回到第 1 題（給下一位受測者）
     /// </summary>
@@ -341,8 +309,8 @@ public class QA : MonoBehaviour
     public void ResetAnswers()
     {
         boolAnswers = new bool?[TOTAL_QUESTIONS];
-        q4Selections = new bool[7];
-        q6Selections = new bool[5];
+        q4Selections = new bool[displayQ4Options.Length];
+        q6Selections = new bool[displayQ6Options.Length];
         q7Selection = -1;
         foreach (var item in Q4Toggles)
         {
