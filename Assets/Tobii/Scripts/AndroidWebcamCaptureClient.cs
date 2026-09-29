@@ -23,7 +23,8 @@ using System.Runtime.InteropServices;
 public class AndroidWebcamCaptureClient : MonoBehaviour
 {
     private Color32[] _pixels;
-    private long _timestamp = 0;
+    // Capture time of the first frame, so the timestamps handed to the processor start near zero.
+    private long _firstTimestampUs = -1;
 
     public MediaCaptureEvent mediaCaptureEvent;
     public UnityEvent<float, float, float> OnInitialized;
@@ -155,62 +156,59 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
 
     private void Update()
     {
-        if (Application.platform == RuntimePlatform.Android)
+        if (Application.platform != RuntimePlatform.Android)
+            return;
+        if (!isInitialized || pluginClass == null)
+            return;
+
+        try
         {
-            var elapsedTimeInUs = Time.unscaledDeltaTime * 1_000_000;
-            if (isInitialized && pluginClass != null)
+            AndroidJavaObject[] latest = pluginClass.CallStatic<AndroidJavaObject[]>("getLatestImageData");
+            if (latest == null)
+                return;
+
+            sbyte[] rawData = AndroidJNIHelper.ConvertFromJNIArray<sbyte[]>(latest[0].GetRawObject());
+            int[] imageWidthAndHeight = AndroidJNIHelper.ConvertFromJNIArray<int[]>(latest[1].GetRawObject());
+            long[] timestampNs = AndroidJNIHelper.ConvertFromJNIArray<long[]>(latest[2].GetRawObject());
+            int width = imageWidthAndHeight[0];
+            int height = imageWidthAndHeight[1];
+
+            // The camera's own capture time rather than Unity's frame delta: the processor filters
+            // gaze over this clock, so a timestamp that drifts with the render rate distorts it.
+            long timestampUs = timestampNs[0] / 1000;
+            if (_firstTimestampUs < 0)
+                _firstTimestampUs = timestampUs;
+
+            GCHandle handle = GCHandle.Alloc(rawData, GCHandleType.Pinned);
+            try
             {
-                try
+                tobii_image_frame_t frame = new tobii_image_frame_t
                 {
-                    AndroidJavaObject[] rawDataAndWidthHeight = pluginClass.CallStatic<AndroidJavaObject[]>("getLatestImageData");
-                    if (rawDataAndWidthHeight != null)
-                    {
-                        sbyte[] rawData = AndroidJNIHelper.ConvertFromJNIArray<sbyte[]>(rawDataAndWidthHeight[0].GetRawObject());
-                        int[] imageWidthAndHeight = AndroidJNIHelper.ConvertFromJNIArray<int[]>(rawDataAndWidthHeight[1].GetRawObject());
-                        int width = imageWidthAndHeight[0];
-                        int height = imageWidthAndHeight[1];
+                    format = 0, //Interop.TOBII_FRAME_FORMAT_GRAY8,
+                    width = width,
+                    height = height,
+                    stride = width,
+                    timestamp_us = timestampUs - _firstTimestampUs,
+                    data_size = new IntPtr(width * height),
+                    data = handle.AddrOfPinnedObject()
+                };
 
-                        // Use GCHandle to pin the array and obtain its address safely.
-                        GCHandle handle = GCHandle.Alloc(rawData, GCHandleType.Pinned);
-                        try
-                        {
-                            IntPtr dataPtr = handle.AddrOfPinnedObject();
-                            _timestamp += (long)elapsedTimeInUs;
-                            tobii_image_frame_t frame = new tobii_image_frame_t
-                            {
-                                format = 0, //Interop.TOBII_FRAME_FORMAT_GRAY8,
-                                width = width,
-                                height = height,
-                                stride = width,
-                                timestamp_us = _timestamp,
-                                data_size = new IntPtr(width * height),
-                                data = dataPtr
-                            };
-
-                            //Debug.Log("Frame captured: " + frame.timestamp_us + " " + frame.width + "x" + frame.height + " " +
-                            //    frame.stride + " " + frame.data_size + " " + frame.data);
-
-                            mcclient_frame_format_type formatType = mcclient_frame_format_type.MCCLIENT_FRAME_FORMAT_GRAY16;
-
-                            UnityMainThreadDispatcher.Dispatcher.Enqueue(() =>
-                            {
-                                mediaCaptureEvent.Invoke(frame, formatType);
-                            });
-                        }
-                        finally
-                        {
-                            // Always free the handle
-                            handle.Free();
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError($"Error in Update: {e.Message}\n{e.StackTrace}");
-                }
+                // Update() already runs on the main thread. Dispatching instead of calling straight
+                // through only delayed the frame by a render frame, and let the pin above be
+                // released first, leaving tobii_process_frame to read memory the GC could reuse.
+                mediaCaptureEvent.Invoke(frame, mcclient_frame_format_type.MCCLIENT_FRAME_FORMAT_GRAY16);
+            }
+            finally
+            {
+                handle.Free();
             }
         }
+        catch (Exception e)
+        {
+            Debug.LogError($"Error in Update: {e.Message}\n{e.StackTrace}");
+        }
     }
+
     private void OnDestroy()
     {
         if (mediaCaptureEvent != null)
