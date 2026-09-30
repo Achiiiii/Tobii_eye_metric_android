@@ -21,8 +21,9 @@ public class HeadFollow : MonoBehaviour
     }
 
     private const float CommandHz = 4f;
-    private const float Gain = 0.6f;
-    private const float MaxStepDeg = 6f;
+    // Each move covers most of the error in one go, then waits for the pose to settle (below).
+    private const float Gain = 0.8f;
+    private const float MaxStepDeg = 10f;
     // Fast enough that a correction started after an answer finishes inside the answer gap.
     private const float MotorSpeedDegPerSec = 40f;
     // Hysteresis: start correcting beyond EnterDeadzone, stop once inside ExitDeadzone.
@@ -39,16 +40,17 @@ public class HeadFollow : MonoBehaviour
     private const float PitchDownLimitDeg = 12f;
     private const float HomeYawDeg = 0f;
     private const float HomePitchDeg = 0f;
-    private const float PoseSmoothingSeconds = 0.2f;
+    private const float PoseSmoothingSeconds = 0.12f;
+    // Head pose trails the motor by the camera latency plus ~80 ms of inference plus smoothing.
+    // Stepping again before it catches up overshot 14 degrees of error by 6 on the device, so
+    // after each move an axis waits for the motor to arrive and this long more.
+    private const float PoseLagSeconds = 0.4f;
     private const float PoseStaleSeconds = 0.5f;
     // After the face has been gone this long, go back to where it was last seen centred.
     private const float LostRecoverSeconds = 1.5f;
     // Shorter than ButtonTrigger's 1 s selection cooldown, so the head is still again before the
     // next answer can start filling.
     private const float PostAnswerWindowSeconds = 0.8f;
-    // Sign check: after this much commanded correction, the error should have shrunk, not grown.
-    private const float SignCheckMinCommandDeg = 8f;
-    private const float SignCheckGrowthRatio = 0.6f;
     private const float LogIntervalSeconds = 1f;
 
     public FollowMode Mode { get; set; } = FollowMode.BetweenTrials;
@@ -82,9 +84,12 @@ public class HeadFollow : MonoBehaviour
     // Motor angles the last time the user was seen near the target; where to look when lost.
     private Vector2 _lastGoodMotor = new Vector2(HomeYawDeg, HomePitchDeg);
 
-    // Directions measured on the robot on 2026-09-30: with the user off to one side, commanding
-    // neck_z the other way made Tobii's x grow (the robot turned away), so yaw follows +x
-    // directly. Pitch reduced a positive y with negative neck_y (+ is looking down), as expected.
+    // Directions confirmed on the robot on 2026-09-30: with the user 14.9 degrees to +x, driving
+    // neck_z +20 brought them back to 1.5 (and -15 was cleared by driving it negative), so yaw
+    // follows +x directly. Pitch brought +18.8 down to 4 with negative neck_y (+ looks down).
+    // An automatic sign check used to flip these when the error grew during a correction, but it
+    // cannot tell a wrong sign from a user who moves faster than the motor; it flipped a correct
+    // yaw on the device and drove the robot away, so the signs are fixed.
     private readonly Axis _yaw = new Axis("yaw", Nuwa.NuwaMotorType.neck_z, HomeYawDeg, -YawLimitDeg, YawLimitDeg, +1f);
     private readonly Axis _pitch = new Axis("pitch", Nuwa.NuwaMotorType.neck_y, HomePitchDeg, PitchUpLimitDeg, PitchDownLimitDeg, -1f);
 
@@ -95,12 +100,9 @@ public class HeadFollow : MonoBehaviour
         public readonly float Home;
         public readonly float Min;
         public readonly float Max;
-        public float Sign;
+        public readonly float Sign;
         public bool Correcting;
-        public bool Disabled;
-        public int Flips;
-        public float RunStartError;
-        public float RunCommanded;
+        public float SettleUntil;
         public float Actual;
 
         public Axis(string name, Nuwa.NuwaMotorType motor, float home, float min, float max, float sign)
@@ -117,7 +119,6 @@ public class HeadFollow : MonoBehaviour
         public void EndRun()
         {
             Correcting = false;
-            RunCommanded = 0f;
         }
     }
 
@@ -282,7 +283,7 @@ public class HeadFollow : MonoBehaviour
             Vector2 error = _poseAngles - _targetAngles;
             Debug.Log($"[HEAD] mode={Mode} state={Status} pose={(_hasPose ? $"{_poseAngles.x:0.0},{_poseAngles.y:0.0}" : "none")} "
                       + $"target={_targetAngles.x:0.0},{_targetAngles.y:0.0} err={error.x:0.0},{error.y:0.0} "
-                      + $"motor={_yaw.Actual:0.0},{_pitch.Actual:0.0} sign={_yaw.Sign:+0;-0},{_pitch.Sign:+0;-0}");
+                      + $"motor={_yaw.Actual:0.0},{_pitch.Actual:0.0}");
         }
     }
 
@@ -354,7 +355,8 @@ public class HeadFollow : MonoBehaviour
     // Returns the new motor target for this axis, or NaN when it should stay where it is.
     private float StepAxis(Axis axis, float error)
     {
-        if (axis.Disabled)
+        // Still moving, or the pose has not caught up with the last move yet.
+        if (Time.unscaledTime < axis.SettleUntil)
             return float.NaN;
 
         float magnitude = Mathf.Abs(error);
@@ -363,8 +365,6 @@ public class HeadFollow : MonoBehaviour
             if (magnitude < EnterDeadzoneDeg)
                 return float.NaN;
             axis.Correcting = true;
-            axis.RunStartError = magnitude;
-            axis.RunCommanded = 0f;
         }
         else if (magnitude < ExitDeadzoneDeg)
         {
@@ -372,42 +372,17 @@ public class HeadFollow : MonoBehaviour
             return float.NaN;
         }
 
-        CheckSign(axis, magnitude);
-        if (axis.Disabled)
-            return float.NaN;
-
-        // Step from where the motor actually is: the pose lags the motor, so accumulating on the
-        // previous command would overshoot. The gain below 1 absorbs the rest of that lag.
         float step = Mathf.Clamp(Gain * error, -MaxStepDeg, MaxStepDeg);
         float target = Mathf.Clamp(axis.Actual + axis.Sign * step, axis.Min, axis.Max);
-        axis.RunCommanded += Mathf.Abs(target - axis.Actual);
+        float travel = Mathf.Abs(target - axis.Actual);
+        if (travel < 0.5f)
+        {
+            // Pinned at a limit: nothing more this axis can do.
+            axis.EndRun();
+            return float.NaN;
+        }
+        axis.SettleUntil = Time.unscaledTime + travel / MotorSpeedDegPerSec + PoseLagSeconds;
         return target;
-    }
-
-    // With the wrong sign every correction pushes the user further off-centre. Once enough
-    // correction has been commanded in one run, an error that grew instead of shrinking means the
-    // sign is wrong: flip it once. A second divergence means something else is off, so stop moving
-    // that axis. A run spans pauses (trial holds), and ends only when the axis settles.
-    private void CheckSign(Axis axis, float magnitude)
-    {
-        if (axis.RunCommanded < SignCheckMinCommandDeg)
-            return;
-        if (magnitude - axis.RunStartError < SignCheckGrowthRatio * axis.RunCommanded)
-            return;
-
-        if (axis.Flips == 0)
-        {
-            axis.Sign = -axis.Sign;
-            axis.Flips++;
-            Debug.LogWarning($"[HeadFollow] {axis.Name} error grew from {axis.RunStartError:0.0} to {magnitude:0.0} after {axis.RunCommanded:0.0} deg of correction; flipping its sign to {axis.Sign:+0;-0}");
-        }
-        else
-        {
-            axis.Disabled = true;
-            Debug.LogWarning($"[HeadFollow] {axis.Name} still diverging after a sign flip; this axis is disabled until the app restarts");
-        }
-        axis.RunStartError = magnitude;
-        axis.RunCommanded = 0f;
     }
 
     private void EndRuns()
@@ -420,6 +395,13 @@ public class HeadFollow : MonoBehaviour
     {
         if (!_robotReady)
             return;
+        // A long move (going home, looking back for a lost face): hold off corrections until the
+        // motors have arrived and the pose reflects it.
+        foreach (var axis in new[] { _yaw, _pitch })
+        {
+            float travel = Mathf.Abs((axis == _yaw ? yaw : pitch) - axis.Actual);
+            axis.SettleUntil = Time.unscaledTime + travel / MotorSpeedDegPerSec + PoseLagSeconds;
+        }
         Nuwa.setMotorPositionInDegree(_yaw.Motor, Mathf.Clamp(yaw, _yaw.Min, _yaw.Max), MotorSpeedDegPerSec);
         Nuwa.setMotorPositionInDegree(_pitch.Motor, Mathf.Clamp(pitch, _pitch.Min, _pitch.Max), MotorSpeedDegPerSec);
     }
