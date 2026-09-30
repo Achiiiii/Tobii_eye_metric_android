@@ -124,6 +124,7 @@ public class DriftCorrector : MonoBehaviour
         if (_head.IsMoving)
         {
             _recent.Clear();
+            _rejection = _rejection ?? "robot head was moving";
             return;
         }
 

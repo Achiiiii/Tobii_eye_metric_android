@@ -34,12 +34,15 @@ public class HeadFollow : MonoBehaviour
     private const float ExitDeadzoneDeg = 1.5f;
     // Even mid-selection, drift this large is corrected at once: gaze is already off by then.
     private const float CatchUpErrorDeg = 12f;
-    private const float YawLimitDeg = 35f;
-    // neck_y is negative looking up. The first device run pinned pitch at -12 with the user still
-    // 8 degrees above centre, so allow more upward travel; the motor firmware clamps to its own
-    // hardware range beyond this, and the read-back shows where it actually went.
-    private const float PitchUpLimitDeg = -20f;
+    // Hardware travel measured over 615 read-backs on 2026-09-30: neck_z never went past -30.6
+    // when told -35, and neck_y (negative looks up) never past -14.8 when told -16 or -20.
+    // Commanding beyond these left an axis "moving" forever. The other two directions have not
+    // been reached yet; stall detection below learns them if they turn out tighter.
+    private const float YawLimitDeg = 30f;
+    private const float PitchUpLimitDeg = -14.5f;
     private const float PitchDownLimitDeg = 12f;
+    // A move that achieved less than this share of its travel ran into a hardware stop.
+    private const float StallRatio = 0.3f;
     private const float HomeYawDeg = 0f;
     private const float HomePitchDeg = 0f;
     private const float PoseSmoothingSeconds = 0.12f;
@@ -109,11 +112,15 @@ public class HeadFollow : MonoBehaviour
         public readonly string Name;
         public readonly Nuwa.NuwaMotorType Motor;
         public readonly float Home;
-        public readonly float Min;
-        public readonly float Max;
+        // Narrowed at run time when a move stalls against a hardware stop.
+        public float Min;
+        public float Max;
         public readonly float Sign;
         public bool Correcting;
         public float SettleUntil;
+        public bool Commanded;
+        public float CommandFrom;
+        public float CommandTo;
         public float Actual;
 
         public Axis(string name, Nuwa.NuwaMotorType motor, float home, float min, float max, float sign)
@@ -130,6 +137,7 @@ public class HeadFollow : MonoBehaviour
         public void EndRun()
         {
             Correcting = false;
+            Commanded = false;
         }
     }
 
@@ -381,6 +389,22 @@ public class HeadFollow : MonoBehaviour
         if (Time.unscaledTime < axis.SettleUntil)
             return float.NaN;
 
+        if (axis.Commanded)
+        {
+            axis.Commanded = false;
+            float wanted = axis.CommandTo - axis.CommandFrom;
+            float achieved = axis.Actual - axis.CommandFrom;
+            if (Mathf.Abs(wanted) >= 1f && achieved * Mathf.Sign(wanted) < StallRatio * Mathf.Abs(wanted))
+            {
+                // Ran into a hardware stop: that is the limit in this direction from now on.
+                if (wanted < 0f)
+                    axis.Min = Mathf.Max(axis.Min, axis.Actual);
+                else
+                    axis.Max = Mathf.Min(axis.Max, axis.Actual);
+                Debug.LogWarning($"[HeadFollow] {axis.Name} stalled at {axis.Actual:0.0} (asked {axis.CommandTo:0.0}); limits now {axis.Min:0.0}..{axis.Max:0.0}");
+            }
+        }
+
         float magnitude = Mathf.Abs(error);
         if (!axis.Correcting)
         {
@@ -404,6 +428,9 @@ public class HeadFollow : MonoBehaviour
             return float.NaN;
         }
         axis.SettleUntil = Time.unscaledTime + travel / MotorSpeedDegPerSec + PoseLagSeconds;
+        axis.Commanded = true;
+        axis.CommandFrom = axis.Actual;
+        axis.CommandTo = target;
         return target;
     }
 
