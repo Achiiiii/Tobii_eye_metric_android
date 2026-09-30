@@ -8,8 +8,8 @@ using UnityEngine.UI;
 // 16 cm sideways the camera saw the face 20 degrees off and their looks at the symbol landed on the
 // options. Users cannot be expected to remember where they sat, so this guides them step by step:
 // the robot faces the calibrated position (so "straight in front of the screen" is right again),
-// answering pauses, an arrow and a bar show which way and how far, and the voice repeats the
-// direction until they are back.
+// answering pauses, an arrow shows which way, two scales (left-right, near-far) show how far with
+// a marker and a green "in place" zone, and the voice repeats the direction until they are back.
 public class PositionGuide : MonoBehaviour
 {
     private const float EnterLateralDeg = 10f;
@@ -24,14 +24,18 @@ public class PositionGuide : MonoBehaviour
     private const float InstructionSettleSeconds = 0.6f;
     private const float RepeatSeconds = 5f;
     private const float FaceLostSeconds = 1.5f;
-    // The bar is empty at this many times the tolerance and full within it.
-    private const float BarRange = 4f;
-    private const float BarWidth = 400f;
+    // Scale ends; beyond these the marker waits at the edge.
+    private const float LateralScaleDeg = 20f;
+    private const float DistanceScaleCm = 12f;
+    private const float ScaleWidth = 420f;
 
     private static readonly Color TitleColor = new Color32(0x1F, 0x3A, 0x5F, 0xFF);
     private static readonly Color TextColor = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
     private static readonly Color MoveColor = new Color32(0xE0, 0x6A, 0x3B, 0xFF);
     private static readonly Color GoodColor = new Color32(0x2E, 0x9E, 0x5A, 0xFF);
+    // Same zone tints as the head distance check before calibration.
+    private static readonly Color InZoneTint = new Color32(0xC8, 0xE6, 0xC9, 0xFF);
+    private static readonly Color OutZoneTint = new Color32(0xFF, 0xD6, 0xC4, 0xFF);
 
     private const string TitleText = "請回到剛才的位置";
     private const string MoveLeftText = "請往左移一點";
@@ -54,8 +58,20 @@ public class PositionGuide : MonoBehaviour
     private RectTransform _arrow;
     private readonly List<Image> _arrowParts = new List<Image>();
     private TextMeshProUGUI _instruction;
-    private RectTransform _barFill;
-    private Image _barFillImage;
+    private Scale _lateralScale;
+    private Scale _distanceScale;
+
+    // A horizontal scale with a green zone in the middle and a marker for the current value.
+    private class Scale
+    {
+        public RectTransform Marker;
+        public float Range;
+
+        public void Set(float value)
+        {
+            Marker.anchoredPosition = new Vector2(Mathf.Clamp(value / Range, -1f, 1f) * ScaleWidth * 0.5f, 0f);
+        }
+    }
 
     private bool _guiding;
     private float _startedAt;
@@ -86,28 +102,57 @@ public class PositionGuide : MonoBehaviour
 
         var panel = UiFactory.CreateImage("Panel", visual, UiFactory.RoundedRect, Color.white);
         panel.type = Image.Type.Sliced;
-        UiFactory.Place(panel.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(560f, 360f));
+        UiFactory.Place(panel.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(600f, 460f));
 
         var title = UiFactory.CreateText("Title", panel.transform, font, UiFactory.WithLatinFallback(TitleText, font), 34f, TitleColor);
         UiFactory.UsePlainMaterial(title);
         title.fontStyle = FontStyles.Bold;
-        UiFactory.Place(title.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 125f), new Vector2(520f, 50f));
+        UiFactory.Place(title.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 185f), new Vector2(560f, 50f));
 
-        guide._arrow = UiFactory.Place(UiFactory.CreateRect("Arrow", panel.transform), UiFactory.Center, UiFactory.Center, new Vector2(0f, 35f), new Vector2(200f, 110f));
+        guide._arrow = UiFactory.Place(UiFactory.CreateRect("Arrow", panel.transform), UiFactory.Center, UiFactory.Center, new Vector2(0f, 110f), new Vector2(200f, 90f));
         guide.AddChevron(-26f);
         guide.AddChevron(26f);
 
         guide._instruction = UiFactory.CreateText("Instruction", panel.transform, font, "", 30f, TextColor);
         UiFactory.UsePlainMaterial(guide._instruction);
-        UiFactory.Place(guide._instruction.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -60f), new Vector2(520f, 44f));
+        UiFactory.Place(guide._instruction.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 38f), new Vector2(560f, 44f));
 
-        var track = UiFactory.CreateImage("BarTrack", panel.transform, UiFactory.White, new Color(0f, 0f, 0f, 0.12f));
-        UiFactory.Place(track.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -122f), new Vector2(BarWidth, 18f));
-        guide._barFillImage = UiFactory.CreateImage("BarFill", track.transform, UiFactory.White, MoveColor);
-        guide._barFill = UiFactory.Place(guide._barFillImage.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), Vector2.zero, new Vector2(0f, 18f));
+        // Mirror-like: a user off to their right sees the marker right of the green zone, and moving
+        // left brings it in. Near-far reads like the distance check: 太近 left, 太遠 right.
+        guide._lateralScale = CreateScale(panel.transform, font, -50f, "左右", LateralScaleDeg, ExitLateralDeg, "偏左", "偏右");
+        guide._distanceScale = CreateScale(panel.transform, font, -145f, "前後", DistanceScaleCm, ExitDistanceCm, "太近", "太遠");
 
         guide._visual.SetActive(false);
         return guide;
+    }
+
+    private static Scale CreateScale(Transform parent, TMP_FontAsset font, float y, string name, float range, float tolerance, string lowLabel, string highLabel)
+    {
+        var caption = UiFactory.CreateText(name, parent, font, name, 24f, TextColor);
+        UiFactory.UsePlainMaterial(caption);
+        caption.fontStyle = FontStyles.Bold;
+        UiFactory.Place(caption.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(-250f, y), new Vector2(70f, 36f));
+
+        var bar = UiFactory.Place(UiFactory.CreateRect(name + "Scale", parent), UiFactory.Center, UiFactory.Center, new Vector2(30f, y), new Vector2(ScaleWidth, 34f));
+        float half = ScaleWidth * 0.5f;
+        float zoneHalf = half * tolerance / range;
+        AddZone(bar, font, -half, -zoneHalf, OutZoneTint, lowLabel);
+        AddZone(bar, font, -zoneHalf, zoneHalf, InZoneTint, "剛好");
+        AddZone(bar, font, zoneHalf, half, OutZoneTint, highLabel);
+
+        var marker = UiFactory.Place(UiFactory.CreateRect("Marker", bar), UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(6f, 48f));
+        var line = UiFactory.CreateImage("Line", marker, UiFactory.White, TextColor);
+        UiFactory.Stretch(line.rectTransform);
+        return new Scale { Marker = marker, Range = range };
+    }
+
+    private static void AddZone(RectTransform bar, TMP_FontAsset font, float from, float to, Color tint, string label)
+    {
+        var zone = UiFactory.CreateImage(label, bar, UiFactory.White, tint);
+        UiFactory.Place(zone.rectTransform, UiFactory.Center, new Vector2(0f, 0.5f), new Vector2(from, 0f), new Vector2(to - from, 34f));
+        var text = UiFactory.CreateText("Label", zone.transform, font, label, 18f, TextColor);
+        UiFactory.UsePlainMaterial(text);
+        UiFactory.Stretch(text.rectTransform);
     }
 
     // One ">" made of two rounded bars meeting at the tip; the arrow container is rotated to point.
@@ -164,7 +209,7 @@ public class PositionGuide : MonoBehaviour
                 _faceLostSince = now;
             if (now - _faceLostSince >= FaceLostSeconds)
             {
-                Show(Direction.None, FaceScreenText, MoveColor, 0f);
+                Show(Direction.None, FaceScreenText, MoveColor);
                 Speak(FaceScreenText, now, true);
             }
             return;
@@ -173,14 +218,14 @@ public class PositionGuide : MonoBehaviour
 
         float lateral = _head.LateralOffsetDeg;
         float distanceCm = _head.DistanceOffset * 100f;
+        _lateralScale.Set(lateral);
+        _distanceScale.Set(distanceCm);
         float lateralRatio = Mathf.Abs(lateral) / ExitLateralDeg;
         float distanceRatio = Mathf.Abs(distanceCm) / ExitDistanceCm;
-        float worst = Mathf.Max(lateralRatio, distanceRatio);
-        float fill = Mathf.Clamp01(1f - (worst - 1f) / (BarRange - 1f));
 
-        if (worst <= 1f)
+        if (Mathf.Max(lateralRatio, distanceRatio) <= 1f)
         {
-            Show(Direction.None, GoodText, GoodColor, 1f);
+            Show(Direction.None, GoodText, GoodColor);
             if (!_saidGood)
             {
                 _saidGood = true;
@@ -202,7 +247,7 @@ public class PositionGuide : MonoBehaviour
             ? (lateral > 0f ? Direction.Left : Direction.Right)
             : (distanceCm > 0f ? Direction.Closer : Direction.Back);
         string text = TextFor(direction);
-        Show(direction, text, MoveColor, fill);
+        Show(direction, text, MoveColor);
 
         if (direction != _pending)
         {
@@ -239,7 +284,9 @@ public class PositionGuide : MonoBehaviour
             : (distanceCm > 0f ? Direction.Closer : Direction.Back);
         _pending = direction;
         _pendingSince = now;
-        Show(direction, TextFor(direction), MoveColor, 0f);
+        _lateralScale.Set(lateral);
+        _distanceScale.Set(distanceCm);
+        Show(direction, TextFor(direction), MoveColor);
         Nuwa.stopTTS();
         Nuwa.startTTS(TitleText + "，" + TextFor(direction));
         _spoken = TextFor(direction);
@@ -277,7 +324,7 @@ public class PositionGuide : MonoBehaviour
         Nuwa.startTTS(text);
     }
 
-    private void Show(Direction direction, string text, Color color, float fill)
+    private void Show(Direction direction, string text, Color color)
     {
         _instruction.text = UiFactory.WithLatinFallback(text, _font);
         _instruction.color = direction == Direction.None && color == GoodColor ? GoodColor : TextColor;
@@ -293,9 +340,6 @@ public class PositionGuide : MonoBehaviour
         }
         foreach (var part in _arrowParts)
             part.color = color;
-
-        _barFill.sizeDelta = new Vector2(BarWidth * fill, _barFill.sizeDelta.y);
-        _barFillImage.color = color;
     }
 
     private static string TextFor(Direction direction)
