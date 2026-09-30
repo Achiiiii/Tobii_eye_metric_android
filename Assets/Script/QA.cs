@@ -314,7 +314,8 @@ public class QA : MonoBehaviour
     {
         ResetAnswers();
         questionPage.SetActive(true);
-        ShowQuestion(0);
+        // Silent: the mode menu speaks next, and BeginQuestionnaire() reads Q1 once it is picked.
+        ShowQuestion(0, false);
     }
 
     /// <summary>
@@ -350,7 +351,7 @@ public class QA : MonoBehaviour
     /// </summary>
     public void BeginQuestionnaire()
     {
-        ShowQuestion(0);
+        ShowQuestion(0, true);
     }
 
     /// <summary>
@@ -365,12 +366,13 @@ public class QA : MonoBehaviour
         RefreshGate(index);
     }
 
-    private void ShowQuestion(int index)
+    private void ShowQuestion(int index, bool speak = true)
     {
         for (int i = 0; i < questions.Length; i++)
             questions[i].SetActive(i == index);
         RefreshGate(index);
-        SpeakQuestion(index);
+        if (speak)
+            SpeakQuestion(index);
     }
 
     // Q4 與 Q6 是多選、Q7 是單選，三題都不能空白前進。
@@ -411,13 +413,26 @@ public class QA : MonoBehaviour
     {
         if (index < 0 || index >= displayQuestionTexts.Length)
             return;
-        // 題目裡的換行只是排版用的，唸出來時要拿掉。
-        string text = displayQuestionTexts[index].Replace("\n", "");
-        if (index == 3 || index == 5)
-            text += "，請勾選所有符合的項目";
+        // 換行只是排版用的，句尾的冒號和逗號唸出來會斷得很奇怪，都先去掉。
+        string text = displayQuestionTexts[index].Replace("\n", "").TrimEnd('：', ':', '，', ',', ' ');
+
+        // 題目本身已經寫了「請勾選」就不用再補一次。
+        if ((index == 3 || index == 5) && !text.Contains("勾選"))
+            text = Join(text, "請勾選所有符合的項目");
         else if (index == 6)
-            text += "，請選擇一項";
+            text = Join(text, "請選擇一項");
+
         PlayTTS(text);
+    }
+
+    // 問號或驚嘆號後面再加逗號會很怪，只有在句尾沒有標點時才補上。
+    private static string Join(string sentence, string suffix)
+    {
+        if (sentence.Length == 0)
+            return suffix;
+        char last = sentence[sentence.Length - 1];
+        bool ended = last == '？' || last == '?' || last == '！' || last == '!' || last == '。' || last == '.';
+        return ended ? sentence + suffix : sentence + "，" + suffix;
     }
 
     private void PlayTTS(string text)
