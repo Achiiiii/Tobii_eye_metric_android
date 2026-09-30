@@ -7,7 +7,8 @@ public class NetworkSignalIcon : MonoBehaviour
 {
     private const float PollSeconds = 2f;
     private const int TapsToToggleDebug = 5;
-    private const float TapWindowSeconds = 3f;
+    // Generous: at the app's low frame rate some quick taps are missed.
+    private const float TapWindowSeconds = 6f;
     private const int Offline = -1;
     private const int Unknown = -2;
     private static readonly Color InactiveColor = new Color32(0xBD, 0xBD, 0xBD, 0xFF);
@@ -28,6 +29,13 @@ public class NetworkSignalIcon : MonoBehaviour
         var icon = button.gameObject.AddComponent<NetworkSignalIcon>();
         icon._onDebugToggle = onDebugToggle;
         button.onClick.AddListener(icon.OnTap);
+
+        // The 36 px circle is about 6 mm on the robot's screen. An invisible hit area reaching to
+        // the top edge and further down catches taps that land just off it; it stays narrower than
+        // the 10 px gaps to the neighbouring recalibrate and exit buttons. Taps on it bubble up to
+        // the button.
+        var hitArea = UiFactory.CreateImage("HitArea", rect, UiFactory.White, Color.clear, true);
+        UiFactory.Place(hitArea.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -7f), new Vector2(size + 10f, size + 54f));
 
         float barWidth = size * 0.12f;
         float gap = size * 0.07f;

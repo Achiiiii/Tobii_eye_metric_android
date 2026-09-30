@@ -10,7 +10,7 @@ using UnityEngine;
 // and no extra inference. The camera and the screen both sit on the robot's head, so turning it
 // keeps the camera-to-screen geometry the calibration relies on - but it also moves what the user
 // is looking at. The head therefore never moves while calibration dots are up, and during the test
-// (in BetweenTrials mode) only in the short gap after each answer.
+// (in BetweenTrials mode) small drift is corrected only in the short gap after each answer.
 public class HeadFollow : MonoBehaviour
 {
     public enum FollowMode
@@ -21,18 +21,28 @@ public class HeadFollow : MonoBehaviour
     }
 
     private const float CommandHz = 4f;
-    private const float Gain = 0.5f;
-    private const float MaxStepDeg = 4f;
-    private const float MotorSpeedDegPerSec = 20f;
+    private const float Gain = 0.6f;
+    private const float MaxStepDeg = 6f;
+    // Fast enough that a correction started after an answer finishes inside the answer gap.
+    private const float MotorSpeedDegPerSec = 40f;
     // Hysteresis: start correcting beyond EnterDeadzone, stop once inside ExitDeadzone.
     private const float EnterDeadzoneDeg = 5f;
     private const float ExitDeadzoneDeg = 2.5f;
-    private const float YawRangeDeg = 35f;
-    private const float PitchRangeDeg = 12f;
+    // During a trial, drift this large is corrected at once: gaze is already off by then, and
+    // waiting for the next answer (1.5 s of dwell or more) felt like the robot lagging.
+    private const float CatchUpErrorDeg = 12f;
+    private const float YawLimitDeg = 35f;
+    // neck_y is negative looking up. The first device run pinned pitch at -12 with the user still
+    // 8 degrees above centre, so allow more upward travel; the motor firmware clamps to its own
+    // hardware range beyond this, and the read-back shows where it actually went.
+    private const float PitchUpLimitDeg = -20f;
+    private const float PitchDownLimitDeg = 12f;
     private const float HomeYawDeg = 0f;
     private const float HomePitchDeg = 0f;
     private const float PoseSmoothingSeconds = 0.2f;
     private const float PoseStaleSeconds = 0.5f;
+    // After the face has been gone this long, go back to where it was last seen centred.
+    private const float LostRecoverSeconds = 1.5f;
     // Shorter than ButtonTrigger's 1 s selection cooldown, so the head is still again before the
     // next answer can start filling.
     private const float PostAnswerWindowSeconds = 0.8f;
@@ -53,6 +63,8 @@ public class HeadFollow : MonoBehaviour
 
     private bool _engaged;
     private bool _calibrating;
+    private bool _catchingUp;
+    private bool _recovered;
     private bool _robotReady;
     private float _nextReadyCheck;
     private float _nextCommand;
@@ -67,19 +79,22 @@ public class HeadFollow : MonoBehaviour
     private Vector2 _targetAngles;
     private Vector2 _calibrationSum;
     private int _calibrationSamples;
+    // Motor angles the last time the user was seen near the target; where to look when lost.
+    private Vector2 _lastGoodMotor = new Vector2(HomeYawDeg, HomePitchDeg);
 
-    private readonly Axis _yaw = new Axis("yaw", Nuwa.NuwaMotorType.neck_z, HomeYawDeg, YawRangeDeg, -1f);
-    private readonly Axis _pitch = new Axis("pitch", Nuwa.NuwaMotorType.neck_y, HomePitchDeg, PitchRangeDeg, -1f);
+    // Directions measured on the robot on 2026-09-30: with the user off to one side, commanding
+    // neck_z the other way made Tobii's x grow (the robot turned away), so yaw follows +x
+    // directly. Pitch reduced a positive y with negative neck_y (+ is looking down), as expected.
+    private readonly Axis _yaw = new Axis("yaw", Nuwa.NuwaMotorType.neck_z, HomeYawDeg, -YawLimitDeg, YawLimitDeg, +1f);
+    private readonly Axis _pitch = new Axis("pitch", Nuwa.NuwaMotorType.neck_y, HomePitchDeg, PitchUpLimitDeg, PitchDownLimitDeg, -1f);
 
-    // neck_z +: the robot turns to its own right, which is the user's left. Tobii's x grows toward
-    // the user's right, so the yaw correction is negated. neck_y +: the robot looks down, and y
-    // grows upward, so pitch is negated too. Both signs are re-checked on the device (see Axis).
     private class Axis
     {
         public readonly string Name;
         public readonly Nuwa.NuwaMotorType Motor;
         public readonly float Home;
-        public readonly float Range;
+        public readonly float Min;
+        public readonly float Max;
         public float Sign;
         public bool Correcting;
         public bool Disabled;
@@ -88,14 +103,21 @@ public class HeadFollow : MonoBehaviour
         public float RunCommanded;
         public float Actual;
 
-        public Axis(string name, Nuwa.NuwaMotorType motor, float home, float range, float sign)
+        public Axis(string name, Nuwa.NuwaMotorType motor, float home, float min, float max, float sign)
         {
             Name = name;
             Motor = motor;
             Home = home;
-            Range = range;
+            Min = min;
+            Max = max;
             Sign = sign;
             Actual = home;
+        }
+
+        public void EndRun()
+        {
+            Correcting = false;
+            RunCommanded = 0f;
         }
     }
 
@@ -136,12 +158,16 @@ public class HeadFollow : MonoBehaviour
         _metricTest.Answered -= OnAnswered;
     }
 
-    // Called once the questionnaire is done and the head distance check begins.
+    // Called once the questionnaire is done (or a recalibration starts) and the head distance
+    // check begins.
     public void Engage()
     {
         _engaged = true;
+        _catchingUp = false;
+        _recovered = false;
         _targetAngles = Vector2.zero;
-        ResetAxes();
+        _lastGoodMotor = new Vector2(HomeYawDeg, HomePitchDeg);
+        EndRuns();
         Debug.Log("[HeadFollow] engaged, mode=" + Mode);
     }
 
@@ -150,9 +176,11 @@ public class HeadFollow : MonoBehaviour
     {
         _engaged = false;
         _calibrating = false;
+        _catchingUp = false;
         _targetAngles = Vector2.zero;
+        EndRuns();
         Status = "home";
-        DriveHome();
+        DriveTo(HomeYawDeg, HomePitchDeg);
         Debug.Log("[HeadFollow] returning home");
     }
 
@@ -162,7 +190,8 @@ public class HeadFollow : MonoBehaviour
     public FollowMode CycleMode()
     {
         Mode = (FollowMode)(((int)Mode + 1) % Enum.GetValues(typeof(FollowMode)).Length);
-        ResetAxes();
+        _catchingUp = false;
+        EndRuns();
         Debug.Log("[HeadFollow] mode=" + Mode);
         return Mode;
     }
@@ -190,6 +219,7 @@ public class HeadFollow : MonoBehaviour
         }
         _hasPose = true;
         _lastPoseTime = now;
+        _recovered = false;
 
         if (_calibrating)
         {
@@ -203,16 +233,17 @@ public class HeadFollow : MonoBehaviour
         _calibrating = true;
         _calibrationSum = Vector2.zero;
         _calibrationSamples = 0;
+        EndRuns();
     }
 
     private void OnCalibrationEnded()
     {
         _calibrating = false;
-        if (_calibrationSamples > 0)
-        {
-            _targetAngles = _calibrationSum / _calibrationSamples;
-            Debug.Log($"[HeadFollow] target = calibration pose yaw {_targetAngles.x:0.0} pitch {_targetAngles.y:0.0} ({_calibrationSamples} samples)");
-        }
+        if (_calibrationSamples == 0)
+            return;
+        _targetAngles = _calibrationSum / _calibrationSamples;
+        _lastGoodMotor = new Vector2(ReadMotor(_yaw), ReadMotor(_pitch));
+        Debug.Log($"[HeadFollow] target = calibration pose yaw {_targetAngles.x:0.0} pitch {_targetAngles.y:0.0} ({_calibrationSamples} samples), motor {_lastGoodMotor.x:0.0},{_lastGoodMotor.y:0.0}");
     }
 
     private void OnCalibrationFailed()
@@ -239,17 +270,10 @@ public class HeadFollow : MonoBehaviour
 
         bool allowed = MovementAllowed(out string reason);
         Status = reason;
-
         if (allowed && now >= _nextCommand)
         {
             _nextCommand = now + 1f / CommandHz;
             Step();
-        }
-        else if (!allowed)
-        {
-            // Whatever run was in progress is over; the next one starts from fresh measurements.
-            _yaw.Correcting = false;
-            _pitch.Correcting = false;
         }
 
         if (_engaged && now >= _nextLog)
@@ -268,13 +292,35 @@ public class HeadFollow : MonoBehaviour
         if (!_engaged) { reason = "idle"; return false; }
         if (!_robotReady) { reason = "waiting for robot"; return false; }
         if (_calibrating) { reason = "hold: calibrating"; return false; }
-        if (!_hasPose || Time.unscaledTime - _lastPoseTime > PoseStaleSeconds) { reason = "hold: no face"; return false; }
+
+        float sinceFace = Time.unscaledTime - _lastPoseTime;
+        if (!_hasPose || sinceFace > PoseStaleSeconds)
+        {
+            if (_hasPose && sinceFace > LostRecoverSeconds && !_recovered)
+            {
+                // The face left the image; look back to where it was last seen centred.
+                _recovered = true;
+                EndRuns();
+                DriveTo(_lastGoodMotor.x, _lastGoodMotor.y);
+                Debug.Log($"[HeadFollow] face lost for {sinceFace:0.0} s, returning to {_lastGoodMotor.x:0.0},{_lastGoodMotor.y:0.0}");
+            }
+            reason = _recovered ? "lost: back to last good" : "hold: no face";
+            return false;
+        }
 
         bool inTrial = _metricTest.gameObject.activeInHierarchy;
         if (inTrial && Mode == FollowMode.BetweenTrials && Time.unscaledTime > _answerWindowUntil)
         {
-            reason = "hold: trial";
-            return false;
+            Vector2 error = Error;
+            if (!_catchingUp && Mathf.Max(Mathf.Abs(error.x), Mathf.Abs(error.y)) > CatchUpErrorDeg)
+                _catchingUp = true;
+            if (!_catchingUp)
+            {
+                reason = "hold: trial";
+                return false;
+            }
+            reason = "tracking: catch-up";
+            return true;
         }
         reason = "tracking";
         return true;
@@ -284,14 +330,25 @@ public class HeadFollow : MonoBehaviour
     {
         _yaw.Actual = ReadMotor(_yaw);
         _pitch.Actual = ReadMotor(_pitch);
-        Vector2 error = _poseAngles - _targetAngles;
+        Vector2 error = Error;
 
+        // Both axes before calibration too: a user sitting too high or low should be brought to
+        // the middle of the image before the calibration dots appear, so the eyes are well framed
+        // for the samples that matter most. (Nothing moves while the dots are up.)
         float yawTarget = StepAxis(_yaw, error.x);
         float pitchTarget = StepAxis(_pitch, error.y);
+
         if (!float.IsNaN(yawTarget))
             Nuwa.setMotorPositionInDegree(_yaw.Motor, yawTarget, MotorSpeedDegPerSec);
         if (!float.IsNaN(pitchTarget))
             Nuwa.setMotorPositionInDegree(_pitch.Motor, pitchTarget, MotorSpeedDegPerSec);
+
+        bool settled = !_yaw.Correcting && !_pitch.Correcting;
+        if (settled)
+        {
+            _catchingUp = false;
+            _lastGoodMotor = new Vector2(_yaw.Actual, _pitch.Actual);
+        }
     }
 
     // Returns the new motor target for this axis, or NaN when it should stay where it is.
@@ -311,7 +368,7 @@ public class HeadFollow : MonoBehaviour
         }
         else if (magnitude < ExitDeadzoneDeg)
         {
-            axis.Correcting = false;
+            axis.EndRun();
             return float.NaN;
         }
 
@@ -322,14 +379,15 @@ public class HeadFollow : MonoBehaviour
         // Step from where the motor actually is: the pose lags the motor, so accumulating on the
         // previous command would overshoot. The gain below 1 absorbs the rest of that lag.
         float step = Mathf.Clamp(Gain * error, -MaxStepDeg, MaxStepDeg);
-        float target = Mathf.Clamp(axis.Actual + axis.Sign * step, axis.Home - axis.Range, axis.Home + axis.Range);
+        float target = Mathf.Clamp(axis.Actual + axis.Sign * step, axis.Min, axis.Max);
         axis.RunCommanded += Mathf.Abs(target - axis.Actual);
         return target;
     }
 
     // With the wrong sign every correction pushes the user further off-centre. Once enough
-    // correction has been commanded, an error that grew instead of shrinking means the sign is
-    // wrong: flip it once. A second flip means something else is off, so stop moving that axis.
+    // correction has been commanded in one run, an error that grew instead of shrinking means the
+    // sign is wrong: flip it once. A second divergence means something else is off, so stop moving
+    // that axis. A run spans pauses (trial holds), and ends only when the axis settles.
     private void CheckSign(Axis axis, float magnitude)
     {
         if (axis.RunCommanded < SignCheckMinCommandDeg)
@@ -346,27 +404,24 @@ public class HeadFollow : MonoBehaviour
         else
         {
             axis.Disabled = true;
-            Debug.LogWarning($"[HeadFollow] {axis.Name} still diverging after a sign flip; this axis is disabled until the next session");
+            Debug.LogWarning($"[HeadFollow] {axis.Name} still diverging after a sign flip; this axis is disabled until the app restarts");
         }
         axis.RunStartError = magnitude;
         axis.RunCommanded = 0f;
     }
 
-    private void ResetAxes()
+    private void EndRuns()
     {
-        foreach (var axis in new[] { _yaw, _pitch })
-        {
-            axis.Correcting = false;
-            axis.RunCommanded = 0f;
-        }
+        _yaw.EndRun();
+        _pitch.EndRun();
     }
 
-    private void DriveHome()
+    private void DriveTo(float yaw, float pitch)
     {
         if (!_robotReady)
             return;
-        Nuwa.setMotorPositionInDegree(_yaw.Motor, _yaw.Home, MotorSpeedDegPerSec);
-        Nuwa.setMotorPositionInDegree(_pitch.Motor, _pitch.Home, MotorSpeedDegPerSec);
+        Nuwa.setMotorPositionInDegree(_yaw.Motor, Mathf.Clamp(yaw, _yaw.Min, _yaw.Max), MotorSpeedDegPerSec);
+        Nuwa.setMotorPositionInDegree(_pitch.Motor, Mathf.Clamp(pitch, _pitch.Min, _pitch.Max), MotorSpeedDegPerSec);
     }
 
     private static float ReadMotor(Axis axis)
@@ -405,11 +460,11 @@ public class HeadFollow : MonoBehaviour
     private void OnApplicationPause(bool paused)
     {
         if (paused && _engaged)
-            DriveHome();
+            DriveTo(HomeYawDeg, HomePitchDeg);
     }
 
     private void OnApplicationQuit()
     {
-        DriveHome();
+        DriveTo(HomeYawDeg, HomePitchDeg);
     }
 }
