@@ -45,6 +45,7 @@ public class EyeMetricFlow : MonoBehaviour
     private GameObject _exitDialog;
     private GazeDebugOverlay _debugOverlay;
     private HeadFollow _headFollow;
+    private DriftCorrector _driftCorrector;
     private GameObject _banner;
     private TextMeshProUGUI _bannerText;
     private RectTransform _stimulusBadge;
@@ -83,6 +84,8 @@ public class EyeMetricFlow : MonoBehaviour
         BuildTestCountdown(_flowCanvas.transform);
         BuildModeMenu(_flowCanvas.transform);
         _headFollow = HeadFollow.Create(transform, gazeCalibrationManager, metricTest, resultPage);
+        DistanceReminder.Create(transform, _headFollow, metricTest);
+        _driftCorrector = DriftCorrector.Create(transform, gazePointer, metricTest, _headFollow, gazeCalibrationManager);
         BuildHud(hudCanvas.transform);
         BuildHomeButton(resultPage.transform);
 
@@ -223,7 +226,7 @@ public class EyeMetricFlow : MonoBehaviour
         exitButton.transform.SetParent(parent, false);
         exitButton.onClick.AddListener(OnExitPressed);
 
-        _debugOverlay = GazeDebugOverlay.Create(parent, gazePointer, _headFollow);
+        _debugOverlay = GazeDebugOverlay.Create(parent, gazePointer, _headFollow, _driftCorrector);
         NetworkSignalIcon.Create(parent, new Vector2(-66f, -20f), 36f, IconBackground, ToggleDebugOverlay);
 
         var recalibrate = UiFactory.CreateButton("RecalibrateButton", parent, UiFactory.Circle, IconBackground, Recalibrate);

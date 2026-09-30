@@ -12,24 +12,27 @@ public class GazeDebugOverlay : MonoBehaviour
     private FollowGazePoint2D _pointer;
     private HeadFollow _headFollow;
     private TextMeshProUGUI _headModeLabel;
+    private DriftCorrector _drift;
+    private TextMeshProUGUI _driftLabel;
     private TextMeshProUGUI _text;
     private GazeLatencyStats.Snapshot _previous;
     private float _previousTime;
 
-    public static GazeDebugOverlay Create(Transform parent, FollowGazePoint2D pointer, HeadFollow headFollow)
+    public static GazeDebugOverlay Create(Transform parent, FollowGazePoint2D pointer, HeadFollow headFollow, DriftCorrector drift)
     {
         var panel = UiFactory.CreateImage("GazeDebugOverlay", parent, UiFactory.RoundedRect, new Color(0f, 0f, 0f, 0.72f), true);
         panel.type = Image.Type.Sliced;
-        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 300f));
+        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 330f));
 
         var overlay = panel.gameObject.AddComponent<GazeDebugOverlay>();
         overlay._pointer = pointer;
         overlay._headFollow = headFollow;
+        overlay._drift = drift;
 
         // The Chinese SDF atlas has no Latin glyphs, so use TMP's default font here.
         var font = TMP_Settings.defaultFontAsset;
         overlay._text = UiFactory.CreateText("Stats", panel.transform, font, "measuring...", 15f, Color.white, TextAlignmentOptions.TopLeft);
-        UiFactory.Place(overlay._text.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -10f), new Vector2(316f, 206f));
+        UiFactory.Place(overlay._text.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -10f), new Vector2(316f, 236f));
 
         string[] labels = { "radius -", "radius +", "window -", "window +" };
         for (int i = 0; i < labels.Length; i++)
@@ -45,10 +48,18 @@ public class GazeDebugOverlay : MonoBehaviour
         // Cycles Off / BetweenTrials / Continuous, for comparing accuracy with and without it.
         var headButton = UiFactory.CreateButton("HeadMode", panel.transform, UiFactory.RoundedRect, new Color(1f, 0.65f, 0.14f, 0.35f), overlay.CycleHeadMode);
         ((Image)headButton.targetGraphic).type = Image.Type.Sliced;
-        UiFactory.Place((RectTransform)headButton.transform, Vector2.zero, Vector2.zero, new Vector2(12f, 48f), new Vector2(314f, 32f));
+        UiFactory.Place((RectTransform)headButton.transform, Vector2.zero, Vector2.zero, new Vector2(12f, 48f), new Vector2(155f, 32f));
         overlay._headModeLabel = UiFactory.CreateText("Label", headButton.transform, font, "", 14f, Color.white);
         UiFactory.Stretch(overlay._headModeLabel.rectTransform);
         overlay.RefreshHeadModeLabel();
+
+        // Drift correction on/off, for comparing sessions with and without it.
+        var driftButton = UiFactory.CreateButton("DriftMode", panel.transform, UiFactory.RoundedRect, new Color(0.3f, 0.7f, 1f, 0.35f), overlay.ToggleDrift);
+        ((Image)driftButton.targetGraphic).type = Image.Type.Sliced;
+        UiFactory.Place((RectTransform)driftButton.transform, Vector2.zero, Vector2.zero, new Vector2(171f, 48f), new Vector2(155f, 32f));
+        overlay._driftLabel = UiFactory.CreateText("Label", driftButton.transform, font, "", 14f, Color.white);
+        UiFactory.Stretch(overlay._driftLabel.rectTransform);
+        overlay.RefreshDriftLabel();
 
         panel.gameObject.SetActive(false);
         return overlay;
@@ -86,7 +97,9 @@ public class GazeDebugOverlay : MonoBehaviour
             + $"fixation spread  {spreadPx,7:0} px\n"
             + $"radius {radiusPx,5:0} px  window {_pointer.FixationWindowSeconds:0.00} s\n"
             + $"head    {_headFollow.Status}\n"
-            + $"head err {_headFollow.Error.x,6:0.0} {_headFollow.Error.y,6:0.0} deg"
+            + $"head err {_headFollow.Error.x,6:0.0} {_headFollow.Error.y,6:0.0} deg\n"
+            + $"distance {_headFollow.Distance * 100f,4:0} cm  cal {_headFollow.CalibrationDistance * 100f,3:0} cm\n"
+            + $"drift {_drift.Offset.x,5:0} {_drift.Offset.y,5:0} px  used {_drift.Accepted}/{_drift.Trials}"
             + "</mspace>";
 
         _previous = current;
@@ -101,7 +114,18 @@ public class GazeDebugOverlay : MonoBehaviour
 
     private void RefreshHeadModeLabel()
     {
-        _headModeLabel.text = "head follow: " + _headFollow.Mode;
+        _headModeLabel.text = "head: " + _headFollow.Mode;
+    }
+
+    private void ToggleDrift()
+    {
+        _drift.SetEnabled(!_drift.Enabled);
+        RefreshDriftLabel();
+    }
+
+    private void RefreshDriftLabel()
+    {
+        _driftLabel.text = "drift fix: " + (_drift.Enabled ? "on" : "off");
     }
 
     private void Adjust(int index)

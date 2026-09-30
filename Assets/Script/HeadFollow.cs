@@ -59,6 +59,12 @@ public class HeadFollow : MonoBehaviour
     public string Status { get; private set; } = "idle";
     // How far the user's head is from where it should be, in degrees (yaw, pitch).
     public Vector2 Error => _hasPose ? _poseAngles - _targetAngles : Vector2.zero;
+    public bool HasFace => _hasPose && Time.unscaledTime - _lastPoseTime <= PoseStaleSeconds;
+    // Head distance from the camera now and during calibration, in metres (0 until calibrated).
+    public float Distance => _poseDepth;
+    public float CalibrationDistance => _calibrationDepth;
+    // True while a move is under way or its effect has not yet reached the head pose.
+    public bool IsMoving => Time.unscaledTime < _yaw.SettleUntil || Time.unscaledTime < _pitch.SettleUntil;
 
     private StreamEngineDevice _device;
     private GazeCalibrationManager _calibration;
@@ -169,6 +175,7 @@ public class HeadFollow : MonoBehaviour
     public void Engage()
     {
         _engaged = true;
+        _calibrationDepth = 0f;
         _catchingUp = false;
         _recovered = false;
         _targetAngles = Vector2.zero;
@@ -182,6 +189,7 @@ public class HeadFollow : MonoBehaviour
     {
         _engaged = false;
         _calibrating = false;
+        _calibrationDepth = 0f;
         _catchingUp = false;
         _targetAngles = Vector2.zero;
         EndRuns();

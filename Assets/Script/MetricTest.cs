@@ -28,6 +28,8 @@ public class MetricTest : MonoBehaviour
     public TestMode Mode { get; set; } = TestMode.Single;
     // Raised on every answer; the next symbol follows immediately (HeadFollow uses the gap).
     public event Action Answered;
+    // Raised whenever a new symbol is on screen (DriftCorrector looks for the look at it).
+    public event Action SymbolShown;
     public string FirstSide => Mode == TestMode.Both ? "both" : "right";
 
     private int curLevel = 5;
@@ -75,6 +77,7 @@ public class MetricTest : MonoBehaviour
         RandomSide();
         SetAnswerTransform();
         SetLevel(curLevel);
+        SymbolShown?.Invoke();
     }
 
     public void ResetSession()
