@@ -10,7 +10,8 @@ using UnityEngine;
 // and no extra inference. The camera and the screen both sit on the robot's head, so turning it
 // keeps the camera-to-screen geometry the calibration relies on - but it also moves what the user
 // is looking at. The head therefore never moves while calibration dots are up, and during the test
-// (in BetweenTrials mode) small drift is corrected only in the short gap after each answer.
+// (in BetweenTrials mode) it holds only while a gaze selection is filling, unless the drift is
+// large - reading the symbol survives a small turn of the screen, a half-filled dwell does not.
 public class HeadFollow : MonoBehaviour
 {
     public enum FollowMode
@@ -20,17 +21,18 @@ public class HeadFollow : MonoBehaviour
         Continuous
     }
 
-    private const float CommandHz = 4f;
+    private const float CommandHz = 8f;
     // Each move covers most of the error in one go, then waits for the pose to settle (below).
     private const float Gain = 0.8f;
     private const float MaxStepDeg = 10f;
     // Fast enough that a correction started after an answer finishes inside the answer gap.
-    private const float MotorSpeedDegPerSec = 40f;
-    // Hysteresis: start correcting beyond EnterDeadzone, stop once inside ExitDeadzone.
-    private const float EnterDeadzoneDeg = 5f;
-    private const float ExitDeadzoneDeg = 2.5f;
-    // During a trial, drift this large is corrected at once: gaze is already off by then, and
-    // waiting for the next answer (1.5 s of dwell or more) felt like the robot lagging.
+    private const float MotorSpeedDegPerSec = 60f;
+    // Hysteresis: start correcting beyond EnterDeadzone, stop once inside ExitDeadzone. With a
+    // 5 degree deadzone the user sat 3-5 degrees off the calibrated pose for 10 s at a time and
+    // gaze visibly drifted; the pose is steady to about 0.3 degrees when still, so 3 is safe.
+    private const float EnterDeadzoneDeg = 3f;
+    private const float ExitDeadzoneDeg = 1.5f;
+    // Even mid-selection, drift this large is corrected at once: gaze is already off by then.
     private const float CatchUpErrorDeg = 12f;
     private const float YawLimitDeg = 35f;
     // neck_y is negative looking up. The first device run pinned pitch at -12 with the user still
@@ -76,6 +78,9 @@ public class HeadFollow : MonoBehaviour
     private bool _hasPose;
     private float _lastPoseTime;
     private Vector2 _poseAngles;  // user's head direction from the camera: (yaw, pitch) degrees
+    private float _poseDepth;     // metres
+    private float _calibrationDepthSum;
+    private float _calibrationDepth;
 
     // Where the user's head sat during calibration; before that, straight ahead of the camera.
     private Vector2 _targetAngles;
@@ -212,11 +217,13 @@ public class HeadFollow : MonoBehaviour
         if (!_hasPose || now - _lastPoseTime > PoseStaleSeconds)
         {
             _poseAngles = angles;
+            _poseDepth = depth;
         }
         else
         {
             float blend = 1f - Mathf.Exp(-(now - _lastPoseTime) / PoseSmoothingSeconds);
             _poseAngles = Vector2.Lerp(_poseAngles, angles, blend);
+            _poseDepth = Mathf.Lerp(_poseDepth, depth, blend);
         }
         _hasPose = true;
         _lastPoseTime = now;
@@ -225,6 +232,7 @@ public class HeadFollow : MonoBehaviour
         if (_calibrating)
         {
             _calibrationSum += angles;
+            _calibrationDepthSum += depth;
             _calibrationSamples++;
         }
     }
@@ -233,6 +241,7 @@ public class HeadFollow : MonoBehaviour
     {
         _calibrating = true;
         _calibrationSum = Vector2.zero;
+        _calibrationDepthSum = 0f;
         _calibrationSamples = 0;
         EndRuns();
     }
@@ -243,6 +252,7 @@ public class HeadFollow : MonoBehaviour
         if (_calibrationSamples == 0)
             return;
         _targetAngles = _calibrationSum / _calibrationSamples;
+        _calibrationDepth = _calibrationDepthSum / _calibrationSamples;
         _lastGoodMotor = new Vector2(ReadMotor(_yaw), ReadMotor(_pitch));
         Debug.Log($"[HeadFollow] target = calibration pose yaw {_targetAngles.x:0.0} pitch {_targetAngles.y:0.0} ({_calibrationSamples} samples), motor {_lastGoodMotor.x:0.0},{_lastGoodMotor.y:0.0}");
     }
@@ -283,7 +293,8 @@ public class HeadFollow : MonoBehaviour
             Vector2 error = _poseAngles - _targetAngles;
             Debug.Log($"[HEAD] mode={Mode} state={Status} pose={(_hasPose ? $"{_poseAngles.x:0.0},{_poseAngles.y:0.0}" : "none")} "
                       + $"target={_targetAngles.x:0.0},{_targetAngles.y:0.0} err={error.x:0.0},{error.y:0.0} "
-                      + $"motor={_yaw.Actual:0.0},{_pitch.Actual:0.0}");
+                      + $"motor={_yaw.Actual:0.0},{_pitch.Actual:0.0} "
+                      + $"dist={_poseDepth * 100f:0}cm cal={_calibrationDepth * 100f:0}cm");
         }
     }
 
@@ -309,15 +320,18 @@ public class HeadFollow : MonoBehaviour
             return false;
         }
 
+        // Holding for the whole trial made drift under 12 degrees wait for the next answer, 2-4 s
+        // away, which read as lag. Only a selection in progress needs the screen to stay put.
         bool inTrial = _metricTest.gameObject.activeInHierarchy;
-        if (inTrial && Mode == FollowMode.BetweenTrials && Time.unscaledTime > _answerWindowUntil)
+        if (inTrial && Mode == FollowMode.BetweenTrials && Time.unscaledTime > _answerWindowUntil
+            && GazeDwellIndicator.IsDwelling)
         {
             Vector2 error = Error;
             if (!_catchingUp && Mathf.Max(Mathf.Abs(error.x), Mathf.Abs(error.y)) > CatchUpErrorDeg)
                 _catchingUp = true;
             if (!_catchingUp)
             {
-                reason = "hold: trial";
+                reason = "hold: selecting";
                 return false;
             }
             reason = "tracking: catch-up";

@@ -49,6 +49,9 @@ public class GazeDwellIndicator : MonoBehaviour
         _instance = indicator;
     }
 
+    // True while a gaze selection is filling (or its completion is playing).
+    public static bool IsDwelling => _instance != null && _instance._owner != null;
+
     public static void Report(Object owner, float progress)
     {
         if (_instance != null)
