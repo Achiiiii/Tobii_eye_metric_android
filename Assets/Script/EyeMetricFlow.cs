@@ -28,7 +28,11 @@ public class EyeMetricFlow : MonoBehaviour
     // Descriptions used to be dark grey on the outlined font material and were hard to read.
     private static readonly Color DescriptionText = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
     private static readonly Color Teal = new Color32(0x12, 0xA1, 0x93, 0xFF);
-    private static readonly Color Blue = new Color32(0x1E, 0x88, 0xE5, 0xFF);
+    // The numbered tag beside each calibration dot: amber so it cannot be mistaken for the
+    // blue stimulus it labels, nor for the red gaze dot.
+    private static readonly Color BadgeFill = new Color32(0xF5, 0xA6, 0x23, 0xFF);
+    private static readonly Color BadgeEdge = new Color32(0x8A, 0x55, 0x00, 0xFF);
+    private static readonly Color BadgeText = new Color32(0x2A, 0x1A, 0x00, 0xFF);
     private static readonly Color SuccessGreen = new Color32(0x2E, 0x9E, 0x5A, 0xFF);
     private static readonly Color CancelGrey = new Color32(0x90, 0xA4, 0xAE, 0xFF);
     private static readonly Color IconBackground = new Color32(0xED, 0xED, 0xED, 0xEB);
@@ -180,7 +184,7 @@ public class EyeMetricFlow : MonoBehaviour
     {
         metricTest.Mode = mode;
         _modeMenu.SetActive(false);
-        Nuwa.stopTTS();
+        qa.BeginQuestionnaire();
     }
 
     // ==================== HUD (top-right) ====================
@@ -466,9 +470,17 @@ public class EyeMetricFlow : MonoBehaviour
         UiFactory.Stretch(_bannerText.rectTransform);
         _banner = banner.gameObject;
 
-        var badge = UiFactory.CreateImage("StimulusBadge", parent, UiFactory.Circle, Blue);
-        UiFactory.Place(badge.rectTransform, Vector2.zero, UiFactory.Center, Vector2.zero, new Vector2(46f, 46f));
-        _stimulusBadgeText = UiFactory.CreateText("Number", badge.transform, TMP_Settings.defaultFontAsset, "", 28f, Color.white);
+        // A blue circle read as one more calibration dot; a rounded amber tag differs from the
+        // stimuli in both shape and colour.
+        var badge = UiFactory.CreateImage("StimulusBadge", parent, UiFactory.RoundedRect, BadgeFill);
+        badge.type = Image.Type.Sliced;
+        badge.pixelsPerUnitMultiplier = 2f;
+        UiFactory.Place(badge.rectTransform, Vector2.zero, UiFactory.Center, Vector2.zero, new Vector2(54f, 42f));
+        var badgeEdge = UiFactory.CreateImage("Frame", badge.transform, UiFactory.RoundedFrame, BadgeEdge);
+        badgeEdge.type = Image.Type.Sliced;
+        badgeEdge.pixelsPerUnitMultiplier = 2f;
+        UiFactory.Stretch(badgeEdge.rectTransform);
+        _stimulusBadgeText = UiFactory.CreateText("Number", badge.transform, TMP_Settings.defaultFontAsset, "", 28f, BadgeText);
         _stimulusBadgeText.fontStyle = FontStyles.Bold;
         UiFactory.Stretch(_stimulusBadgeText.rectTransform);
         _stimulusBadge = badge.rectTransform;

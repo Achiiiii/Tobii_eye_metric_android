@@ -454,8 +454,8 @@ public class AndroidCameraPlugin {
                     cameraDevice = camera;
 
                     try {
-                        imageReader = ImageReader.newInstance(selectedSize.getWidth(), selectedSize.getHeight(), ImageFormat.YUV_420_888, 2);
-                        imageReader.setOnImageAvailableListener(imageListener, backgroundHandler);
+                        // The reader was already created (and its listener set) before openCamera;
+                        // building a second one here dropped the first without closing it.
                         CaptureRequest.Builder builder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
                         builder.addTarget(imageReader.getSurface());
 

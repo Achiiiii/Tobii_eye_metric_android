@@ -11,6 +11,7 @@ public static class QuestionnaireText
     private static readonly Color ButtonFill = new Color32(0xFF, 0xFF, 0xFF, 0xD9);
     private static readonly Color Border = new Color32(0x08, 0x5C, 0x91, 0xFF);
     private static readonly Color TextColor = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
+    private static readonly Color HintFill = new Color(0f, 0f, 0f, 0.62f);
     // The rounded sprites have 24 px slice borders; a multiplier of 2 gives ~10 px corners and a 4 px stroke.
     private const float CornerMultiplier = 2f;
     // The multi-option question art had 14 px of empty space above its panel.
@@ -47,7 +48,10 @@ public static class QuestionnaireText
 
             StyleButton(page.Find("Yes"), font, qa.displayYesLabels[i]);
             StyleButton(page.Find("No"), font, qa.displayNoLabels[i]);
-            StyleButton(page.Find("Next"), font, qa.displayNextLabel);
+            Transform next = page.Find("Next");
+            StyleButton(next, font, qa.displayNextLabel);
+            if (toggles != null)
+                AddSelectionHint(qa, i, next, font);
         }
     }
 
@@ -178,6 +182,23 @@ public static class QuestionnaireText
             float right = OptionLabelOffset - toggle.rect.width * 0.5f + width;
             UiFactory.Place(clickArea, UiFactory.Center, UiFactory.Center, new Vector2((left + right) * 0.5f, 0f), new Vector2(right - left, 40f));
         }
+    }
+
+    // The option questions cannot be left blank, so their Next button starts disabled.  This
+    // sits under the button and says why, and QA shows or hides it as options are picked.
+    private static void AddSelectionHint(QA qa, int index, Transform next, TMP_FontAsset font)
+    {
+        if (next == null)
+            return;
+
+        var pill = UiFactory.CreateImage("SelectionHint", next, UiFactory.RoundedRect, HintFill);
+        pill.type = Image.Type.Sliced;
+        pill.pixelsPerUnitMultiplier = CornerMultiplier;
+        UiFactory.Place(pill.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -10f), new Vector2(300f, 38f));
+        var label = UiFactory.CreateText("Text", pill.transform, font, UiFactory.WithLatinFallback("請至少勾選一項", font), 22f, Color.white);
+        UiFactory.Stretch(label.rectTransform);
+
+        qa.RegisterNextGate(index, next.GetComponent<Button>(), pill.gameObject);
     }
 
     private static void StyleButton(Transform target, TMP_FontAsset font, string text)

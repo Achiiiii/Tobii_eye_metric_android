@@ -86,6 +86,10 @@ public class QA : MonoBehaviour
     // 單選題答案 (Q7)
     private int q7Selection = -1; // -1 表示尚未選擇
 
+    // 勾選題的「繼續」按鈕與提示文字，由 QuestionnaireText 建立畫面時登記
+    private readonly Button[] nextButtons = new Button[TOTAL_QUESTIONS];
+    private readonly GameObject[] nextHints = new GameObject[TOTAL_QUESTIONS];
+
     void Awake()
     {
         directoryPath = Application.persistentDataPath;
@@ -131,6 +135,7 @@ public class QA : MonoBehaviour
             q4Selections[optionIndex] = !q4Selections[optionIndex];
         }
         Q4Toggles[optionIndex].DOFade(q4Selections[optionIndex] ? 1 : 0, 0);
+        RefreshGate(3);
     }
 
     /// <summary>
@@ -138,6 +143,9 @@ public class QA : MonoBehaviour
     /// </summary>
     public void ConfirmQ4()
     {
+        // 沒有勾選任何項目時按鈕是關閉的；這裡再擋一次，避免其他路徑繞過
+        if (!HasSelection(3))
+            return;
         NextQuestion(3); // Q4 的 index = 3
     }
 
@@ -153,6 +161,7 @@ public class QA : MonoBehaviour
             q6Selections[optionIndex] = !q6Selections[optionIndex];
         }
         Q6Toggles[optionIndex].DOFade(q6Selections[optionIndex] ? 1 : 0, 0);
+        RefreshGate(5);
     }
 
     /// <summary>
@@ -160,6 +169,9 @@ public class QA : MonoBehaviour
     /// </summary>
     public void ConfirmQ6()
     {
+        // 沒有勾選任何項目時按鈕是關閉的；這裡再擋一次，避免其他路徑繞過
+        if (!HasSelection(5))
+            return;
         NextQuestion(5); // Q6 的 index = 5
     }
 
@@ -179,6 +191,7 @@ public class QA : MonoBehaviour
             q7Selection = optionIndex;
         }
         Q7Toggles[optionIndex].DOFade(1, 0);
+        RefreshGate(6);
     }
 
     /// <summary>
@@ -186,6 +199,9 @@ public class QA : MonoBehaviour
     /// </summary>
     public void ConfirmQ7()
     {
+        // 沒有勾選任何項目時按鈕是關閉的；這裡再擋一次，避免其他路徑繞過
+        if (!HasSelection(6))
+            return;
         NextQuestion(6); // Q7 的 index = 6，最後一題
     }
 
@@ -210,8 +226,7 @@ public class QA : MonoBehaviour
         }
         else
         {
-            questions[currentIndex].SetActive(false);
-            questions[currentIndex + 1].SetActive(true);
+            ShowQuestion(currentIndex + 1);
         }
     }
 
@@ -298,9 +313,8 @@ public class QA : MonoBehaviour
     public void RestartQuestionnaire()
     {
         ResetAnswers();
-        for (int i = 0; i < questions.Length; i++)
-            questions[i].SetActive(i == 0);
         questionPage.SetActive(true);
+        ShowQuestion(0);
     }
 
     /// <summary>
@@ -324,5 +338,93 @@ public class QA : MonoBehaviour
         {
             item.DOFade(0, 0);
         }
+        RefreshGate(3);
+        RefreshGate(5);
+        RefreshGate(6);
+    }
+
+    // ==================== 顯示、語音與勾選檢查 ====================
+
+    /// <summary>
+    /// 選完測驗模式後由 EyeMetricFlow 呼叫：顯示第一題並唸出題目
+    /// </summary>
+    public void BeginQuestionnaire()
+    {
+        ShowQuestion(0);
+    }
+
+    /// <summary>
+    /// 由 QuestionnaireText 登記勾選題的「繼續」按鈕與提示文字
+    /// </summary>
+    public void RegisterNextGate(int index, Button next, GameObject hint)
+    {
+        if (!IsValidIndex(index))
+            return;
+        nextButtons[index] = next;
+        nextHints[index] = hint;
+        RefreshGate(index);
+    }
+
+    private void ShowQuestion(int index)
+    {
+        for (int i = 0; i < questions.Length; i++)
+            questions[i].SetActive(i == index);
+        RefreshGate(index);
+        SpeakQuestion(index);
+    }
+
+    // Q4 與 Q6 是多選、Q7 是單選，三題都不能空白前進。
+    private bool HasSelection(int index)
+    {
+        switch (index)
+        {
+            case 3: return AnySelected(q4Selections);
+            case 5: return AnySelected(q6Selections);
+            case 6: return q7Selection >= 0;
+            default: return true;
+        }
+    }
+
+    private static bool AnySelected(bool[] selections)
+    {
+        foreach (var selected in selections)
+        {
+            if (selected)
+                return true;
+        }
+        return false;
+    }
+
+    // ButtonTrigger 只對 interactable 的按鈕累積注視時間，所以關掉按鈕就等於擋住視線選取。
+    private void RefreshGate(int index)
+    {
+        if (!IsValidIndex(index))
+            return;
+        bool ready = HasSelection(index);
+        if (nextButtons[index] != null)
+            nextButtons[index].interactable = ready;
+        if (nextHints[index] != null)
+            nextHints[index].SetActive(!ready);
+    }
+
+    private void SpeakQuestion(int index)
+    {
+        if (index < 0 || index >= displayQuestionTexts.Length)
+            return;
+        // 題目裡的換行只是排版用的，唸出來時要拿掉。
+        string text = displayQuestionTexts[index].Replace("\n", "");
+        if (index == 3 || index == 5)
+            text += "，請勾選所有符合的項目";
+        else if (index == 6)
+            text += "，請選擇一項";
+        PlayTTS(text);
+    }
+
+    private void PlayTTS(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+        Nuwa.stopTTS();
+        Nuwa.startTTS(text);
     }
 }
