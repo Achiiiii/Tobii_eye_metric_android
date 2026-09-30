@@ -36,13 +36,18 @@ public class HeadFollow : MonoBehaviour
     private const float CatchUpErrorDeg = 12f;
     // Hardware travel measured over 615 read-backs on 2026-09-30: neck_z never went past -30.6
     // when told -35, and neck_y (negative looks up) never past -14.8 when told -16 or -20.
-    // Commanding beyond these left an axis "moving" forever. The other two directions have not
-    // been reached yet; stall detection below learns them if they turn out tighter.
+    // Commanding beyond these left an axis "moving" forever.
     private const float YawLimitDeg = 30f;
     private const float PitchUpLimitDeg = -14.5f;
     private const float PitchDownLimitDeg = 12f;
-    // A move that achieved less than this share of its travel ran into a hardware stop.
+    // The motors ignored moves of 1.4 and 2.5 degrees on the device, so no move is smaller than
+    // this (overshooting by at most ExitDeadzone).
+    private const float MinMoveDeg = 3f;
+    // A move that achieved less than this share of its travel did not happen: a hardware stop,
+    // or a move the motor ignored. Either way, stop pushing that way for a while - but only for a
+    // while: remembering it as a limit locked the head off to one side on the device.
     private const float StallRatio = 0.3f;
+    private const float StallBackoffSeconds = 3f;
     private const float HomeYawDeg = 0f;
     private const float HomePitchDeg = 0f;
     private const float PoseSmoothingSeconds = 0.12f;
@@ -112,15 +117,17 @@ public class HeadFollow : MonoBehaviour
         public readonly string Name;
         public readonly Nuwa.NuwaMotorType Motor;
         public readonly float Home;
-        // Narrowed at run time when a move stalls against a hardware stop.
-        public float Min;
-        public float Max;
+        public readonly float Min;
+        public readonly float Max;
         public readonly float Sign;
         public bool Correcting;
         public float SettleUntil;
         public bool Commanded;
         public float CommandFrom;
         public float CommandTo;
+        // After a move that did not happen: which way not to push (+1/-1) and until when.
+        public float BlockedDirection;
+        public float BlockedUntil;
         public float Actual;
 
         public Axis(string name, Nuwa.NuwaMotorType motor, float home, float min, float max, float sign)
@@ -394,14 +401,14 @@ public class HeadFollow : MonoBehaviour
             axis.Commanded = false;
             float wanted = axis.CommandTo - axis.CommandFrom;
             float achieved = axis.Actual - axis.CommandFrom;
-            if (Mathf.Abs(wanted) >= 1f && achieved * Mathf.Sign(wanted) < StallRatio * Mathf.Abs(wanted))
+            bool stalled = Mathf.Abs(wanted) >= 1f && achieved * Mathf.Sign(wanted) < StallRatio * Mathf.Abs(wanted);
+            Debug.Log($"[MOTOR] {axis.Name} {axis.CommandFrom:0.0} -> asked {axis.CommandTo:0.0}, reached {axis.Actual:0.0}{(stalled ? " (did not move)" : "")}");
+            if (stalled)
             {
-                // Ran into a hardware stop: that is the limit in this direction from now on.
-                if (wanted < 0f)
-                    axis.Min = Mathf.Max(axis.Min, axis.Actual);
-                else
-                    axis.Max = Mathf.Min(axis.Max, axis.Actual);
-                Debug.LogWarning($"[HeadFollow] {axis.Name} stalled at {axis.Actual:0.0} (asked {axis.CommandTo:0.0}); limits now {axis.Min:0.0}..{axis.Max:0.0}");
+                axis.BlockedDirection = Mathf.Sign(wanted);
+                axis.BlockedUntil = Time.unscaledTime + StallBackoffSeconds;
+                axis.EndRun();
+                return float.NaN;
             }
         }
 
@@ -419,6 +426,14 @@ public class HeadFollow : MonoBehaviour
         }
 
         float step = Mathf.Clamp(Gain * error, -MaxStepDeg, MaxStepDeg);
+        if (Mathf.Abs(step) < MinMoveDeg)
+            step = Mathf.Sign(error) * MinMoveDeg;
+        float direction = Mathf.Sign(axis.Sign * step);
+        if (direction == axis.BlockedDirection && Time.unscaledTime < axis.BlockedUntil)
+        {
+            axis.EndRun();
+            return float.NaN;
+        }
         float target = Mathf.Clamp(axis.Actual + axis.Sign * step, axis.Min, axis.Max);
         float travel = Mathf.Abs(target - axis.Actual);
         if (travel < 0.5f)

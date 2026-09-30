@@ -18,7 +18,13 @@ public class DriftCorrector : MonoBehaviour
     // Beyond this from the symbol the fixation is not trusted as a look at it.
     private const float MaxResidualPx = 150f;
     private const float MaxOffsetPx = 150f;
+    // Until a few trials are in, step toward each sample; after that, follow the median of the
+    // recent ones. On the device single residuals scattered by up to 100 px, and the median
+    // ignores the odd fixation that was not really on the symbol.
     private const float Gain = 0.3f;
+    private const int MedianWindow = 5;
+    private const int MedianMinimum = 3;
+    private const float MedianBlend = 0.5f;
 
     public bool Enabled { get; set; } = true;
     public Vector2 Offset => _pointer.DriftOffset;
@@ -34,6 +40,8 @@ public class DriftCorrector : MonoBehaviour
     private float _shownAt;
     private string _rejection;
     private readonly List<Vector2> _recent = new List<Vector2>();
+    // For each used trial, the offset that would have put that fixation exactly on the symbol.
+    private readonly List<Vector2> _implied = new List<Vector2>();
 
     public static DriftCorrector Create(Transform parent, FollowGazePoint2D pointer, MetricTest metricTest, HeadFollow head, GazeCalibrationManager calibration)
     {
@@ -88,6 +96,7 @@ public class DriftCorrector : MonoBehaviour
     private void ResetOffset(string reason)
     {
         _pointer.DriftOffset = Vector2.zero;
+        _implied.Clear();
         _searching = false;
         Accepted = 0;
         Trials = 0;
@@ -163,7 +172,13 @@ public class DriftCorrector : MonoBehaviour
             return;
         }
 
-        Vector2 offset = Vector2.ClampMagnitude(_pointer.DriftOffset + Gain * residual, MaxOffsetPx);
+        _implied.Add(_pointer.DriftOffset + residual);
+        if (_implied.Count > MedianWindow)
+            _implied.RemoveAt(0);
+        Vector2 offset = _implied.Count >= MedianMinimum
+            ? Vector2.Lerp(_pointer.DriftOffset, Median(_implied), MedianBlend)
+            : _pointer.DriftOffset + Gain * residual;
+        offset = Vector2.ClampMagnitude(offset, MaxOffsetPx);
         _pointer.DriftOffset = offset;
         Accepted++;
         Finish($"residual {residual.x:+0;-0},{residual.y:+0;-0} px at {elapsed:0.00} s -> offset {offset.x:+0;-0},{offset.y:+0;-0} px");
@@ -173,6 +188,23 @@ public class DriftCorrector : MonoBehaviour
     {
         _searching = false;
         Debug.Log($"[DRIFT] trial {Trials}: {result} ({Accepted}/{Trials} used)");
+    }
+
+    private static Vector2 Median(List<Vector2> points)
+    {
+        var xs = new List<float>(points.Count);
+        var ys = new List<float>(points.Count);
+        foreach (var point in points)
+        {
+            xs.Add(point.x);
+            ys.Add(point.y);
+        }
+        xs.Sort();
+        ys.Sort();
+        int middle = points.Count / 2;
+        return points.Count % 2 == 1
+            ? new Vector2(xs[middle], ys[middle])
+            : new Vector2((xs[middle - 1] + xs[middle]) * 0.5f, (ys[middle - 1] + ys[middle]) * 0.5f);
     }
 
     private static Vector2 ScreenCentre(RectTransform rect)
