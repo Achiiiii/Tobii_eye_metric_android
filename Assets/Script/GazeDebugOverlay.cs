@@ -22,7 +22,7 @@ public class GazeDebugOverlay : MonoBehaviour
     {
         var panel = UiFactory.CreateImage("GazeDebugOverlay", parent, UiFactory.RoundedRect, new Color(0f, 0f, 0f, 0.72f), true);
         panel.type = Image.Type.Sliced;
-        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 330f));
+        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 350f));
 
         var overlay = panel.gameObject.AddComponent<GazeDebugOverlay>();
         overlay._pointer = pointer;
@@ -32,7 +32,7 @@ public class GazeDebugOverlay : MonoBehaviour
         // The Chinese SDF atlas has no Latin glyphs, so use TMP's default font here.
         var font = TMP_Settings.defaultFontAsset;
         overlay._text = UiFactory.CreateText("Stats", panel.transform, font, "measuring...", 15f, Color.white, TextAlignmentOptions.TopLeft);
-        UiFactory.Place(overlay._text.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -10f), new Vector2(316f, 236f));
+        UiFactory.Place(overlay._text.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -10f), new Vector2(316f, 256f));
 
         string[] labels = { "radius -", "radius +", "window -", "window +" };
         for (int i = 0; i < labels.Length; i++)
@@ -99,6 +99,7 @@ public class GazeDebugOverlay : MonoBehaviour
             + $"head    {_headFollow.Status}\n"
             + $"head err {_headFollow.Error.x,6:0.0} {_headFollow.Error.y,6:0.0} deg\n"
             + $"distance {_headFollow.Distance * 100f,4:0} cm  cal {_headFollow.CalibrationDistance * 100f,3:0} cm\n"
+            + $"lateral  {(_headFollow.Calibrated ? _headFollow.LateralOffsetDeg : 0f),6:0.0} deg\n"
             + $"drift {_drift.Offset.x,5:0} {_drift.Offset.y,5:0} px  used {_drift.Accepted}/{_drift.Trials}"
             + "</mspace>";
 

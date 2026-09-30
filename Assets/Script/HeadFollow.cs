@@ -73,6 +73,12 @@ public class HeadFollow : MonoBehaviour
     public float CalibrationDistance => _calibrationDepth;
     // True while a move is under way or its effect has not yet reached the head pose.
     public bool IsMoving => Time.unscaledTime < _yaw.SettleUntil || Time.unscaledTime < _pitch.SettleUntil;
+    public bool Calibrated => _calibrationDepth > 0f;
+    // Where the user is compared with calibration, independent of where the head points: the
+    // user's direction from the robot's base (motor yaw plus direction within the image), in
+    // degrees, positive toward the user's right; and the change in distance, in metres.
+    public float LateralOffsetDeg => (_yaw.Actual + _poseAngles.x) - (_calibrationMotor.x + _targetAngles.x);
+    public float DistanceOffset => _poseDepth - _calibrationDepth;
 
     private StreamEngineDevice _device;
     private GazeCalibrationManager _calibration;
@@ -95,6 +101,11 @@ public class HeadFollow : MonoBehaviour
     private float _poseDepth;     // metres
     private float _calibrationDepthSum;
     private float _calibrationDepth;
+    private Vector2 _calibrationMotor;
+    // Set by PositionGuide while it walks a user back to where they were calibrated.
+    private bool _holdAtCalibration;
+    private float _nextMotorRead;
+    private Vector3 _headRotationDeg;
 
     // Where the user's head sat during calibration; before that, straight ahead of the camera.
     private Vector2 _targetAngles;
@@ -168,7 +179,10 @@ public class HeadFollow : MonoBehaviour
     private void OnEnable()
     {
         if (_device != null)
+        {
             _device.OnHeadPosePosition.AddListener(OnHeadPosition);
+            _device.OnHeadPoseRotation.AddListener(OnHeadRotation);
+        }
         _calibration.CalibrationStarted += OnCalibrationStarted;
         _calibration.CalibrationEnded += OnCalibrationEnded;
         _calibration.CalibrationFailed += OnCalibrationFailed;
@@ -178,7 +192,10 @@ public class HeadFollow : MonoBehaviour
     private void OnDisable()
     {
         if (_device != null)
+        {
             _device.OnHeadPosePosition.RemoveListener(OnHeadPosition);
+            _device.OnHeadPoseRotation.RemoveListener(OnHeadRotation);
+        }
         _calibration.CalibrationStarted -= OnCalibrationStarted;
         _calibration.CalibrationEnded -= OnCalibrationEnded;
         _calibration.CalibrationFailed -= OnCalibrationFailed;
@@ -191,6 +208,7 @@ public class HeadFollow : MonoBehaviour
     {
         _engaged = true;
         _calibrationDepth = 0f;
+        _holdAtCalibration = false;
         _catchingUp = false;
         _recovered = false;
         _targetAngles = Vector2.zero;
@@ -205,6 +223,7 @@ public class HeadFollow : MonoBehaviour
         _engaged = false;
         _calibrating = false;
         _calibrationDepth = 0f;
+        _holdAtCalibration = false;
         _catchingUp = false;
         _targetAngles = Vector2.zero;
         EndRuns();
@@ -223,6 +242,28 @@ public class HeadFollow : MonoBehaviour
         EndRuns();
         Debug.Log("[HeadFollow] mode=" + Mode);
         return Mode;
+    }
+
+    // While true, stop following and face the direction the head had during calibration, so that
+    // "straight in front of the screen" is where the user sat then.
+    public void SetHoldAtCalibration(bool hold)
+    {
+        if (_holdAtCalibration == hold)
+            return;
+        _holdAtCalibration = hold;
+        _catchingUp = false;
+        EndRuns();
+        if (hold)
+            DriveTo(_calibrationMotor.x, _calibrationMotor.y);
+        Debug.Log(hold
+            ? $"[HeadFollow] facing the calibrated position {_calibrationMotor.x:0.0},{_calibrationMotor.y:0.0} while the user is guided back"
+            : "[HeadFollow] following again");
+    }
+
+    // Logged to check how obliquely the camera sees the face after the head has turned to follow.
+    private void OnHeadRotation(Vector3 radians)
+    {
+        _headRotationDeg = radians * Mathf.Rad2Deg;
     }
 
     private void OnHeadPosition(Vector3 metres)
@@ -277,6 +318,9 @@ public class HeadFollow : MonoBehaviour
         _targetAngles = _calibrationSum / _calibrationSamples;
         _calibrationDepth = _calibrationDepthSum / _calibrationSamples;
         _lastGoodMotor = new Vector2(ReadMotor(_yaw), ReadMotor(_pitch));
+        _calibrationMotor = _lastGoodMotor;
+        _yaw.Actual = _calibrationMotor.x;
+        _pitch.Actual = _calibrationMotor.y;
         Debug.Log($"[HeadFollow] target = calibration pose yaw {_targetAngles.x:0.0} pitch {_targetAngles.y:0.0} ({_calibrationSamples} samples), motor {_lastGoodMotor.x:0.0},{_lastGoodMotor.y:0.0}");
     }
 
@@ -302,6 +346,14 @@ public class HeadFollow : MonoBehaviour
         UpdateRobotReady();
         float now = Time.unscaledTime;
 
+        // Keep the read-back current even while not moving: LateralOffsetDeg depends on it.
+        if (_engaged && _robotReady && now >= _nextMotorRead)
+        {
+            _nextMotorRead = now + 0.25f;
+            _yaw.Actual = ReadMotor(_yaw);
+            _pitch.Actual = ReadMotor(_pitch);
+        }
+
         bool allowed = MovementAllowed(out string reason);
         Status = reason;
         if (allowed && now >= _nextCommand)
@@ -317,7 +369,8 @@ public class HeadFollow : MonoBehaviour
             Debug.Log($"[HEAD] mode={Mode} state={Status} pose={(_hasPose ? $"{_poseAngles.x:0.0},{_poseAngles.y:0.0}" : "none")} "
                       + $"target={_targetAngles.x:0.0},{_targetAngles.y:0.0} err={error.x:0.0},{error.y:0.0} "
                       + $"motor={_yaw.Actual:0.0},{_pitch.Actual:0.0} "
-                      + $"dist={_poseDepth * 100f:0}cm cal={_calibrationDepth * 100f:0}cm");
+                      + $"dist={_poseDepth * 100f:0}cm cal={_calibrationDepth * 100f:0}cm "
+                      + $"lateral={(Calibrated ? LateralOffsetDeg : 0f):0.0} rot={_headRotationDeg.x:0},{_headRotationDeg.y:0},{_headRotationDeg.z:0}");
         }
     }
 
@@ -326,6 +379,7 @@ public class HeadFollow : MonoBehaviour
         if (Mode == FollowMode.Off) { reason = "off"; return false; }
         if (!_engaged) { reason = "idle"; return false; }
         if (!_robotReady) { reason = "waiting for robot"; return false; }
+        if (_holdAtCalibration) { reason = "guiding: facing calibrated position"; return false; }
         if (_calibrating) { reason = "hold: calibrating"; return false; }
 
         float sinceFace = Time.unscaledTime - _lastPoseTime;

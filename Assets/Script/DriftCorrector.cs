@@ -120,6 +120,12 @@ public class DriftCorrector : MonoBehaviour
     {
         if (!_searching)
             return;
+        // The user is being walked back into place, not looking at the symbol.
+        if (PositionGuide.Active)
+        {
+            Finish("paused for position guidance");
+            return;
+        }
 
         float elapsed = Time.unscaledTime - _shownAt;
         if (elapsed > SearchWindowSeconds)

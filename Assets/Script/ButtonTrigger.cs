@@ -7,6 +7,8 @@ public class ButtonTrigger : MonoBehaviour
     // (e.g. when the next question appears) starts a fresh dwell instead of firing immediately.
     private const float SelectionCooldownSeconds = 1f;
     private static float s_cooldownUntil;
+    // Set while PositionGuide walks the user back into place: no gaze selection meanwhile.
+    public static bool Paused;
 
     Button btn;
     RectTransform rect;
@@ -61,7 +63,7 @@ public class ButtonTrigger : MonoBehaviour
     {
         if (_isEnter)
         {
-            if (Time.time < s_cooldownUntil || !btn.IsInteractable())
+            if (Paused || Time.time < s_cooldownUntil || !btn.IsInteractable())
             {
                 if (_dwellTime > 0f)
                     ResetDwell();

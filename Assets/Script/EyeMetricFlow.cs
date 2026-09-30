@@ -84,7 +84,9 @@ public class EyeMetricFlow : MonoBehaviour
         BuildTestCountdown(_flowCanvas.transform);
         BuildModeMenu(_flowCanvas.transform);
         _headFollow = HeadFollow.Create(transform, gazeCalibrationManager, metricTest, resultPage);
-        DistanceReminder.Create(transform, _headFollow, metricTest);
+        // Above the gaze dot (10), below the HUD (20), so exit and recalibrate stay usable.
+        var guideCanvas = UiFactory.CreateOverlayCanvas("GuideOverlay", 15, transform);
+        PositionGuide.Create(guideCanvas.transform, font, _headFollow, metricTest);
         _driftCorrector = DriftCorrector.Create(transform, gazePointer, metricTest, _headFollow, gazeCalibrationManager);
         BuildHud(hudCanvas.transform);
         BuildHomeButton(resultPage.transform);
