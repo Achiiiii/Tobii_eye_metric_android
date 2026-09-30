@@ -26,6 +26,8 @@ public class MetricTest : MonoBehaviour
     public AudioSource audioSource;
 
     public TestMode Mode { get; set; } = TestMode.Single;
+    // Raised on every answer; the next symbol follows immediately (HeadFollow uses the gap).
+    public event Action Answered;
     public string FirstSide => Mode == TestMode.Both ? "both" : "right";
 
     private int curLevel = 5;
@@ -170,6 +172,7 @@ public class MetricTest : MonoBehaviour
     }
     public void TriggerSide(string side)
     {
+        Answered?.Invoke();
         audioSource.Play();
         if (side == answerSide) correct++;
         else wrong++;

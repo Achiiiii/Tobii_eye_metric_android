@@ -21,6 +21,7 @@ public class EyeMetricFlow : MonoBehaviour
 
     private const float HeadConfirmedSeconds = 1.8f;
     private const float CountdownFadeSeconds = 0.25f;
+    private const float PerfLogSeconds = 5f;
 
     // The Chinese SDF atlas has no digits, so counts inside Chinese sentences use Chinese numerals.
     private static readonly string[] ChineseNumerals = { "", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十" };
@@ -43,6 +44,7 @@ public class EyeMetricFlow : MonoBehaviour
     private GameObject _recalibrateButton;
     private GameObject _exitDialog;
     private GazeDebugOverlay _debugOverlay;
+    private HeadFollow _headFollow;
     private GameObject _banner;
     private TextMeshProUGUI _bannerText;
     private RectTransform _stimulusBadge;
@@ -58,6 +60,9 @@ public class EyeMetricFlow : MonoBehaviour
     private Coroutine _headConfirmedRoutine;
     private Coroutine _testCountdownRoutine;
     private volatile bool _robotServiceStarted;
+    private GazeLatencyStats.Snapshot _perfPrevious;
+    private float _perfPreviousTime;
+    private int _perfPreviousFrame;
 
     private void Awake()
     {
@@ -77,6 +82,7 @@ public class EyeMetricFlow : MonoBehaviour
         BuildGazeIntro(_flowCanvas.transform);
         BuildTestCountdown(_flowCanvas.transform);
         BuildModeMenu(_flowCanvas.transform);
+        _headFollow = HeadFollow.Create(transform, gazeCalibrationManager, metricTest, resultPage);
         BuildHud(hudCanvas.transform);
         BuildHomeButton(resultPage.transform);
 
@@ -131,6 +137,28 @@ public class EyeMetricFlow : MonoBehaviour
             _robotServiceStarted = false;
             NuwaSystemUi.SetSystemAlertsEnabled(false);
         }
+        LogPerformance();
+    }
+
+    // Every few seconds: how long tobii_process_frame takes and how many gaze samples arrive.
+    // That time sits on the main thread today, so it bounds both the frame rate and gaze rate.
+    private void LogPerformance()
+    {
+        float elapsed = Time.unscaledTime - _perfPreviousTime;
+        if (elapsed < PerfLogSeconds)
+            return;
+
+        var current = GazeLatencyStats.Take();
+        long frames = current.Frames - _perfPrevious.Frames;
+        long samples = current.GazeSamples - _perfPrevious.GazeSamples;
+        if (frames > 0)
+        {
+            double processMs = GazeLatencyStats.TicksToMilliseconds(current.FrameTicks - _perfPrevious.FrameTicks) / frames;
+            Debug.Log($"[PERF] process frame {processMs:0.0} ms  frames {frames / elapsed:0.0}/s  gaze {samples / elapsed:0.0} Hz  render {Time.frameCount - _perfPreviousFrame:0}/{elapsed:0.0}s");
+        }
+        _perfPrevious = current;
+        _perfPreviousTime = Time.unscaledTime;
+        _perfPreviousFrame = Time.frameCount;
     }
 
     private void OnRobotServiceStart()
@@ -195,7 +223,7 @@ public class EyeMetricFlow : MonoBehaviour
         exitButton.transform.SetParent(parent, false);
         exitButton.onClick.AddListener(OnExitPressed);
 
-        _debugOverlay = GazeDebugOverlay.Create(parent, gazePointer);
+        _debugOverlay = GazeDebugOverlay.Create(parent, gazePointer, _headFollow);
         NetworkSignalIcon.Create(parent, new Vector2(-66f, -20f), 36f, IconBackground, ToggleDebugOverlay);
 
         var recalibrate = UiFactory.CreateButton("RecalibrateButton", parent, UiFactory.Circle, IconBackground, Recalibrate);
@@ -216,11 +244,15 @@ public class EyeMetricFlow : MonoBehaviour
     private void OnQuestionnaireCompleted()
     {
         _recalibrateButton.SetActive(true);
+        // From the head distance check on, keep the user centred for the camera.
+        _headFollow.Engage();
     }
 
     private void Recalibrate()
     {
         ResetTestSession();
+        // A fresh calibration starts from the head distance check, so start following again.
+        _headFollow.Engage();
         mainCanvas.SetActive(true);
         canvasTrackBox.SetActive(true);
         // OpenLock also plays the head positioning instructions.
@@ -303,6 +335,7 @@ public class EyeMetricFlow : MonoBehaviour
     private void ResetTestSession()
     {
         Nuwa.stopTTS();
+        _headFollow.ReturnHome();
         StopHeadConfirmed();
         StopTestCountdown();
         detectDistance.CloseLock();

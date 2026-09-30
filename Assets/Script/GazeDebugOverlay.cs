@@ -10,23 +10,26 @@ public class GazeDebugOverlay : MonoBehaviour
     private const float WindowStepSeconds = 0.1f;
 
     private FollowGazePoint2D _pointer;
+    private HeadFollow _headFollow;
+    private TextMeshProUGUI _headModeLabel;
     private TextMeshProUGUI _text;
     private GazeLatencyStats.Snapshot _previous;
     private float _previousTime;
 
-    public static GazeDebugOverlay Create(Transform parent, FollowGazePoint2D pointer)
+    public static GazeDebugOverlay Create(Transform parent, FollowGazePoint2D pointer, HeadFollow headFollow)
     {
         var panel = UiFactory.CreateImage("GazeDebugOverlay", parent, UiFactory.RoundedRect, new Color(0f, 0f, 0f, 0.72f), true);
         panel.type = Image.Type.Sliced;
-        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 226f));
+        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 300f));
 
         var overlay = panel.gameObject.AddComponent<GazeDebugOverlay>();
         overlay._pointer = pointer;
+        overlay._headFollow = headFollow;
 
         // The Chinese SDF atlas has no Latin glyphs, so use TMP's default font here.
         var font = TMP_Settings.defaultFontAsset;
         overlay._text = UiFactory.CreateText("Stats", panel.transform, font, "measuring...", 15f, Color.white, TextAlignmentOptions.TopLeft);
-        UiFactory.Place(overlay._text.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -10f), new Vector2(316f, 170f));
+        UiFactory.Place(overlay._text.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -10f), new Vector2(316f, 206f));
 
         string[] labels = { "radius -", "radius +", "window -", "window +" };
         for (int i = 0; i < labels.Length; i++)
@@ -38,6 +41,14 @@ public class GazeDebugOverlay : MonoBehaviour
             var label = UiFactory.CreateText("Label", button.transform, font, labels[i], 14f, Color.white);
             UiFactory.Stretch(label.rectTransform);
         }
+
+        // Cycles Off / BetweenTrials / Continuous, for comparing accuracy with and without it.
+        var headButton = UiFactory.CreateButton("HeadMode", panel.transform, UiFactory.RoundedRect, new Color(1f, 0.65f, 0.14f, 0.35f), overlay.CycleHeadMode);
+        ((Image)headButton.targetGraphic).type = Image.Type.Sliced;
+        UiFactory.Place((RectTransform)headButton.transform, Vector2.zero, Vector2.zero, new Vector2(12f, 48f), new Vector2(314f, 32f));
+        overlay._headModeLabel = UiFactory.CreateText("Label", headButton.transform, font, "", 14f, Color.white);
+        UiFactory.Stretch(overlay._headModeLabel.rectTransform);
+        overlay.RefreshHeadModeLabel();
 
         panel.gameObject.SetActive(false);
         return overlay;
@@ -73,11 +84,24 @@ public class GazeDebugOverlay : MonoBehaviour
             + $"dispatch delay   {dispatchMs,7:0.0} ms\n"
             + $"raw vs dot       {lagPx,7:0} px\n"
             + $"fixation spread  {spreadPx,7:0} px\n"
-            + $"radius {radiusPx,5:0} px  window {_pointer.FixationWindowSeconds:0.00} s"
+            + $"radius {radiusPx,5:0} px  window {_pointer.FixationWindowSeconds:0.00} s\n"
+            + $"head    {_headFollow.Status}\n"
+            + $"head err {_headFollow.Error.x,6:0.0} {_headFollow.Error.y,6:0.0} deg"
             + "</mspace>";
 
         _previous = current;
         _previousTime = Time.unscaledTime;
+    }
+
+    private void CycleHeadMode()
+    {
+        _headFollow.CycleMode();
+        RefreshHeadModeLabel();
+    }
+
+    private void RefreshHeadModeLabel()
+    {
+        _headModeLabel.text = "head follow: " + _headFollow.Mode;
     }
 
     private void Adjust(int index)
