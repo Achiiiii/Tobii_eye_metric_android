@@ -12,6 +12,9 @@ public class DriftCorrector : MonoBehaviour
     // Before this the saccade to the centre is usually still under way.
     private const float SearchDelaySeconds = 0.25f;
     private const float SearchWindowSeconds = 2.5f;
+    // After this, a dwell in progress means the user has moved on to choosing an option. (Before
+    // it, the indicator may still be finishing the previous answer.)
+    private const float SelectionStartSeconds = 1f;
     // About 0.35 s at the ~11 Hz gaze rate measured on the robot.
     private const int FixationSamples = 4;
     private const float FixationDispersionPx = 60f;
@@ -40,6 +43,10 @@ public class DriftCorrector : MonoBehaviour
     private float _shownAt;
     private string _rejection;
     private readonly List<Vector2> _recent = new List<Vector2>();
+    // Every steady fixation near the symbol this trial. The first one is often an undershoot -
+    // coming up from the lower option the eye lands short, below the symbol, then corrects - and
+    // taking only the first one pushed the whole dot 76 px upward in five trials on the device.
+    private readonly List<Vector2> _candidates = new List<Vector2>();
     // For each used trial, the offset that would have put that fixation exactly on the symbol.
     private readonly List<Vector2> _implied = new List<Vector2>();
     // Recent samples, to measure where the gaze sat on an option while it was being chosen.
@@ -111,13 +118,14 @@ public class DriftCorrector : MonoBehaviour
     private void OnSymbolShown()
     {
         if (_searching)
-            Finish("no look at the symbol found (" + (_rejection ?? "no steady fixation") + ")");
+            Conclude();
         if (!Enabled)
             return;
         _searching = true;
         _shownAt = Time.unscaledTime;
         _rejection = null;
         _recent.Clear();
+        _candidates.Clear();
         Trials++;
     }
 
@@ -138,9 +146,9 @@ public class DriftCorrector : MonoBehaviour
         }
 
         float elapsed = Time.unscaledTime - _shownAt;
-        if (elapsed > SearchWindowSeconds)
+        if (elapsed > SearchWindowSeconds || (elapsed > SelectionStartSeconds && GazeDwellIndicator.IsDwelling))
         {
-            Finish("no look at the symbol found (" + (_rejection ?? "no steady fixation") + ")");
+            Conclude();
             return;
         }
         if (elapsed < SearchDelaySeconds)
@@ -181,13 +189,27 @@ public class DriftCorrector : MonoBehaviour
             }
         }
 
-        Vector2 residual = symbol - centroid;
-        if (residual.magnitude > MaxResidualPx)
+        if (Vector2.Distance(symbol, centroid) > MaxResidualPx)
         {
-            _rejection = $"nearest fixation {residual.magnitude:0} px from the symbol";
+            _rejection = $"nearest fixation {Vector2.Distance(symbol, centroid):0} px from the symbol";
             return;
         }
 
+        // Keep looking: the trial's estimate is the median of all its steady fixations on the symbol.
+        _candidates.Add(centroid);
+        _recent.Clear();
+    }
+
+    // Ends this trial's search: the median of the fixations found becomes one drift sample.
+    private void Conclude()
+    {
+        if (_candidates.Count == 0)
+        {
+            Finish("no look at the symbol found (" + (_rejection ?? "no steady fixation") + ")");
+            return;
+        }
+
+        Vector2 residual = ScreenCentre(_metricTest.blackRT) - Median(_candidates);
         _implied.Add(_pointer.DriftOffset + residual);
         if (_implied.Count > MedianWindow)
             _implied.RemoveAt(0);
@@ -197,7 +219,7 @@ public class DriftCorrector : MonoBehaviour
         offset = Vector2.ClampMagnitude(offset, MaxOffsetPx);
         _pointer.DriftOffset = offset;
         Accepted++;
-        Finish($"residual {residual.x:+0;-0},{residual.y:+0;-0} px at {elapsed:0.00} s -> offset {offset.x:+0;-0},{offset.y:+0;-0} px");
+        Finish($"residual {residual.x:+0;-0},{residual.y:+0;-0} px from {_candidates.Count} fixation(s) -> offset {offset.x:+0;-0},{offset.y:+0;-0} px");
     }
 
     // Measurement only, for now: how far the gaze sat from an option while it was chosen by
@@ -206,7 +228,7 @@ public class DriftCorrector : MonoBehaviour
     private void OnSideChosen(string side)
     {
         // A dwell completes with the indicator playing its finish; a tap does not.
-        if (!GazeDwellIndicator.IsDwelling || _history.Count < 3)
+        if (!(GazeDwellIndicator.IsDwelling || GazeDwellIndicator.IsCompleting) || _history.Count < 3)
             return;
         RectTransform option = OptionFor(side);
         if (option == null)
