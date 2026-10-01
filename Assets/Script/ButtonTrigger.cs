@@ -63,7 +63,7 @@ public class ButtonTrigger : MonoBehaviour
     {
         if (_isEnter)
         {
-            if (Paused || Time.time < s_cooldownUntil || !btn.IsInteractable())
+            if (Paused || Time.time < s_cooldownUntil || !btn.IsInteractable() || !GazeSelectionGate.Allows())
             {
                 if (_dwellTime > 0f)
                     ResetDwell();

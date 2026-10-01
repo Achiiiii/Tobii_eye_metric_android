@@ -13,12 +13,13 @@ public class OptionReveal : MonoBehaviour
     private MetricTest _metricTest;
     private DriftCorrector _drift;
     private HeadFollow _head;
+    private FollowGazePoint2D _pointer;
 
     private bool _waiting;
     private float _shownAt;
     private float _stillSince = -1f;
 
-    public static OptionReveal Create(Transform parent, MetricTest metricTest, DriftCorrector drift, HeadFollow head)
+    public static OptionReveal Create(Transform parent, MetricTest metricTest, DriftCorrector drift, HeadFollow head, FollowGazePoint2D pointer)
     {
         var go = new GameObject("OptionReveal");
         go.transform.SetParent(parent, false);
@@ -28,6 +29,7 @@ public class OptionReveal : MonoBehaviour
         reveal._metricTest = metricTest;
         reveal._drift = drift;
         reveal._head = head;
+        reveal._pointer = pointer;
         go.SetActive(true);
         return reveal;
     }
@@ -44,6 +46,7 @@ public class OptionReveal : MonoBehaviour
 
     private void OnSymbolShown()
     {
+        GazeSelectionGate.Open();
         _waiting = true;
         _shownAt = Time.unscaledTime;
         _stillSince = -1f;
@@ -56,6 +59,7 @@ public class OptionReveal : MonoBehaviour
         if (!_metricTest.gameObject.activeInHierarchy)
         {
             _waiting = false;
+            GazeSelectionGate.Open();
             return;
         }
         // Nothing to learn from with the correction off: show the options straight away.
@@ -75,7 +79,12 @@ public class OptionReveal : MonoBehaviour
             _stillSince = now;
 
         if (_drift.CentreLookFound)
+        {
+            // The user is looking at the symbol right now: an answer must start with the gaze
+            // moving away from it (GazeSelectionGate).
+            GazeSelectionGate.Close(_pointer);
             Reveal("looked at the symbol");
+        }
         else if (_stillSince >= 0f && now - _stillSince >= WaitAfterStillSeconds)
             Reveal("waited");
         else if (now - _shownAt >= MaxWaitSeconds)

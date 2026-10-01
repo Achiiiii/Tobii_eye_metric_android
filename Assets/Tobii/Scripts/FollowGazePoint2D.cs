@@ -48,6 +48,8 @@ public class FollowGazePoint2D : MonoBehaviour
     public System.Func<Vector2, Vector2> Correction { get; set; }
     // Each raw gaze sample in screen pixels, before any correction.
     public event System.Action<Vector2> RawSampleAdded;
+    // Where the dot is drawn, in screen pixels (before clamping to the screen edge).
+    public Vector2 DisplayedScreenPosition => _displayedScreenPosition;
     private Vector2 _displayedScreenPosition;
     private bool _hasDisplayedPosition = false;
 

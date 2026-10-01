@@ -89,7 +89,7 @@ public class EyeMetricFlow : MonoBehaviour
         var guideCanvas = UiFactory.CreateOverlayCanvas("GuideOverlay", 15, transform);
         PositionGuide.Create(guideCanvas.transform, font, _headFollow, metricTest);
         _driftCorrector = DriftCorrector.Create(transform, gazePointer, metricTest, _headFollow, gazeCalibrationManager);
-        OptionReveal.Create(transform, metricTest, _driftCorrector, _headFollow);
+        OptionReveal.Create(transform, metricTest, _driftCorrector, _headFollow, gazePointer);
         BuildHud(hudCanvas.transform);
         BuildHomeButton(resultPage.transform);
 
@@ -361,6 +361,8 @@ public class EyeMetricFlow : MonoBehaviour
     private void ResetTestSession()
     {
         Nuwa.stopTTS();
+        // A session cut short mid-question must not leave gaze selection held for the next one.
+        GazeSelectionGate.Open();
         _headFollow.ReturnHome();
         StopHeadConfirmed();
         StopTestCountdown();
