@@ -64,6 +64,8 @@ public class HeadFollow : MonoBehaviour
     private const float LogIntervalSeconds = 1f;
 
     public FollowMode Mode { get; set; } = FollowMode.BetweenTrials;
+    // True from the head distance check until the result page: a session is under way.
+    public bool Engaged => _engaged;
     public string Status { get; private set; } = "idle";
     // How far the user's head is from where it should be, in degrees (yaw, pitch).
     public Vector2 Error => _hasPose ? _poseAngles - _targetAngles : Vector2.zero;

@@ -13,21 +13,24 @@ public class GazeDebugOverlay : MonoBehaviour
     private HeadFollow _headFollow;
     private TextMeshProUGUI _headModeLabel;
     private DriftCorrector _drift;
+    private AndroidWebcamCaptureClient _capture;
+    private TextMeshProUGUI _resolutionLabel;
     private TextMeshProUGUI _driftLabel;
     private TextMeshProUGUI _text;
     private GazeLatencyStats.Snapshot _previous;
     private float _previousTime;
 
-    public static GazeDebugOverlay Create(Transform parent, FollowGazePoint2D pointer, HeadFollow headFollow, DriftCorrector drift)
+    public static GazeDebugOverlay Create(Transform parent, FollowGazePoint2D pointer, HeadFollow headFollow, DriftCorrector drift, AndroidWebcamCaptureClient capture)
     {
         var panel = UiFactory.CreateImage("GazeDebugOverlay", parent, UiFactory.RoundedRect, new Color(0f, 0f, 0f, 0.72f), true);
         panel.type = Image.Type.Sliced;
-        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 350f));
+        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 390f));
 
         var overlay = panel.gameObject.AddComponent<GazeDebugOverlay>();
         overlay._pointer = pointer;
         overlay._headFollow = headFollow;
         overlay._drift = drift;
+        overlay._capture = capture;
 
         // The Chinese SDF atlas has no Latin glyphs, so use TMP's default font here.
         var font = TMP_Settings.defaultFontAsset;
@@ -61,12 +64,22 @@ public class GazeDebugOverlay : MonoBehaviour
         UiFactory.Stretch(overlay._driftLabel.rectTransform);
         overlay.RefreshDriftLabel();
 
+        // Frame size handed to Tobii, 700x520 or 1050x780, for comparing accuracy against speed.
+        var resolutionButton = UiFactory.CreateButton("Resolution", panel.transform, UiFactory.RoundedRect, new Color(0.6f, 1f, 0.6f, 0.3f), overlay.ToggleResolution);
+        ((Image)resolutionButton.targetGraphic).type = Image.Type.Sliced;
+        UiFactory.Place((RectTransform)resolutionButton.transform, Vector2.zero, Vector2.zero, new Vector2(12f, 86f), new Vector2(314f, 32f));
+        overlay._resolutionLabel = UiFactory.CreateText("Label", resolutionButton.transform, font, "", 14f, Color.white);
+        UiFactory.Stretch(overlay._resolutionLabel.rectTransform);
+        overlay.RefreshResolutionLabel(null);
+
         panel.gameObject.SetActive(false);
         return overlay;
     }
 
     private void OnEnable()
     {
+        if (_resolutionLabel != null)
+            RefreshResolutionLabel(null);
         _previous = GazeLatencyStats.Take();
         _previousTime = Time.unscaledTime;
     }
@@ -116,6 +129,29 @@ public class GazeDebugOverlay : MonoBehaviour
     private void RefreshHeadModeLabel()
     {
         _headModeLabel.text = "head: " + _headFollow.Mode;
+    }
+
+    // A new frame size makes a new Tobii processor and drops calibration, so only between sessions.
+    private void ToggleResolution()
+    {
+        if (_capture == null)
+            return;
+        if (_headFollow.Engaged)
+        {
+            RefreshResolutionLabel("go home first");
+            return;
+        }
+        int next = _capture.DownsampleFactor == 2 ? 3 : 2;
+        bool ok = _capture.SetDownsampleFactor(next);
+        Debug.Log($"[GazeDebugOverlay] downsample -> {next}: {(ok ? "ok" : "refused")}");
+        RefreshResolutionLabel(ok ? null : "not available");
+    }
+
+    private void RefreshResolutionLabel(string note)
+    {
+        int factor = _capture != null ? _capture.DownsampleFactor : 0;
+        string size = factor == 2 ? "1050x780" : factor == 3 ? "700x520" : factor > 0 ? "x" + factor : "n/a";
+        _resolutionLabel.text = "resolution: " + size + (note != null ? "  (" + note + ")" : "");
     }
 
     private void ToggleDrift()

@@ -84,6 +84,25 @@ public class AndroidCameraPlugin {
     private static final int MIN_IMAGE_WIDTH = 640;
     private static final int TARGET_MAX_WIDTH = 1280;
     private static int downsampleFactor = 1;
+    private static int streamWidth = 0;
+    private static int streamHeight = 0;
+
+    // Switches the frames handed to Tobii between sizes cut from the same stream, e.g. 2100x1560
+    // by 3 (700x520) or by 2 (1050x780). The next frame has a new size, which makes the app
+    // create a new Tobii processor and so drops calibration: switch only between sessions.
+    public static boolean setDownsampleFactor(int factor) {
+        if (factor < 1 || streamWidth == 0 || streamWidth % factor != 0 || streamHeight % factor != 0) {
+            Log.w(TAG, "[RES] downsample " + factor + " does not divide " + streamWidth + "x" + streamHeight);
+            return false;
+        }
+        downsampleFactor = factor;
+        Log.i(TAG, "[RES] downsample now " + factor + " -> " + (streamWidth / factor) + "x" + (streamHeight / factor));
+        return true;
+    }
+
+    public static int getDownsampleFactor() {
+        return downsampleFactor;
+    }
 
     public static void triggerAutoFocus() {
         if (captureSession == null || captureRequestBuilder == null || backgroundHandler == null) return;
@@ -436,6 +455,8 @@ public class AndroidCameraPlugin {
                 imageReader = ImageReader.newInstance(selectedSize.getWidth(), selectedSize.getHeight(), ImageFormat.YUV_420_888, 2);
                 imageReader.setOnImageAvailableListener(imageListener, backgroundHandler);
 
+                streamWidth = selectedSize.getWidth();
+                streamHeight = selectedSize.getHeight();
                 downsampleFactor = chooseDownsampleFactor(selectedSize.getWidth(), selectedSize.getHeight());
                 Log.i(TAG, "[RES] stream " + selectedSize.getWidth() + "x" + selectedSize.getHeight()
                         + " downsample=" + downsampleFactor

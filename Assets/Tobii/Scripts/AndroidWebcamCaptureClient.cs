@@ -224,6 +224,26 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
             mediaCaptureEvent.RemoveAllListeners();
     }
 
+    // The integer factor the 2100x1560 camera stream is shrunk by before Tobii sees it: 3 gives
+    // 700x520, 2 gives 1050x780. 0 when unavailable (not Android, camera not started).
+    public int DownsampleFactor
+    {
+        get
+        {
+            if (Application.platform != RuntimePlatform.Android || pluginClass == null)
+                return 0;
+            return pluginClass.CallStatic<int>("getDownsampleFactor");
+        }
+    }
+
+    // Takes effect on the next frame and recreates the Tobii processor, clearing calibration.
+    public bool SetDownsampleFactor(int factor)
+    {
+        if (Application.platform != RuntimePlatform.Android || pluginClass == null)
+            return false;
+        return pluginClass.CallStatic<bool>("setDownsampleFactor", factor);
+    }
+
     public void TriggerAutoFocus()
     {
         if (Application.platform == RuntimePlatform.Android && pluginClass != null && isInitialized)

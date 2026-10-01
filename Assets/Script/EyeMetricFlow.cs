@@ -232,7 +232,8 @@ public class EyeMetricFlow : MonoBehaviour
         exitButton.transform.SetParent(parent, false);
         exitButton.onClick.AddListener(OnExitPressed);
 
-        _debugOverlay = GazeDebugOverlay.Create(parent, gazePointer, _headFollow, _driftCorrector);
+        _debugOverlay = GazeDebugOverlay.Create(parent, gazePointer, _headFollow, _driftCorrector,
+            FindObjectOfType<AndroidWebcamCaptureClient>());
         NetworkSignalIcon.Create(parent, new Vector2(-66f, -20f), 36f, IconBackground, ToggleDebugOverlay);
 
         var recalibrate = UiFactory.CreateButton("RecalibrateButton", parent, UiFactory.Circle, IconBackground, Recalibrate);
