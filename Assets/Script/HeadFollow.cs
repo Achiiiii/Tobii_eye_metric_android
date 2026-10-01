@@ -42,6 +42,9 @@ public class HeadFollow : MonoBehaviour
     private const float PitchDownLimitDeg = 12f;
     // How far beyond the head's tilt range the user may sit before the setup is flagged.
     private const float EyeLevelMarginDeg = 3f;
+    // The accepted range of EyeElevationDeg: +17.5 to -15 degrees.
+    public const float EyeLevelHighDeg = -PitchUpLimitDeg + EyeLevelMarginDeg;
+    public const float EyeLevelLowDeg = -PitchDownLimitDeg - EyeLevelMarginDeg;
     // The motors ignored moves of 1.4 and 2.5 degrees on the device, so no move is smaller than
     // this (overshooting by at most ExitDeadzone).
     private const float MinMoveDeg = 3f;
@@ -91,9 +94,9 @@ public class HeadFollow : MonoBehaviour
             if (!HasFace)
                 return 0;
             float elevation = EyeElevationDeg;
-            if (elevation > -PitchUpLimitDeg + EyeLevelMarginDeg)
+            if (elevation > EyeLevelHighDeg)
                 return 1;
-            if (elevation < -PitchDownLimitDeg - EyeLevelMarginDeg)
+            if (elevation < EyeLevelLowDeg)
                 return -1;
             return 0;
         }

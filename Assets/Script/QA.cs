@@ -133,6 +133,7 @@ public class QA : MonoBehaviour
         if (optionIndex >= 0 && optionIndex < q4Selections.Length)
         {
             q4Selections[optionIndex] = !q4Selections[optionIndex];
+            ClearConflictingOptions(q4Selections, Q4Toggles, displayQ4Options, optionIndex);
         }
         Q4Toggles[optionIndex].DOFade(q4Selections[optionIndex] ? 1 : 0, 0);
         RefreshGate(3);
@@ -159,10 +160,31 @@ public class QA : MonoBehaviour
         if (optionIndex >= 0 && optionIndex < q6Selections.Length)
         {
             q6Selections[optionIndex] = !q6Selections[optionIndex];
+            ClearConflictingOptions(q6Selections, Q6Toggles, displayQ6Options, optionIndex);
         }
         Q6Toggles[optionIndex].DOFade(q6Selections[optionIndex] ? 1 : 0, 0);
         RefreshGate(5);
     }
+
+    /// <summary>
+    /// 「無」與其他選項互斥：勾了「無」就取消其他選項，勾了其他選項就取消「無」
+    /// </summary>
+    private static void ClearConflictingOptions(bool[] selections, Image[] toggles, string[] options, int optionIndex)
+    {
+        if (!selections[optionIndex])
+            return;
+        bool pickedNone = options[optionIndex] == NoneOption;
+        for (int i = 0; i < selections.Length; i++)
+        {
+            if (i == optionIndex || !selections[i] || (options[i] == NoneOption) == pickedNone)
+                continue;
+            selections[i] = false;
+            if (i < toggles.Length && toggles[i] != null)
+                toggles[i].DOFade(0, 0);
+        }
+    }
+
+    private const string NoneOption = "無";
 
     /// <summary>
     /// 第6題確認送出，按下後前進到下一題

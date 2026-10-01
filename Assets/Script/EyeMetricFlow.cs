@@ -81,6 +81,7 @@ public class EyeMetricFlow : MonoBehaviour
         BuildCalibrationHints(_flowCanvas.transform);
         // Created before the head distance guide, which shows its eye-level notice.
         _headFollow = HeadFollow.Create(transform, gazeCalibrationManager, metricTest, resultPage);
+        detectDistance.HeadFollow = _headFollow;
         HeadDistanceGuide.Create(_flowCanvas.transform, detectDistance, canvasTrackBox, font, _headFollow);
         BuildHeadConfirmed(_flowCanvas.transform);
         BuildGazeIntro(_flowCanvas.transform);

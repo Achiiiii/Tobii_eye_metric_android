@@ -15,18 +15,23 @@ public class HeadDistanceGuide : MonoBehaviour
     private static readonly Color OutOfRangeZoneTint = new Color32(0xFF, 0xD6, 0xC4, 0xFF);
     private static readonly Color TextDark = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
     private static readonly Color NoticeFill = new Color32(0xF5, 0xA6, 0x23, 0xFF);
-    // A mismatch must last this long before the notice shows, so a passing lean does not flash it.
-    private const float EyeLevelSustainSeconds = 1.5f;
     private const string TooHighText = "眼睛比機器人高太多，請把機器人墊高或把座椅調低";
     private const string TooLowText = "眼睛比機器人低太多，請把機器人放低或把座椅調高";
+    // Height scale on the right: the user's eye elevation seen from the robot, in degrees, top = high.
+    private const float HeightScaleDeg = 35f;
+    private const float HeightScaleHeight = 300f;
+    private const float HeightScaleWidth = 64f;
+    private const float NoticeRefreshSeconds = 0.5f;
 
     private DetectDistance _detectDistance;
     private HeadFollow _head;
     private GameObject _eyeLevelNotice;
     private TextMeshProUGUI _eyeLevelText;
-    private int _eyeLevelPending;
-    private float _eyeLevelSince;
     private int _eyeLevelShown;
+    private int _eyeLevelCmShown = -1;
+    private float _noticeRefreshAt;
+    private RectTransform _heightMarker;
+    private float _shownElevation;
     private TMP_FontAsset _font;
     private GameObject _canvasTrackBox;
     private GameObject _content;
@@ -63,6 +68,10 @@ public class HeadDistanceGuide : MonoBehaviour
         guide._eyeLevelText = UiFactory.CreateText("Text", notice.transform, font, "", 22f, TextDark);
         UiFactory.UsePlainMaterial(guide._eyeLevelText);
         guide._eyeLevelText.fontStyle = FontStyles.Bold;
+        // The text carries the cm estimate and may run long: shrink rather than wrap.
+        guide._eyeLevelText.enableAutoSizing = true;
+        guide._eyeLevelText.fontSizeMin = 16f;
+        guide._eyeLevelText.fontSizeMax = 22f;
         UiFactory.Stretch(guide._eyeLevelText.rectTransform);
         guide._eyeLevelNotice = notice.gameObject;
         guide._eyeLevelNotice.SetActive(false);
@@ -93,6 +102,21 @@ public class HeadDistanceGuide : MonoBehaviour
         guide._markerLabel = UiFactory.CreateText("Label", guide._marker, TMP_Settings.defaultFontAsset, "", 20f, TextDark);
         UiFactory.Place(guide._markerLabel.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 0f), new Vector2(0f, 2f), new Vector2(90f, 26f));
 
+        // Height scale, like the distance scale but upright: where the user's eyes are against what
+        // the robot's head can tilt to.
+        var heightScale = UiFactory.Place(UiFactory.CreateRect("HeightScale", content), new Vector2(1f, 0.5f), UiFactory.Center, new Vector2(-56f, -10f), new Vector2(HeightScaleWidth, HeightScaleHeight));
+        float low = HeightPosition(HeadFollow.EyeLevelLowDeg);
+        float high = HeightPosition(HeadFollow.EyeLevelHighDeg);
+        AddHeightZone(heightScale, font, 0f, low, OutOfRangeZoneTint, "太低");
+        AddHeightZone(heightScale, font, low, high, InRangeZoneTint, "剛好");
+        AddHeightZone(heightScale, font, high, HeightScaleHeight, OutOfRangeZoneTint, "太高");
+        var heightTitle = UiFactory.CreateText("Title", heightScale, font, "高度", 22f, Color.white);
+        heightTitle.fontStyle = FontStyles.Bold;
+        UiFactory.Place(heightTitle.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 0f), new Vector2(0f, 6f), new Vector2(100f, 30f));
+        guide._heightMarker = UiFactory.Place(UiFactory.CreateRect("Marker", heightScale), new Vector2(0.5f, 0f), UiFactory.Center, Vector2.zero, new Vector2(HeightScaleWidth + 20f, 6f));
+        var heightLine = UiFactory.CreateImage("Line", guide._heightMarker, UiFactory.White, TextDark);
+        UiFactory.Stretch(heightLine.rectTransform);
+
         guide._content.SetActive(false);
         return guide;
     }
@@ -106,38 +130,63 @@ public class HeadDistanceGuide : MonoBehaviour
             return;
 
         var zone = _detectDistance.Zone;
-        _statusPill.color = zone == DetectDistance.DistanceZone.InRange ? InRangeColor : OutOfRangeColor;
+        _statusPill.color = _detectDistance.PositionOk ? InRangeColor : OutOfRangeColor;
         _statusText.text = zone switch
         {
             DetectDistance.DistanceZone.TooFar => "請往前靠近一點",
             DetectDistance.DistanceZone.TooClose => "請往後遠離一點",
-            _ => "很好，請保持不動"
+            _ => _detectDistance.EyeLevel != 0 ? "請調整高度" : "很好，請保持不動"
         };
         _holdFill.sizeDelta = new Vector2(HoldBarWidth * _detectDistance.HoldProgress, _holdFill.sizeDelta.y);
         _marker.anchoredPosition = new Vector2(ScalePosition(_detectDistance.DistanceMeters), 0f);
         _markerLabel.text = Mathf.RoundToInt(_detectDistance.DistanceMeters * 100f) + " cm";
+        UpdateHeightScale();
         UpdateEyeLevelNotice();
+    }
+
+    private void UpdateHeightScale()
+    {
+        if (_head == null || !_head.HasFace)
+            return;
+        // The head pose comes at ~12 Hz and is a little noisy: ease the marker.
+        _shownElevation = Mathf.Lerp(_shownElevation, _head.EyeElevationDeg, 1f - Mathf.Exp(-8f * Time.unscaledDeltaTime));
+        _heightMarker.anchoredPosition = new Vector2(0f, HeightPosition(_shownElevation));
     }
 
     private void UpdateEyeLevelNotice()
     {
-        int mismatch = _head != null ? _head.EyeLevelMismatch : 0;
-        if (mismatch != _eyeLevelPending)
-        {
-            _eyeLevelPending = mismatch;
-            _eyeLevelSince = Time.unscaledTime;
-        }
-        // Hide at once when it is fine again; show only after the mismatch has lasted.
-        int show = mismatch == 0 || Time.unscaledTime - _eyeLevelSince >= EyeLevelSustainSeconds ? mismatch : _eyeLevelShown;
-        if (show == _eyeLevelShown)
+        int show = _detectDistance.EyeLevel;
+        int cm = show != 0 ? HeightOffsetCm(show) : -1;
+        if (show == _eyeLevelShown && (show == 0 || cm == _eyeLevelCmShown || Time.unscaledTime < _noticeRefreshAt))
             return;
         _eyeLevelShown = show;
+        _eyeLevelCmShown = cm;
+        _noticeRefreshAt = Time.unscaledTime + NoticeRefreshSeconds;
         _eyeLevelNotice.SetActive(show != 0);
         if (show != 0)
-        {
-            _eyeLevelText.text = UiFactory.WithLatinFallback(show > 0 ? TooHighText : TooLowText, _font);
-            Debug.Log($"[HEIGHT] user sits too {(show > 0 ? "high" : "low")}: {_head.EyeElevationDeg:0.0} deg from the robot's level line of sight");
-        }
+            _eyeLevelText.text = UiFactory.WithLatinFallback((show > 0 ? TooHighText : TooLowText) + "（約差 " + cm + " 公分）", _font);
+    }
+
+    // How far the eyes are beyond the accepted height, in cm, at the current distance (at least 1).
+    private int HeightOffsetCm(int side)
+    {
+        float edge = side > 0 ? HeadFollow.EyeLevelHighDeg : HeadFollow.EyeLevelLowDeg;
+        float meters = _detectDistance.DistanceMeters * Mathf.Abs(Mathf.Tan(_head.EyeElevationDeg * Mathf.Deg2Rad) - Mathf.Tan(edge * Mathf.Deg2Rad));
+        return Mathf.Max(1, Mathf.CeilToInt(meters * 100f));
+    }
+
+    private static float HeightPosition(float degrees)
+    {
+        return Mathf.InverseLerp(-HeightScaleDeg, HeightScaleDeg, degrees) * HeightScaleHeight;
+    }
+
+    private static void AddHeightZone(Transform scale, TMP_FontAsset font, float from, float to, Color color, string label)
+    {
+        var zone = UiFactory.CreateImage(label, scale, UiFactory.White, color);
+        UiFactory.Place(zone.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, from), new Vector2(HeightScaleWidth, to - from));
+        var text = UiFactory.CreateText("Label", zone.transform, font, label, 18f, TextDark);
+        UiFactory.UsePlainMaterial(text);
+        UiFactory.Stretch(text.rectTransform);
     }
 
     private static float ScalePosition(float meters)
