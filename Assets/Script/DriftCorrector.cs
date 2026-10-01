@@ -9,9 +9,15 @@ using UnityEngine;
 // On the robot the raw error was not one shift. With the user sitting high, gaze read ~50 px low
 // at the top and the centre but about right at the bottom, and the left and right options read
 // 30-40 px toward the middle. A single offset learnt at the centre fixed the top and pushed the
-// bottom 50 px too high - the "everything rides up when I look down" the user reported. So each
-// axis gets its own piecewise-linear correction through three points: x through left / centre /
-// right, y through bottom / centre / top, each the median of its recent samples.
+// bottom 50 px too high - the "everything rides up when I look down" the user reported.
+//
+// Nor does the error split by axis: in the next run the up and down options, in the same column,
+// were off horizontally by -32 and +16 px, and left and right by -4 and -37 px vertically, so a
+// per-axis correction pooling them made the down option worse. Each of the five reference points
+// - centre, up, down, left, right - therefore keeps its own 2D correction (the median of its last
+// samples), applied exactly at that point and blended linearly between the centre and the two
+// nearest options elsewhere. A point without data counts as no correction, so the correction
+// fades toward sides not yet measured instead of spreading the centre's everywhere.
 //
 // Everything is learnt and applied in raw screen space: FollowGazePoint2D hands raw samples here
 // and asks Correct() for the position to show, so a learnt correction never feeds back into what
@@ -34,9 +40,8 @@ public class DriftCorrector : MonoBehaviour
     private const float OptionSampleSeconds = 1f;
     // Per reference point, the most recent residuals kept; a group's value is their median.
     private const int HistoryPerAnchor = 5;
-    // A group needs this many samples to count, and an axis needs two groups to be corrected:
-    // the centre alone is what pushed the bottom of the screen off.
-    private const int MinimumPerGroup = 2;
+    // A reference point needs this many samples before its correction is used.
+    private const int MinimumPerAnchor = 2;
 
     private enum Anchor { Centre, Up, Down, Left, Right }
 
@@ -62,14 +67,10 @@ public class DriftCorrector : MonoBehaviour
 
     // Raw-space residuals per reference point: where it is, minus where the raw gaze sat.
     private readonly Dictionary<Anchor, List<Vector2>> _residuals = new Dictionary<Anchor, List<Vector2>>();
-    // Correction model: for each axis, three points ordered low to high on screen (left / centre /
-    // right for x, bottom / centre / top for y), with a value where enough samples exist.
-    private readonly float[] _xPosition = new float[3];
-    private readonly float[] _xValue = new float[3];
-    private readonly bool[] _xKnown = new bool[3];
-    private readonly float[] _yPosition = new float[3];
-    private readonly float[] _yValue = new float[3];
-    private readonly bool[] _yKnown = new bool[3];
+    // Correction model: per reference point, where it is on screen and its correction, if known.
+    private readonly Dictionary<Anchor, Vector2> _position = new Dictionary<Anchor, Vector2>();
+    private readonly Dictionary<Anchor, Vector2> _value = new Dictionary<Anchor, Vector2>();
+    private readonly Dictionary<Anchor, bool> _known = new Dictionary<Anchor, bool>();
 
     public static DriftCorrector Create(Transform parent, FollowGazePoint2D pointer, MetricTest metricTest, HeadFollow head, GazeCalibrationManager calibration)
     {
@@ -83,7 +84,11 @@ public class DriftCorrector : MonoBehaviour
         corrector._head = head;
         corrector._calibration = calibration;
         foreach (Anchor anchor in System.Enum.GetValues(typeof(Anchor)))
+        {
             corrector._residuals[anchor] = new List<Vector2>();
+            corrector._value[anchor] = Vector2.zero;
+            corrector._known[anchor] = false;
+        }
         pointer.Correction = corrector.Correct;
         go.SetActive(true);
         return corrector;
@@ -112,99 +117,77 @@ public class DriftCorrector : MonoBehaviour
     // Raw screen position -> position to show.
     public Vector2 Correct(Vector2 raw)
     {
-        if (!Enabled)
+        if (!Enabled || !AnyKnown())
             return raw;
-        return raw + new Vector2(
-            Interpolate(_xPosition, _xValue, _xKnown, raw.x),
-            Interpolate(_yPosition, _yValue, _yKnown, raw.y));
+
+        // The options sit around the centre like a plus sign. Express the point in the triangle of
+        // the centre and the nearest horizontal and vertical options, and blend their corrections.
+        Vector2 centre = _position[Anchor.Centre];
+        Vector2 d = raw - centre;
+        Anchor horizontal = d.x >= 0f ? Anchor.Right : Anchor.Left;
+        Anchor vertical = d.y >= 0f ? Anchor.Up : Anchor.Down;
+        Vector2 h = _position[horizontal] - centre;
+        Vector2 v = _position[vertical] - centre;
+
+        float determinant = h.x * v.y - h.y * v.x;
+        if (Mathf.Abs(determinant) < 1f)
+            return raw + ValueAt(Anchor.Centre);
+        float a = (d.x * v.y - d.y * v.x) / determinant;
+        float b = (h.x * d.y - h.y * d.x) / determinant;
+        a = Mathf.Max(0f, a);
+        b = Mathf.Max(0f, b);
+        // Beyond the options, hold the value on the outer edge.
+        if (a + b > 1f)
+        {
+            float sum = a + b;
+            a /= sum;
+            b /= sum;
+        }
+        return raw + (1f - a - b) * ValueAt(Anchor.Centre) + a * ValueAt(horizontal) + b * ValueAt(vertical);
     }
 
-    // Piecewise-linear through the known points, flat beyond the outermost ones; nothing with
-    // fewer than two known points.
-    private static float Interpolate(float[] position, float[] value, bool[] known, float at)
+    private bool AnyKnown()
     {
-        int count = 0;
-        int first = -1, last = -1;
-        for (int i = 0; i < 3; i++)
+        foreach (var known in _known.Values)
         {
-            if (!known[i])
-                continue;
-            count++;
-            if (first < 0)
-                first = i;
-            last = i;
+            if (known)
+                return true;
         }
-        if (count < 2)
-            return 0f;
-        if (at <= position[first])
-            return value[first];
-        if (at >= position[last])
-            return value[last];
+        return false;
+    }
 
-        int lower = first;
-        for (int i = first + 1; i <= last; i++)
-        {
-            if (!known[i])
-                continue;
-            if (at <= position[i])
-            {
-                float t = Mathf.InverseLerp(position[lower], position[i], at);
-                return Mathf.Lerp(value[lower], value[i], t);
-            }
-            lower = i;
-        }
-        return value[last];
+    private Vector2 ValueAt(Anchor anchor)
+    {
+        return _known[anchor] ? _value[anchor] : Vector2.zero;
     }
 
     private void Rebuild()
     {
-        Vector2 centre = ScreenCentre(_metricTest.blackRT);
-        _xPosition[0] = ScreenCentre(OptionFor("left")).x;
-        _xPosition[1] = centre.x;
-        _xPosition[2] = ScreenCentre(OptionFor("right")).x;
-        _yPosition[0] = ScreenCentre(OptionFor("down")).y;
-        _yPosition[1] = centre.y;
-        _yPosition[2] = ScreenCentre(OptionFor("up")).y;
+        _position[Anchor.Centre] = ScreenCentre(_metricTest.blackRT);
+        _position[Anchor.Up] = ScreenCentre(OptionFor("up"));
+        _position[Anchor.Down] = ScreenCentre(OptionFor("down"));
+        _position[Anchor.Left] = ScreenCentre(OptionFor("left"));
+        _position[Anchor.Right] = ScreenCentre(OptionFor("right"));
 
-        // The up and down options sit in the centre column and left and right on the centre row,
-        // so their other component counts toward the centre of that axis.
-        SetGroup(_xValue, _xKnown, 0, Pool(true, Anchor.Left));
-        SetGroup(_xValue, _xKnown, 1, Pool(true, Anchor.Centre, Anchor.Up, Anchor.Down));
-        SetGroup(_xValue, _xKnown, 2, Pool(true, Anchor.Right));
-        SetGroup(_yValue, _yKnown, 0, Pool(false, Anchor.Down));
-        SetGroup(_yValue, _yKnown, 1, Pool(false, Anchor.Centre, Anchor.Left, Anchor.Right));
-        SetGroup(_yValue, _yKnown, 2, Pool(false, Anchor.Up));
-
+        foreach (Anchor anchor in System.Enum.GetValues(typeof(Anchor)))
+        {
+            var samples = _residuals[anchor];
+            _known[anchor] = samples.Count >= MinimumPerAnchor;
+            _value[anchor] = _known[anchor] ? Vector2.ClampMagnitude(Median(samples), MaxCorrectionPx) : Vector2.zero;
+        }
         Debug.Log("[FIX] " + Describe());
     }
 
-    private List<float> Pool(bool x, params Anchor[] anchors)
-    {
-        var values = new List<float>();
-        foreach (var anchor in anchors)
-        {
-            foreach (var residual in _residuals[anchor])
-                values.Add(x ? residual.x : residual.y);
-        }
-        return values;
-    }
-
-    private static void SetGroup(float[] value, bool[] known, int index, List<float> samples)
-    {
-        known[index] = samples.Count >= MinimumPerGroup;
-        value[index] = known[index] ? Mathf.Clamp(Median(samples), -MaxCorrectionPx, MaxCorrectionPx) : 0f;
-    }
-
-    // e.g. "x L+30 C+5 R-25  y D-3 C+55 U+50" (blank where not yet known).
+    // e.g. "C-20,-7 U-32,-3 D+16,-32 L-91,-4 R+38,-37" with "?" where not yet known.
     public string Describe()
     {
-        return "x " + Group("L", _xValue, _xKnown, 0) + " " + Group("C", _xValue, _xKnown, 1) + " " + Group("R", _xValue, _xKnown, 2)
-               + "  y " + Group("D", _yValue, _yKnown, 0) + " " + Group("C", _yValue, _yKnown, 1) + " " + Group("U", _yValue, _yKnown, 2);
+        return Point("C", Anchor.Centre) + " " + Point("U", Anchor.Up) + " " + Point("D", Anchor.Down)
+               + " " + Point("L", Anchor.Left) + " " + Point("R", Anchor.Right);
     }
 
-    private static string Group(string name, float[] value, bool[] known, int index)
+    private string Point(string name, Anchor anchor)
     {
-        return name + (known[index] ? value[index].ToString("+0;-0") : "?");
+        return _known[anchor] ? $"{name}{_value[anchor].x:+0;-0},{_value[anchor].y:+0;-0}" : name + "?";
     }
 
     private void AddResidual(Anchor anchor, Vector2 residual)
@@ -237,12 +220,11 @@ public class DriftCorrector : MonoBehaviour
 
     private void ResetModel(string reason)
     {
-        foreach (var list in _residuals.Values)
-            list.Clear();
-        for (int i = 0; i < 3; i++)
+        foreach (Anchor anchor in System.Enum.GetValues(typeof(Anchor)))
         {
-            _xKnown[i] = false;
-            _yKnown[i] = false;
+            _residuals[anchor].Clear();
+            _known[anchor] = false;
+            _value[anchor] = Vector2.zero;
         }
         _searching = false;
         Accepted = 0;
