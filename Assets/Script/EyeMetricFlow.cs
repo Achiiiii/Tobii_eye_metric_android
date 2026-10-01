@@ -64,6 +64,7 @@ public class EyeMetricFlow : MonoBehaviour
     private GazeLatencyStats.Snapshot _perfPrevious;
     private float _perfPreviousTime;
     private int _perfPreviousFrame;
+    private long _perfPreviousDropped;
 
     private void Awake()
     {
@@ -159,7 +160,10 @@ public class EyeMetricFlow : MonoBehaviour
         if (frames > 0)
         {
             double processMs = GazeLatencyStats.TicksToMilliseconds(current.FrameTicks - _perfPrevious.FrameTicks) / frames;
-            Debug.Log($"[PERF] process frame {processMs:0.0} ms  frames {frames / elapsed:0.0}/s  gaze {samples / elapsed:0.0} Hz  render {Time.frameCount - _perfPreviousFrame:0}/{elapsed:0.0}s");
+            long dropped = System.Threading.Interlocked.Read(ref GazeFrameWorker.Dropped);
+            Debug.Log($"[PERF] process frame {processMs:0.0} ms  frames {frames / elapsed:0.0}/s  gaze {samples / elapsed:0.0} Hz  "
+                      + $"render {(Time.frameCount - _perfPreviousFrame) / elapsed:0.0} fps  skipped {(dropped - _perfPreviousDropped) / elapsed:0.0}/s");
+            _perfPreviousDropped = dropped;
         }
         _perfPrevious = current;
         _perfPreviousTime = Time.unscaledTime;

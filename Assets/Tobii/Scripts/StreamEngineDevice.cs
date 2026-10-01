@@ -287,8 +287,24 @@ public class StreamEngineDevice : MonoBehaviour
         );
     }
 
-    // Image data arrives here from the AndroidWebcamCaptureClient (or other media capture clients)
+    // Held for each frame and taken by OnDestroy, so the device is never torn down under a frame
+    // that GazeFrameWorker is still processing. Calibration calls deliberately do not take it.
+    private readonly object _frameLock = new object();
+    private bool _closing;
+
+    // Image data arrives here from the AndroidWebcamCaptureClient (or other media capture clients).
+    // On Android this runs on GazeFrameWorker's thread: no Unity API calls beyond Debug.Log.
     public void ProcessMediaCaptureFrame(tobii_image_frame_t frame, Tobii.MediaCaptureClientLib.mcclient_frame_format_type formatType)
+    {
+        lock (_frameLock)
+        {
+            if (_closing)
+                return;
+            ProcessFrameLocked(frame);
+        }
+    }
+
+    private void ProcessFrameLocked(tobii_image_frame_t frame)
     {
         try
         {
@@ -527,6 +543,10 @@ public class StreamEngineDevice : MonoBehaviour
 
     private void OnDestroy()
     {
+        // Waits for a frame in flight on the worker thread, then refuses new ones.
+        lock (_frameLock)
+            _closing = true;
+
         if (deviceContext == IntPtr.Zero) return;
 
         try

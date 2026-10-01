@@ -25,6 +25,8 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
     private Color32[] _pixels;
     // Capture time of the first frame, so the timestamps handed to the processor start near zero.
     private long _firstTimestampUs = -1;
+    // Processes frames off the main thread (see GazeFrameWorker).
+    private GazeFrameWorker _worker;
 
     public MediaCaptureEvent mediaCaptureEvent;
     public UnityEvent<float, float, float> OnInitialized;
@@ -49,6 +51,12 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
     {
         if (Application.platform == RuntimePlatform.Android)
         {
+            var device = FindObjectOfType<StreamEngineDevice>();
+            if (device != null)
+                _worker = new GazeFrameWorker(device);
+            else
+                Debug.LogError("StreamEngineDevice not found; camera frames will not be processed.");
+
             if (!Permission.HasUserAuthorizedPermission(Permission.Camera))
             {
                 Debug.Log("Requesting camera permission...");
@@ -182,30 +190,11 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
                 if (_firstTimestampUs < 0)
                     _firstTimestampUs = timestampUs;
 
-                GCHandle handle = GCHandle.Alloc(rawData, GCHandleType.Pinned);
-                try
-                {
-                    tobii_image_frame_t frame = new tobii_image_frame_t
-                    {
-                        format = 0, //Interop.TOBII_FRAME_FORMAT_GRAY8,
-                        width = width,
-                        height = height,
-                        stride = width,
-                        timestamp_us = timestampUs - _firstTimestampUs,
-                        data_size = new IntPtr(width * height),
-                        data = handle.AddrOfPinnedObject()
-                    };
-
-                    // Update() already runs on the main thread. Dispatching instead of calling
-                    // straight through only delayed the frame by a render frame, and let the pin
-                    // above be released first, leaving tobii_process_frame to read memory the GC
-                    // was free to reuse.
-                    mediaCaptureEvent.Invoke(frame, mcclient_frame_format_type.MCCLIENT_FRAME_FORMAT_GRAY16);
-                }
-                finally
-                {
-                    handle.Free();
-                }
+                // Inference takes 80-110 ms a frame on the robot, so it runs on the worker thread.
+                // The mediaCaptureEvent is no longer raised on Android: its other listener, the
+                // FrameDataPreview debug view, uploads a texture and must stay on the main thread.
+                if (_worker != null)
+                    _worker.Submit(rawData, width, height, timestampUs - _firstTimestampUs);
             }
             finally
             {
@@ -226,6 +215,11 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (_worker != null)
+        {
+            _worker.Dispose();
+            _worker = null;
+        }
         if (mediaCaptureEvent != null)
             mediaCaptureEvent.RemoveAllListeners();
     }
