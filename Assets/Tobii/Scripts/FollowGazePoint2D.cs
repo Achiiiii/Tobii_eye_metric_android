@@ -26,11 +26,14 @@ public class FollowGazePoint2D : MonoBehaviour
 
     // Webcam gaze is noisy: hold the dot steady within a fixation and move only on real saccades.
     // Starting points for tuning on the device via GazeDebugOverlay.
-    [SerializeField] private float fixationRadiusScreenFraction = 0.08f;
+    // 0.05 is about 51 px on the robot. At 1050x780 the scatter within a fixation measured 13 px
+    // RMS, so the old 0.08 (82 px) held back medium-sized moves for no benefit.
+    [SerializeField] private float fixationRadiusScreenFraction = 0.05f;
     [SerializeField] private float fixationWindowSeconds = 0.5f;
     [SerializeField] private float displaySmoothingSeconds = 0.05f;
-    // Twice the fixation radius (~165 px on the robot): jumps beyond it move the dot at once.
-    [SerializeField] private float immediateJumpScreenFraction = 0.16f;
+    // Jumps beyond this many fixation radii move the dot at once (the overlay's radius buttons
+    // therefore tune both).
+    private const float ImmediateJumpRadii = 2f;
 
     // Measures how long the dot takes to reach a large gaze jump (smoothing and easing only;
     // camera and inference latency come before the sample arrives).
@@ -205,10 +208,10 @@ public class FollowGazePoint2D : MonoBehaviour
         _normalisedGazepoint = normalizedGazePoint;
         _smoother.FixationRadius = fixationRadiusScreenFraction * Screen.width;
         _smoother.FixationWindowSeconds = fixationWindowSeconds;
-        _smoother.ImmediateJump = immediateJumpScreenFraction * Screen.width;
+        _smoother.ImmediateJump = ImmediateJumpRadii * _smoother.FixationRadius;
         Vector2 sample = ToScreen(normalizedGazePoint) + DriftOffset;
         if (_hasDisplayedPosition && _catchUpStart < 0f
-            && Vector2.Distance(sample, _displayedScreenPosition) > immediateJumpScreenFraction * Screen.width)
+            && Vector2.Distance(sample, _displayedScreenPosition) > ImmediateJumpRadii * fixationRadiusScreenFraction * Screen.width)
         {
             _catchUpStart = Time.time;
             _catchUpTarget = sample;

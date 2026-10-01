@@ -42,6 +42,9 @@ public class DriftCorrector : MonoBehaviour
     private readonly List<Vector2> _recent = new List<Vector2>();
     // For each used trial, the offset that would have put that fixation exactly on the symbol.
     private readonly List<Vector2> _implied = new List<Vector2>();
+    // Recent samples, to measure where the gaze sat on an option while it was being chosen.
+    private readonly List<(float time, Vector2 position)> _history = new List<(float, Vector2)>();
+    private const float OptionSampleSeconds = 1f;
 
     public static DriftCorrector Create(Transform parent, FollowGazePoint2D pointer, MetricTest metricTest, HeadFollow head, GazeCalibrationManager calibration)
     {
@@ -62,6 +65,7 @@ public class DriftCorrector : MonoBehaviour
     {
         _pointer.SampleAdded += OnSample;
         _metricTest.SymbolShown += OnSymbolShown;
+        _metricTest.SideChosen += OnSideChosen;
         _calibration.CalibrationStarted += OnCalibrationStarted;
         _calibration.TestCountdownStarted += OnTestCountdownStarted;
     }
@@ -70,6 +74,7 @@ public class DriftCorrector : MonoBehaviour
     {
         _pointer.SampleAdded -= OnSample;
         _metricTest.SymbolShown -= OnSymbolShown;
+        _metricTest.SideChosen -= OnSideChosen;
         _calibration.CalibrationStarted -= OnCalibrationStarted;
         _calibration.TestCountdownStarted -= OnTestCountdownStarted;
     }
@@ -118,6 +123,11 @@ public class DriftCorrector : MonoBehaviour
 
     private void OnSample(Vector2 sample)
     {
+        float now = Time.unscaledTime;
+        _history.Add((now, sample));
+        while (_history.Count > 0 && _history[0].time < now - OptionSampleSeconds)
+            _history.RemoveAt(0);
+
         if (!_searching)
             return;
         // The user is being walked back into place, not looking at the symbol.
@@ -188,6 +198,45 @@ public class DriftCorrector : MonoBehaviour
         _pointer.DriftOffset = offset;
         Accepted++;
         Finish($"residual {residual.x:+0;-0},{residual.y:+0;-0} px at {elapsed:0.00} s -> offset {offset.x:+0;-0},{offset.y:+0;-0} px");
+    }
+
+    // Measurement only, for now: how far the gaze sat from an option while it was chosen by
+    // dwell. Users reported the dot riding high when they look down, which the centre symbol
+    // cannot show; per-direction residuals can, and are what a multi-point correction needs.
+    private void OnSideChosen(string side)
+    {
+        // A dwell completes with the indicator playing its finish; a tap does not.
+        if (!GazeDwellIndicator.IsDwelling || _history.Count < 3)
+            return;
+        RectTransform option = OptionFor(side);
+        if (option == null)
+            return;
+
+        Vector2 centroid = Vector2.zero;
+        foreach (var entry in _history)
+            centroid += entry.position;
+        centroid /= _history.Count;
+        Vector2 residual = ScreenCentre(option) - centroid;
+        Debug.Log($"[OPTION] {side}: residual {residual.x:+0;-0},{residual.y:+0;-0} px ({_history.Count} samples, offset {_pointer.DriftOffset.x:+0;-0},{_pointer.DriftOffset.y:+0;-0})");
+    }
+
+    // The options sit above, below, left and right of the symbol; find the one for this side.
+    private RectTransform OptionFor(string side)
+    {
+        Vector2 symbol = ScreenCentre(_metricTest.blackRT);
+        RectTransform best = null;
+        float bestScore = float.MinValue;
+        foreach (var option in _metricTest.sidesRT)
+        {
+            Vector2 d = ScreenCentre(option) - symbol;
+            float score = side == "up" ? d.y : side == "down" ? -d.y : side == "right" ? d.x : side == "left" ? -d.x : float.MinValue;
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = option;
+            }
+        }
+        return best;
     }
 
     private void Finish(string result)

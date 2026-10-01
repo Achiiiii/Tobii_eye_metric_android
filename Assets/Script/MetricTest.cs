@@ -30,6 +30,8 @@ public class MetricTest : MonoBehaviour
     public event Action Answered;
     // Raised whenever a new symbol is on screen (DriftCorrector looks for the look at it).
     public event Action SymbolShown;
+    // The direction just chosen ("up", "down", "left", "right"), before the next symbol.
+    public event Action<string> SideChosen;
     public string FirstSide => Mode == TestMode.Both ? "both" : "right";
 
     private int curLevel = 5;
@@ -175,6 +177,7 @@ public class MetricTest : MonoBehaviour
     }
     public void TriggerSide(string side)
     {
+        SideChosen?.Invoke(side);
         Answered?.Invoke();
         audioSource.Play();
         if (side == answerSide) correct++;

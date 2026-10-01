@@ -88,6 +88,11 @@ public class AndroidCameraPlugin {
     private static final int MIN_TRACKING_WIDTH = 1000;
     private static int downsampleFactor = 1;
     private static int streamWidth = 0;
+    // Inference keeps up with about 10 frames a second, so at 30 fps two of every three frames
+    // were captured, downsampled and copied only to be skipped - while the robot ran at 81-85 C
+    // with its CPUs throttled to 1.6-1.75 of 2.0-2.2 GHz. Ask for 15 fps when offered.
+    private static final int TARGET_FPS = 15;
+    private static Range<Integer> fpsRange = new Range<>(30, 30);
     private static int streamHeight = 0;
 
     // Switches the frames handed to Tobii between sizes cut from the same stream, e.g. 2100x1560
@@ -101,6 +106,29 @@ public class AndroidCameraPlugin {
         downsampleFactor = factor;
         Log.i(TAG, "[RES] downsample now " + factor + " -> " + (streamWidth / factor) + "x" + (streamHeight / factor));
         return true;
+    }
+
+    // A fixed range at TARGET_FPS if the camera offers one, else the lowest one reaching it, else 30.
+    private static Range<Integer> chooseFpsRange(CameraCharacteristics characteristics) {
+        Range<Integer>[] ranges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
+        Range<Integer> best = null;
+        StringBuilder all = new StringBuilder();
+        if (ranges != null) {
+            for (Range<Integer> range : ranges) {
+                all.append(range).append(' ');
+                if (range.getUpper() < TARGET_FPS)
+                    continue;
+                boolean fixed = range.getLower().equals(range.getUpper());
+                if (best == null
+                        || range.getUpper() < best.getUpper()
+                        || (range.getUpper().equals(best.getUpper()) && fixed && !best.getLower().equals(best.getUpper())))
+                    best = range;
+            }
+        }
+        if (best == null)
+            best = new Range<>(30, 30);
+        Log.i(TAG, "[RES] fps ranges: " + all + "-> using " + best);
+        return best;
     }
 
     public static int getDownsampleFactor() {
@@ -440,6 +468,7 @@ public class AndroidCameraPlugin {
 
             // Query the available sizes
             CameraCharacteristics cameraCharacteristics = manager.getCameraCharacteristics(cameraId);
+            fpsRange = chooseFpsRange(cameraCharacteristics);
             StreamConfigurationMap map = cameraCharacteristics.get(SCALER_STREAM_CONFIGURATION_MAP);
 
             if (map == null) {
@@ -498,7 +527,7 @@ public class AndroidCameraPlugin {
                         captureRequestBuilder = builder;
 
                         // AE FPS range settings (set to 30fps for instance)
-                        builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, new Range<>(30, 30));
+                        builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, fpsRange);
 
                         // Create the capture session
                         cameraDevice.createCaptureSession(Collections.singletonList(imageReader.getSurface()),
