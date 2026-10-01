@@ -2,11 +2,20 @@ using System.Collections.Generic;
 using Tobii;
 using UnityEngine;
 
-// Corrects slow gaze drift during the test. Every trial puts a new symbol at the screen centre, and
-// people look at it before choosing a direction, so the first steady fixation near it after it
-// appears samples where the tracker places "the centre". The difference is folded into
-// FollowGazePoint2D.DriftOffset a fraction at a time, so one bad sample moves it little and only a
-// consistent offset over several trials is corrected.
+// Corrects the systematic part of the gaze error during the test, as a function of where on the
+// screen the gaze is. The test itself provides reference points: the centre symbol, which people
+// look at before choosing, and each option chosen by dwell, which the gaze sat on.
+//
+// On the robot the raw error was not one shift. With the user sitting high, gaze read ~50 px low
+// at the top and the centre but about right at the bottom, and the left and right options read
+// 30-40 px toward the middle. A single offset learnt at the centre fixed the top and pushed the
+// bottom 50 px too high - the "everything rides up when I look down" the user reported. So each
+// axis gets its own piecewise-linear correction through three points: x through left / centre /
+// right, y through bottom / centre / top, each the median of its recent samples.
+//
+// Everything is learnt and applied in raw screen space: FollowGazePoint2D hands raw samples here
+// and asks Correct() for the position to show, so a learnt correction never feeds back into what
+// is learnt next.
 public class DriftCorrector : MonoBehaviour
 {
     // Before this the saccade to the centre is usually still under way.
@@ -18,21 +27,23 @@ public class DriftCorrector : MonoBehaviour
     // About 0.35 s at the ~11 Hz gaze rate measured on the robot.
     private const int FixationSamples = 4;
     private const float FixationDispersionPx = 60f;
-    // Beyond this from the symbol the fixation is not trusted as a look at it.
+    // Beyond this from its reference point a sample is not trusted as a look at it.
     private const float MaxResidualPx = 150f;
-    private const float MaxOffsetPx = 150f;
-    // Until a few trials are in, step toward each sample; after that, follow the median of the
-    // recent ones. On the device single residuals scattered by up to 100 px, and the median
-    // ignores the odd fixation that was not really on the symbol.
-    private const float Gain = 0.3f;
-    private const int MedianWindow = 5;
-    private const int MedianMinimum = 3;
-    private const float MedianBlend = 0.5f;
+    private const float MaxCorrectionPx = 150f;
+    // Raw samples over the last second of a dwell describe where the gaze sat on the option.
+    private const float OptionSampleSeconds = 1f;
+    // Per reference point, the most recent residuals kept; a group's value is their median.
+    private const int HistoryPerAnchor = 5;
+    // A group needs this many samples to count, and an axis needs two groups to be corrected:
+    // the centre alone is what pushed the bottom of the screen off.
+    private const int MinimumPerGroup = 2;
 
-    public bool Enabled { get; set; } = true;
-    public Vector2 Offset => _pointer.DriftOffset;
+    private enum Anchor { Centre, Up, Down, Left, Right }
+
+    public bool Enabled { get; private set; } = true;
     public int Accepted { get; private set; }
     public int Trials { get; private set; }
+    public int OptionSamples { get; private set; }
 
     private FollowGazePoint2D _pointer;
     private MetricTest _metricTest;
@@ -43,15 +54,22 @@ public class DriftCorrector : MonoBehaviour
     private float _shownAt;
     private string _rejection;
     private readonly List<Vector2> _recent = new List<Vector2>();
-    // Every steady fixation near the symbol this trial. The first one is often an undershoot -
-    // coming up from the lower option the eye lands short, below the symbol, then corrects - and
-    // taking only the first one pushed the whole dot 76 px upward in five trials on the device.
+    // Raw centroids of every steady fixation near the symbol this trial. The first one is often an
+    // undershoot - coming up from the lower option the eye lands short, below the symbol - so the
+    // trial's sample is their median rather than the first.
     private readonly List<Vector2> _candidates = new List<Vector2>();
-    // For each used trial, the offset that would have put that fixation exactly on the symbol.
-    private readonly List<Vector2> _implied = new List<Vector2>();
-    // Recent samples, to measure where the gaze sat on an option while it was being chosen.
     private readonly List<(float time, Vector2 position)> _history = new List<(float, Vector2)>();
-    private const float OptionSampleSeconds = 1f;
+
+    // Raw-space residuals per reference point: where it is, minus where the raw gaze sat.
+    private readonly Dictionary<Anchor, List<Vector2>> _residuals = new Dictionary<Anchor, List<Vector2>>();
+    // Correction model: for each axis, three points ordered low to high on screen (left / centre /
+    // right for x, bottom / centre / top for y), with a value where enough samples exist.
+    private readonly float[] _xPosition = new float[3];
+    private readonly float[] _xValue = new float[3];
+    private readonly bool[] _xKnown = new bool[3];
+    private readonly float[] _yPosition = new float[3];
+    private readonly float[] _yValue = new float[3];
+    private readonly bool[] _yKnown = new bool[3];
 
     public static DriftCorrector Create(Transform parent, FollowGazePoint2D pointer, MetricTest metricTest, HeadFollow head, GazeCalibrationManager calibration)
     {
@@ -64,13 +82,16 @@ public class DriftCorrector : MonoBehaviour
         corrector._metricTest = metricTest;
         corrector._head = head;
         corrector._calibration = calibration;
+        foreach (Anchor anchor in System.Enum.GetValues(typeof(Anchor)))
+            corrector._residuals[anchor] = new List<Vector2>();
+        pointer.Correction = corrector.Correct;
         go.SetActive(true);
         return corrector;
     }
 
     private void OnEnable()
     {
-        _pointer.SampleAdded += OnSample;
+        _pointer.RawSampleAdded += OnSample;
         _metricTest.SymbolShown += OnSymbolShown;
         _metricTest.SideChosen += OnSideChosen;
         _calibration.CalibrationStarted += OnCalibrationStarted;
@@ -79,41 +100,158 @@ public class DriftCorrector : MonoBehaviour
 
     private void OnDisable()
     {
-        _pointer.SampleAdded -= OnSample;
+        _pointer.RawSampleAdded -= OnSample;
         _metricTest.SymbolShown -= OnSymbolShown;
         _metricTest.SideChosen -= OnSideChosen;
         _calibration.CalibrationStarted -= OnCalibrationStarted;
         _calibration.TestCountdownStarted -= OnTestCountdownStarted;
     }
 
+    // ==================== Correction ====================
+
+    // Raw screen position -> position to show.
+    public Vector2 Correct(Vector2 raw)
+    {
+        if (!Enabled)
+            return raw;
+        return raw + new Vector2(
+            Interpolate(_xPosition, _xValue, _xKnown, raw.x),
+            Interpolate(_yPosition, _yValue, _yKnown, raw.y));
+    }
+
+    // Piecewise-linear through the known points, flat beyond the outermost ones; nothing with
+    // fewer than two known points.
+    private static float Interpolate(float[] position, float[] value, bool[] known, float at)
+    {
+        int count = 0;
+        int first = -1, last = -1;
+        for (int i = 0; i < 3; i++)
+        {
+            if (!known[i])
+                continue;
+            count++;
+            if (first < 0)
+                first = i;
+            last = i;
+        }
+        if (count < 2)
+            return 0f;
+        if (at <= position[first])
+            return value[first];
+        if (at >= position[last])
+            return value[last];
+
+        int lower = first;
+        for (int i = first + 1; i <= last; i++)
+        {
+            if (!known[i])
+                continue;
+            if (at <= position[i])
+            {
+                float t = Mathf.InverseLerp(position[lower], position[i], at);
+                return Mathf.Lerp(value[lower], value[i], t);
+            }
+            lower = i;
+        }
+        return value[last];
+    }
+
+    private void Rebuild()
+    {
+        Vector2 centre = ScreenCentre(_metricTest.blackRT);
+        _xPosition[0] = ScreenCentre(OptionFor("left")).x;
+        _xPosition[1] = centre.x;
+        _xPosition[2] = ScreenCentre(OptionFor("right")).x;
+        _yPosition[0] = ScreenCentre(OptionFor("down")).y;
+        _yPosition[1] = centre.y;
+        _yPosition[2] = ScreenCentre(OptionFor("up")).y;
+
+        // The up and down options sit in the centre column and left and right on the centre row,
+        // so their other component counts toward the centre of that axis.
+        SetGroup(_xValue, _xKnown, 0, Pool(true, Anchor.Left));
+        SetGroup(_xValue, _xKnown, 1, Pool(true, Anchor.Centre, Anchor.Up, Anchor.Down));
+        SetGroup(_xValue, _xKnown, 2, Pool(true, Anchor.Right));
+        SetGroup(_yValue, _yKnown, 0, Pool(false, Anchor.Down));
+        SetGroup(_yValue, _yKnown, 1, Pool(false, Anchor.Centre, Anchor.Left, Anchor.Right));
+        SetGroup(_yValue, _yKnown, 2, Pool(false, Anchor.Up));
+
+        Debug.Log("[FIX] " + Describe());
+    }
+
+    private List<float> Pool(bool x, params Anchor[] anchors)
+    {
+        var values = new List<float>();
+        foreach (var anchor in anchors)
+        {
+            foreach (var residual in _residuals[anchor])
+                values.Add(x ? residual.x : residual.y);
+        }
+        return values;
+    }
+
+    private static void SetGroup(float[] value, bool[] known, int index, List<float> samples)
+    {
+        known[index] = samples.Count >= MinimumPerGroup;
+        value[index] = known[index] ? Mathf.Clamp(Median(samples), -MaxCorrectionPx, MaxCorrectionPx) : 0f;
+    }
+
+    // e.g. "x L+30 C+5 R-25  y D-3 C+55 U+50" (blank where not yet known).
+    public string Describe()
+    {
+        return "x " + Group("L", _xValue, _xKnown, 0) + " " + Group("C", _xValue, _xKnown, 1) + " " + Group("R", _xValue, _xKnown, 2)
+               + "  y " + Group("D", _yValue, _yKnown, 0) + " " + Group("C", _yValue, _yKnown, 1) + " " + Group("U", _yValue, _yKnown, 2);
+    }
+
+    private static string Group(string name, float[] value, bool[] known, int index)
+    {
+        return name + (known[index] ? value[index].ToString("+0;-0") : "?");
+    }
+
+    private void AddResidual(Anchor anchor, Vector2 residual)
+    {
+        var list = _residuals[anchor];
+        list.Add(residual);
+        if (list.Count > HistoryPerAnchor)
+            list.RemoveAt(0);
+        Rebuild();
+    }
+
     public void SetEnabled(bool enabled)
     {
         Enabled = enabled;
         if (!enabled)
-            ResetOffset("disabled");
+            ResetModel("disabled");
     }
 
     private void OnCalibrationStarted()
     {
-        ResetOffset("new calibration");
+        ResetModel("new calibration");
     }
 
     // Each round of the test starts with a countdown; in single-eye mode the second round covers
-    // the other eye, which changes the gaze estimate, so the offset is learnt again.
+    // the other eye, which changes the gaze estimate, so the correction is learnt again.
     private void OnTestCountdownStarted(string side, float seconds)
     {
-        ResetOffset("round " + side);
+        ResetModel("round " + side);
     }
 
-    private void ResetOffset(string reason)
+    private void ResetModel(string reason)
     {
-        _pointer.DriftOffset = Vector2.zero;
-        _implied.Clear();
+        foreach (var list in _residuals.Values)
+            list.Clear();
+        for (int i = 0; i < 3; i++)
+        {
+            _xKnown[i] = false;
+            _yKnown[i] = false;
+        }
         _searching = false;
         Accepted = 0;
         Trials = 0;
-        Debug.Log("[DRIFT] offset reset (" + reason + ")");
+        OptionSamples = 0;
+        Debug.Log("[DRIFT] correction reset (" + reason + ")");
     }
+
+    // ==================== Centre samples ====================
 
     private void OnSymbolShown()
     {
@@ -129,10 +267,10 @@ public class DriftCorrector : MonoBehaviour
         Trials++;
     }
 
-    private void OnSample(Vector2 sample)
+    private void OnSample(Vector2 raw)
     {
         float now = Time.unscaledTime;
-        _history.Add((now, sample));
+        _history.Add((now, raw));
         while (_history.Count > 0 && _history[0].time < now - OptionSampleSeconds)
             _history.RemoveAt(0);
 
@@ -145,7 +283,7 @@ public class DriftCorrector : MonoBehaviour
             return;
         }
 
-        float elapsed = Time.unscaledTime - _shownAt;
+        float elapsed = now - _shownAt;
         if (elapsed > SearchWindowSeconds || (elapsed > SelectionStartSeconds && GazeDwellIndicator.IsDwelling))
         {
             Conclude();
@@ -153,7 +291,7 @@ public class DriftCorrector : MonoBehaviour
         }
         if (elapsed < SearchDelaySeconds)
             return;
-        // The screen moves with the robot's head; gaze while it turns says nothing about drift.
+        // The screen moves with the robot's head; gaze while it turns says nothing about the error.
         if (_head.IsMoving)
         {
             _recent.Clear();
@@ -161,7 +299,7 @@ public class DriftCorrector : MonoBehaviour
             return;
         }
 
-        _recent.Add(sample);
+        _recent.Add(raw);
         if (_recent.Count > FixationSamples)
             _recent.RemoveAt(0);
         if (_recent.Count < FixationSamples)
@@ -177,30 +315,30 @@ public class DriftCorrector : MonoBehaviour
                 return;
         }
 
+        // Decide what is being looked at from the corrected position, the best estimate there is.
+        Vector2 shown = Correct(centroid);
         Vector2 symbol = ScreenCentre(_metricTest.blackRT);
-        float toSymbol = Vector2.Distance(centroid, symbol);
+        float toSymbol = Vector2.Distance(shown, symbol);
         foreach (var option in _metricTest.sidesRT)
         {
             // Looking at a direction (often still the one just chosen); keep searching.
-            if (Vector2.Distance(centroid, ScreenCentre(option)) < toSymbol)
+            if (Vector2.Distance(shown, ScreenCentre(option)) < toSymbol)
             {
                 _rejection = "fixations were on the options";
                 return;
             }
         }
-
-        if (Vector2.Distance(symbol, centroid) > MaxResidualPx)
+        if (toSymbol > MaxResidualPx)
         {
-            _rejection = $"nearest fixation {Vector2.Distance(symbol, centroid):0} px from the symbol";
+            _rejection = $"nearest fixation {toSymbol:0} px from the symbol";
             return;
         }
 
-        // Keep looking: the trial's estimate is the median of all its steady fixations on the symbol.
         _candidates.Add(centroid);
         _recent.Clear();
     }
 
-    // Ends this trial's search: the median of the fixations found becomes one drift sample.
+    // Ends this trial's search: the median of the fixations found becomes one centre sample.
     private void Conclude()
     {
         if (_candidates.Count == 0)
@@ -210,21 +348,23 @@ public class DriftCorrector : MonoBehaviour
         }
 
         Vector2 residual = ScreenCentre(_metricTest.blackRT) - Median(_candidates);
-        _implied.Add(_pointer.DriftOffset + residual);
-        if (_implied.Count > MedianWindow)
-            _implied.RemoveAt(0);
-        Vector2 offset = _implied.Count >= MedianMinimum
-            ? Vector2.Lerp(_pointer.DriftOffset, Median(_implied), MedianBlend)
-            : _pointer.DriftOffset + Gain * residual;
-        offset = Vector2.ClampMagnitude(offset, MaxOffsetPx);
-        _pointer.DriftOffset = offset;
         Accepted++;
-        Finish($"residual {residual.x:+0;-0},{residual.y:+0;-0} px from {_candidates.Count} fixation(s) -> offset {offset.x:+0;-0},{offset.y:+0;-0} px");
+        _searching = false;
+        Debug.Log($"[DRIFT] trial {Trials}: centre raw residual {residual.x:+0;-0},{residual.y:+0;-0} px from {_candidates.Count} fixation(s) ({Accepted}/{Trials} used)");
+        AddResidual(Anchor.Centre, residual);
     }
 
-    // Measurement only, for now: how far the gaze sat from an option while it was chosen by
-    // dwell. Users reported the dot riding high when they look down, which the centre symbol
-    // cannot show; per-direction residuals can, and are what a multi-point correction needs.
+    private void Finish(string result)
+    {
+        _searching = false;
+        Debug.Log($"[DRIFT] trial {Trials}: {result} ({Accepted}/{Trials} used)");
+    }
+
+    // ==================== Option samples ====================
+
+    // When an option is chosen by dwell, the gaze sat on it for the last second: a reference
+    // point at that option. (It slightly understates the error there - the dot had to be on the
+    // option for the choice to complete - so corrections err on the small side.)
     private void OnSideChosen(string side)
     {
         // A dwell completes with the indicator playing its finish; a tap does not.
@@ -238,8 +378,26 @@ public class DriftCorrector : MonoBehaviour
         foreach (var entry in _history)
             centroid += entry.position;
         centroid /= _history.Count;
-        Vector2 residual = ScreenCentre(option) - centroid;
-        Debug.Log($"[OPTION] {side}: residual {residual.x:+0;-0},{residual.y:+0;-0} px ({_history.Count} samples, offset {_pointer.DriftOffset.x:+0;-0},{_pointer.DriftOffset.y:+0;-0})");
+        Vector2 target = ScreenCentre(option);
+        Vector2 residual = target - centroid;
+        Vector2 shownResidual = target - Correct(centroid);
+        Debug.Log($"[OPTION] {side}: raw residual {residual.x:+0;-0},{residual.y:+0;-0} px, as shown {shownResidual.x:+0;-0},{shownResidual.y:+0;-0} px ({_history.Count} samples)");
+
+        if (!Enabled || PositionGuide.Active || residual.magnitude > MaxResidualPx)
+            return;
+        OptionSamples++;
+        AddResidual(AnchorFor(side), residual);
+    }
+
+    private static Anchor AnchorFor(string side)
+    {
+        switch (side)
+        {
+            case "up": return Anchor.Up;
+            case "down": return Anchor.Down;
+            case "left": return Anchor.Left;
+            default: return Anchor.Right;
+        }
     }
 
     // The options sit above, below, left and right of the symbol; find the one for this side.
@@ -261,10 +419,14 @@ public class DriftCorrector : MonoBehaviour
         return best;
     }
 
-    private void Finish(string result)
+    // ==================== Helpers ====================
+
+    private static float Median(List<float> values)
     {
-        _searching = false;
-        Debug.Log($"[DRIFT] trial {Trials}: {result} ({Accepted}/{Trials} used)");
+        var sorted = new List<float>(values);
+        sorted.Sort();
+        int middle = sorted.Count / 2;
+        return sorted.Count % 2 == 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) * 0.5f;
     }
 
     private static Vector2 Median(List<Vector2> points)
@@ -276,12 +438,7 @@ public class DriftCorrector : MonoBehaviour
             xs.Add(point.x);
             ys.Add(point.y);
         }
-        xs.Sort();
-        ys.Sort();
-        int middle = points.Count / 2;
-        return points.Count % 2 == 1
-            ? new Vector2(xs[middle], ys[middle])
-            : new Vector2((xs[middle - 1] + xs[middle]) * 0.5f, (ys[middle - 1] + ys[middle]) * 0.5f);
+        return new Vector2(Median(xs), Median(ys));
     }
 
     private static Vector2 ScreenCentre(RectTransform rect)

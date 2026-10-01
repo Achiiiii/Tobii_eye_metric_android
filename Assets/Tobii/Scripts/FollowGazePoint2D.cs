@@ -43,11 +43,11 @@ public class FollowGazePoint2D : MonoBehaviour
     private Vector2 _catchUpTarget;
     private readonly FixationSmoother _smoother = new FixationSmoother();
 
-    // Screen-pixel correction added to every gaze sample. DriftCorrector estimates it during the
-    // test from the moments the user looks at the centre symbol.
-    public Vector2 DriftOffset { get; set; }
-    // Each gaze sample in screen pixels, drift correction applied, as it enters the smoother.
-    public event System.Action<Vector2> SampleAdded;
+    // Maps a raw screen-space gaze sample to the position to show. DriftCorrector supplies it,
+    // learning a position-dependent correction during the test.
+    public System.Func<Vector2, Vector2> Correction { get; set; }
+    // Each raw gaze sample in screen pixels, before any correction.
+    public event System.Action<Vector2> RawSampleAdded;
     private Vector2 _displayedScreenPosition;
     private bool _hasDisplayedPosition = false;
 
@@ -114,7 +114,7 @@ public class FollowGazePoint2D : MonoBehaviour
 
     void LateUpdate()
     {
-        Vector2 rawScreenPosition = ToScreen(_normalisedGazepoint) + DriftOffset;
+        Vector2 rawScreenPosition = Corrected(ToScreen(_normalisedGazepoint));
         Vector2 target = useFiltering && _smoother.HasOutput ? _smoother.Output : rawScreenPosition;
 
         if (!_hasDisplayedPosition)
@@ -209,7 +209,9 @@ public class FollowGazePoint2D : MonoBehaviour
         _smoother.FixationRadius = fixationRadiusScreenFraction * Screen.width;
         _smoother.FixationWindowSeconds = fixationWindowSeconds;
         _smoother.ImmediateJump = ImmediateJumpRadii * _smoother.FixationRadius;
-        Vector2 sample = ToScreen(normalizedGazePoint) + DriftOffset;
+        Vector2 raw = ToScreen(normalizedGazePoint);
+        RawSampleAdded?.Invoke(raw);
+        Vector2 sample = Corrected(raw);
         if (_hasDisplayedPosition && _catchUpStart < 0f
             && Vector2.Distance(sample, _displayedScreenPosition) > ImmediateJumpRadii * fixationRadiusScreenFraction * Screen.width)
         {
@@ -218,7 +220,11 @@ public class FollowGazePoint2D : MonoBehaviour
         }
         _smoother.AddSample(Time.time, sample);
         GazeLatencyStats.RecordFixationSpread(_smoother.Spread);
-        SampleAdded?.Invoke(sample);
+    }
+
+    private Vector2 Corrected(Vector2 raw)
+    {
+        return Correction != null ? Correction(raw) : raw;
     }
 
     private static Vector2 ToScreen(Vector2 normalizedGazePoint)
