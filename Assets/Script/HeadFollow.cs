@@ -40,6 +40,8 @@ public class HeadFollow : MonoBehaviour
     private const float YawLimitDeg = 30f;
     private const float PitchUpLimitDeg = -14.5f;
     private const float PitchDownLimitDeg = 12f;
+    // How far beyond the head's tilt range the user may sit before the setup is flagged.
+    private const float EyeLevelMarginDeg = 3f;
     // The motors ignored moves of 1.4 and 2.5 degrees on the device, so no move is smaller than
     // this (overshooting by at most ExitDeadzone).
     private const float MinMoveDeg = 3f;
@@ -76,6 +78,30 @@ public class HeadFollow : MonoBehaviour
     // True while a move is under way or its effect has not yet reached the head pose.
     public bool IsMoving => Time.unscaledTime < _yaw.SettleUntil || Time.unscaledTime < _pitch.SettleUntil;
     public bool Calibrated => _calibrationDepth > 0f;
+
+    // Whether the user sits outside what the robot's head can tilt to: +1 too high for it (it
+    // would have to look up past its stop), -1 too low, 0 fine. It uses the user's elevation from
+    // the robot's base - direction in the image minus the head's tilt - so it holds before the
+    // head has moved and in any follow mode. On the robot, sitting low gave 12.6 degrees,
+    // sitting high 17-19, and the earlier high-seated runs 21-22.
+    public int EyeLevelMismatch
+    {
+        get
+        {
+            if (!HasFace)
+                return 0;
+            float elevation = EyeElevationDeg;
+            if (elevation > -PitchUpLimitDeg + EyeLevelMarginDeg)
+                return 1;
+            if (elevation < -PitchDownLimitDeg - EyeLevelMarginDeg)
+                return -1;
+            return 0;
+        }
+    }
+
+    // Degrees the user's head sits above the robot's level line of sight (neck_y is negative
+    // looking up).
+    public float EyeElevationDeg => _poseAngles.y - _pitch.Actual;
     // Where the user is compared with calibration, independent of where the head points: the
     // user's direction from the robot's base (motor yaw plus direction within the image), in
     // degrees, positive toward the user's right; and the change in distance, in metres.

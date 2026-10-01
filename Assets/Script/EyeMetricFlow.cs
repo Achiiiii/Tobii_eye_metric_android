@@ -79,12 +79,13 @@ public class EyeMetricFlow : MonoBehaviour
 
         QuestionnaireText.Apply(qa, font);
         BuildCalibrationHints(_flowCanvas.transform);
-        HeadDistanceGuide.Create(_flowCanvas.transform, detectDistance, canvasTrackBox, font);
+        // Created before the head distance guide, which shows its eye-level notice.
+        _headFollow = HeadFollow.Create(transform, gazeCalibrationManager, metricTest, resultPage);
+        HeadDistanceGuide.Create(_flowCanvas.transform, detectDistance, canvasTrackBox, font, _headFollow);
         BuildHeadConfirmed(_flowCanvas.transform);
         BuildGazeIntro(_flowCanvas.transform);
         BuildTestCountdown(_flowCanvas.transform);
         BuildModeMenu(_flowCanvas.transform);
-        _headFollow = HeadFollow.Create(transform, gazeCalibrationManager, metricTest, resultPage);
         // Above the gaze dot (10), below the HUD (20), so exit and recalibrate stay usable.
         var guideCanvas = UiFactory.CreateOverlayCanvas("GuideOverlay", 15, transform);
         PositionGuide.Create(guideCanvas.transform, font, _headFollow, metricTest);
