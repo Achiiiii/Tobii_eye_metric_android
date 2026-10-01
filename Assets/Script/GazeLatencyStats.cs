@@ -14,6 +14,8 @@ public static class GazeLatencyStats
         public double FilterLagSum;
         public long SpreadCount;
         public double SpreadSum;
+        public long CatchUpCount;
+        public double CatchUpSum;
     }
 
     private static long _frames;
@@ -24,6 +26,8 @@ public static class GazeLatencyStats
     private static double _filterLagSum;
     private static long _spreadCount;
     private static double _spreadSum;
+    private static long _catchUpCount;
+    private static double _catchUpSum;
 
     public static long Now()
     {
@@ -56,6 +60,13 @@ public static class GazeLatencyStats
         _spreadSum += pixels;
     }
 
+    // Main thread only. Seconds from a large gaze jump arriving to the dot reaching it.
+    public static void RecordCatchUp(float seconds)
+    {
+        _catchUpCount++;
+        _catchUpSum += seconds;
+    }
+
     public static Snapshot Take()
     {
         return new Snapshot
@@ -67,7 +78,9 @@ public static class GazeLatencyStats
             FilterLagCount = _filterLagCount,
             FilterLagSum = _filterLagSum,
             SpreadCount = _spreadCount,
-            SpreadSum = _spreadSum
+            SpreadSum = _spreadSum,
+            CatchUpCount = _catchUpCount,
+            CatchUpSum = _catchUpSum
         };
     }
 

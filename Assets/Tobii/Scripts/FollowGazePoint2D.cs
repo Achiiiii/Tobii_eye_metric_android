@@ -29,6 +29,15 @@ public class FollowGazePoint2D : MonoBehaviour
     [SerializeField] private float fixationRadiusScreenFraction = 0.08f;
     [SerializeField] private float fixationWindowSeconds = 0.5f;
     [SerializeField] private float displaySmoothingSeconds = 0.05f;
+    // Twice the fixation radius (~165 px on the robot): jumps beyond it move the dot at once.
+    [SerializeField] private float immediateJumpScreenFraction = 0.16f;
+
+    // Measures how long the dot takes to reach a large gaze jump (smoothing and easing only;
+    // camera and inference latency come before the sample arrives).
+    private const float CatchUpArrivePixels = 40f;
+    private const float CatchUpGiveUpSeconds = 1.5f;
+    private float _catchUpStart = -1f;
+    private Vector2 _catchUpTarget;
     private readonly FixationSmoother _smoother = new FixationSmoother();
 
     // Screen-pixel correction added to every gaze sample. DriftCorrector estimates it during the
@@ -117,6 +126,19 @@ public class FollowGazePoint2D : MonoBehaviour
         }
 
         Vector2 screenPosition = _displayedScreenPosition;
+        if (_catchUpStart >= 0f)
+        {
+            if (Vector2.Distance(screenPosition, _catchUpTarget) < CatchUpArrivePixels)
+            {
+                GazeLatencyStats.RecordCatchUp(Time.time - _catchUpStart);
+                _catchUpStart = -1f;
+            }
+            else if (Time.time - _catchUpStart > CatchUpGiveUpSeconds)
+            {
+                // The jump never settled (a spike, or the gaze moved on): not a latency sample.
+                _catchUpStart = -1f;
+            }
+        }
         GazeLatencyStats.RecordFilterLag(Vector2.Distance(rawScreenPosition, screenPosition));
 
         // Convert screen position to canvas position
@@ -183,7 +205,14 @@ public class FollowGazePoint2D : MonoBehaviour
         _normalisedGazepoint = normalizedGazePoint;
         _smoother.FixationRadius = fixationRadiusScreenFraction * Screen.width;
         _smoother.FixationWindowSeconds = fixationWindowSeconds;
+        _smoother.ImmediateJump = immediateJumpScreenFraction * Screen.width;
         Vector2 sample = ToScreen(normalizedGazePoint) + DriftOffset;
+        if (_hasDisplayedPosition && _catchUpStart < 0f
+            && Vector2.Distance(sample, _displayedScreenPosition) > immediateJumpScreenFraction * Screen.width)
+        {
+            _catchUpStart = Time.time;
+            _catchUpTarget = sample;
+        }
         _smoother.AddSample(Time.time, sample);
         GazeLatencyStats.RecordFixationSpread(_smoother.Spread);
         SampleAdded?.Invoke(sample);

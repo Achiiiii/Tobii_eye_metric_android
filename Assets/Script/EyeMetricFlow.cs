@@ -148,6 +148,20 @@ public class EyeMetricFlow : MonoBehaviour
 
     // Every few seconds: how long tobii_process_frame takes and how many gaze samples arrive.
     // That time sits on the main thread today, so it bounds both the frame rate and gaze rate.
+    // Mean time for the dot to reach a large gaze jump in this interval, and how many jumps.
+    private string CatchUpText(GazeLatencyStats.Snapshot current)
+    {
+        long count = current.CatchUpCount - _perfPrevious.CatchUpCount;
+        return count > 0 ? $"{(current.CatchUpSum - _perfPrevious.CatchUpSum) / count * 1000.0:0} ms x{count}" : "-";
+    }
+
+    // Mean RMS scatter of gaze samples within the current fixation: the noise the dot smooths.
+    private string SpreadText(GazeLatencyStats.Snapshot current)
+    {
+        long count = current.SpreadCount - _perfPrevious.SpreadCount;
+        return count > 0 ? $"{(current.SpreadSum - _perfPrevious.SpreadSum) / count:0} px" : "-";
+    }
+
     private void LogPerformance()
     {
         float elapsed = Time.unscaledTime - _perfPreviousTime;
@@ -162,7 +176,8 @@ public class EyeMetricFlow : MonoBehaviour
             double processMs = GazeLatencyStats.TicksToMilliseconds(current.FrameTicks - _perfPrevious.FrameTicks) / frames;
             long dropped = System.Threading.Interlocked.Read(ref GazeFrameWorker.Dropped);
             Debug.Log($"[PERF] process frame {processMs:0.0} ms  frames {frames / elapsed:0.0}/s  gaze {samples / elapsed:0.0} Hz  "
-                      + $"render {(Time.frameCount - _perfPreviousFrame) / elapsed:0.0} fps  skipped {(dropped - _perfPreviousDropped) / elapsed:0.0}/s");
+                      + $"render {(Time.frameCount - _perfPreviousFrame) / elapsed:0.0} fps  skipped {(dropped - _perfPreviousDropped) / elapsed:0.0}/s  "
+                      + $"catch-up {CatchUpText(current)}  spread {SpreadText(current)}");
             _perfPreviousDropped = dropped;
         }
         _perfPrevious = current;

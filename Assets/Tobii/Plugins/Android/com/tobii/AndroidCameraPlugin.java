@@ -83,6 +83,9 @@ public class AndroidCameraPlugin {
     // small at the sensor's aspect ratio, box-average by an integer factor down to TARGET_MAX_WIDTH.
     private static final int MIN_IMAGE_WIDTH = 640;
     private static final int TARGET_MAX_WIDTH = 1280;
+    // Frames handed to Tobii are at least this wide. 1050x780 measured a third less gaze error at
+    // the centre symbol than 700x520 (35 vs 52 px median, 2026-10-01) for ~20 ms more inference.
+    private static final int MIN_TRACKING_WIDTH = 1000;
     private static int downsampleFactor = 1;
     private static int streamWidth = 0;
     private static int streamHeight = 0;
@@ -289,7 +292,7 @@ public class AndroidCameraPlugin {
         for (int factor = 2; factor <= 8; factor++) {
             if (width % factor != 0 || height % factor != 0)
                 continue;
-            if (width / factor < MIN_IMAGE_WIDTH)
+            if (width / factor < MIN_TRACKING_WIDTH)
                 continue;
             best = factor;
         }
