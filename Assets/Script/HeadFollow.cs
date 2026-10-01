@@ -53,6 +53,10 @@ public class HeadFollow : MonoBehaviour
     // while: remembering it as a limit locked the head off to one side on the device.
     private const float StallRatio = 0.3f;
     private const float StallBackoffSeconds = 3f;
+    // Pushing against the end of the range: the stop varies a little (the pitch stopped at -13.6
+    // instead of -14.5 on one run, and asking for the last 0.9 degrees over and over kept the head
+    // "moving" for a whole round). Leave it alone for longer.
+    private const float StallAtLimitBackoffSeconds = 10f;
     private const float HomeYawDeg = 0f;
     private const float HomePitchDeg = 0f;
     private const float PoseSmoothingSeconds = 0.12f;
@@ -486,12 +490,13 @@ public class HeadFollow : MonoBehaviour
             axis.Commanded = false;
             float wanted = axis.CommandTo - axis.CommandFrom;
             float achieved = axis.Actual - axis.CommandFrom;
-            bool stalled = Mathf.Abs(wanted) >= 1f && achieved * Mathf.Sign(wanted) < StallRatio * Mathf.Abs(wanted);
+            bool stalled = Mathf.Abs(wanted) >= 0.5f && achieved * Mathf.Sign(wanted) < StallRatio * Mathf.Abs(wanted);
             Debug.Log($"[MOTOR] {axis.Name} {axis.CommandFrom:0.0} -> asked {axis.CommandTo:0.0}, reached {axis.Actual:0.0}{(stalled ? " (did not move)" : "")}");
             if (stalled)
             {
                 axis.BlockedDirection = Mathf.Sign(wanted);
-                axis.BlockedUntil = Time.unscaledTime + StallBackoffSeconds;
+                bool atLimit = axis.CommandTo <= axis.Min || axis.CommandTo >= axis.Max;
+                axis.BlockedUntil = Time.unscaledTime + (atLimit ? StallAtLimitBackoffSeconds : StallBackoffSeconds);
                 axis.EndRun();
                 return float.NaN;
             }
