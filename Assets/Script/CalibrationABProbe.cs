@@ -1,5 +1,7 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using AOT;
 using Tobii;
 using Tobii.StreamEngine;
 using UnityEngine;
@@ -16,6 +18,31 @@ public class CalibrationABProbe : MonoBehaviour
     private byte[] _blob;
     private int _trial;
     private Task _pending = Task.CompletedTask;
+
+    // ConfigInterop.tobii_calibration_retrieve passes a lambda as the native callback, which IL2CPP
+    // cannot marshal (it threw, silently, inside the task). Use a static callback instead.
+    [DllImport(Interop.stream_engine_dll, CallingConvention = CallingConvention.Cdecl, EntryPoint = "tobii_calibration_retrieve")]
+    private static extern tobii_error_t RetrieveCalibration(IntPtr device, tobii_data_receiver_t receiver, IntPtr userData);
+    private static readonly tobii_data_receiver_t s_receiver = OnCalibrationData;
+    private static byte[] s_received;
+
+    [MonoPInvokeCallback(typeof(tobii_data_receiver_t))]
+    private static void OnCalibrationData(IntPtr data, IntPtr size, IntPtr userData)
+    {
+        int length = size.ToInt32();
+        s_received = new byte[length];
+        if (length > 0)
+            Marshal.Copy(data, s_received, 0, length);
+    }
+
+    private void Run(Action action)
+    {
+        _pending = _pending.ContinueWith(_ =>
+        {
+            try { action(); }
+            catch (Exception e) { Debug.LogError("[CALIBAB] " + e); }
+        });
+    }
 
     public static CalibrationABProbe Create(Transform parent, GazeCalibrationManager calibration, MetricTest metricTest)
     {
@@ -53,10 +80,12 @@ public class CalibrationABProbe : MonoBehaviour
     private void OnCalibrationEnded()
     {
         IntPtr device = _device.DeviceContext;
-        _pending = _pending.ContinueWith(_ =>
+        Run(() =>
         {
             var idResult = ConfigInterop.tobii_get_calibration_id(device, out uint id);
-            var result = ConfigInterop.tobii_calibration_retrieve(device, out byte[] blob);
+            s_received = null;
+            var result = RetrieveCalibration(device, s_receiver, IntPtr.Zero);
+            byte[] blob = s_received;
             _blob = result == tobii_error_t.TOBII_ERROR_NO_ERROR && blob != null && blob.Length > 0 ? blob : null;
             Debug.Log($"[CALIBAB] calibration id {id} ({idResult}); retrieve {result}, {(blob != null ? blob.Length : 0)} bytes");
         });
@@ -74,7 +103,7 @@ public class CalibrationABProbe : MonoBehaviour
         IntPtr device = _device.DeviceContext;
         byte[] blob = _blob;
         int trial = _trial;
-        _pending = _pending.ContinueWith(_ =>
+        Run(() =>
         {
             var result = calibrated
                 ? ConfigInterop.tobii_calibration_apply(device, blob)
