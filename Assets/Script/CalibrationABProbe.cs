@@ -105,9 +105,20 @@ public class CalibrationABProbe : MonoBehaviour
         int trial = _trial;
         Run(() =>
         {
-            var result = calibrated
-                ? ConfigInterop.tobii_calibration_apply(device, blob)
-                : ConfigInterop.tobii_calibration_clear(device);
+            string result;
+            if (calibrated)
+            {
+                // Returns TOBII_ERROR_INTERNAL like compute_and_apply, but the calibration id changes.
+                result = ConfigInterop.tobii_calibration_apply(device, blob).ToString();
+            }
+            else
+            {
+                // Clearing is refused outside calibration mode (TOBII_ERROR_CALIBRATION_NOT_STARTED).
+                var start = ConfigInterop.tobii_calibration_start(device, tobii_enabled_eye_t.TOBII_ENABLED_EYE_BOTH);
+                var clear = ConfigInterop.tobii_calibration_clear(device);
+                var stop = ConfigInterop.tobii_calibration_stop(device);
+                result = $"start {start}, clear {clear}, stop {stop}";
+            }
             ConfigInterop.tobii_get_calibration_id(device, out uint id);
             Debug.Log($"[CALIBAB] trial {trial}: {(calibrated ? "calibrated" : "uncalibrated")} ({result}, id {id})");
         });
