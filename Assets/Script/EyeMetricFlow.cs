@@ -96,6 +96,8 @@ public class EyeMetricFlow : MonoBehaviour
         PositionGuide.Create(guideCanvas.transform, font, _headFollow, metricTest);
         _driftCorrector = DriftCorrector.Create(transform, gazePointer, metricTest, _headFollow, gazeCalibrationManager);
         OptionReveal.Create(transform, metricTest, _driftCorrector, _headFollow, gazePointer);
+        // Temporary: alternates trials between calibrated and cleared to test the calibration.
+        CalibrationABProbe.Create(transform, gazeCalibrationManager, metricTest);
         BuildHud(hudCanvas.transform);
         BuildHomeButton(resultPage.transform);
 
