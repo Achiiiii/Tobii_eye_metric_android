@@ -1,6 +1,6 @@
 # 版本紀錄
 
-每個版本的改動累計在這裡，最新的版本在最上面。設計理由、參數與已知限制請見 [HANDOVER.md](HANDOVER.md)；給現場人員的說明在 `Docs/現場說明/`。
+每個版本的改動累計在這裡，最新的版本在最上面。設計理由、參數與已知限制請見 [HANDOVER.md](HANDOVER.md)。給現場人員的說明每版另外輸出成 Word 文件，不存在專案裡。
 
 版本號規則：`versionName` 寫 `主版本.次版本`（例如 `2.3`），`versionCode` = 主版本 × 100 + 次版本（例如 `203`）。兩者都在 Unity 的 Player Settings 設定（`ProjectSettings/ProjectSettings.asset` 的 `bundleVersion`、`AndroidBundleVersionCode`）。versionCode 必須比凱比上已安裝的版本大，才能覆蓋安裝。
 
