@@ -6,6 +6,7 @@ using Tobii;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.UI;
+using DG.Tweening;
 
 
 public class MetricTest : MonoBehaviour
@@ -37,6 +38,10 @@ public class MetricTest : MonoBehaviour
     // alone. Invisible, not interactable (so no dwell builds up) and not blocking touches.
     private CanvasGroup[] _optionGroups;
     public bool OptionsVisible { get; private set; } = true;
+    // The options pop in from small with a slight overshoot rather than appearing all at once.
+    // Only the visible images scale; the buttons, and so their hit areas, never do.
+    private const float OptionPopSeconds = 0.3f;
+    private const float OptionPopFromScale = 0.2f;
     public string FirstSide => Mode == TestMode.Both ? "both" : "right";
 
     private int curLevel = 5;
@@ -105,9 +110,25 @@ public class MetricTest : MonoBehaviour
         OptionsVisible = visible;
         foreach (var group in _optionGroups)
         {
-            group.alpha = visible ? 1f : 0f;
+            group.DOKill();
             group.interactable = visible;
             group.blocksRaycasts = visible;
+            group.alpha = 0f;
+            if (visible)
+                group.DOFade(1f, OptionPopSeconds * 0.5f);
+        }
+        foreach (var image in sidesRT)
+        {
+            image.DOKill();
+            if (visible)
+            {
+                image.localScale = Vector3.one * OptionPopFromScale;
+                image.DOScale(1f, OptionPopSeconds).SetEase(Ease.OutBack);
+            }
+            else
+            {
+                image.localScale = Vector3.one;
+            }
         }
     }
 
