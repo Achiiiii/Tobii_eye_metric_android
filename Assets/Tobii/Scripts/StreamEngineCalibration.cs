@@ -81,11 +81,6 @@ namespace Tobii
             success.Value = task.Result;
         }
 
-        // Which eye(s) to calibrate and to track with. Single-eye rounds cover the other eye; the
-        // calibration and the gaze used both eyes anyway, mixing in the covered eye's invalid data,
-        // and single-eye gaze error ran 1.6-1.8x the binocular one even right after recalibrating.
-        public tobii_enabled_eye_t EnabledEye { get; set; } = tobii_enabled_eye_t.TOBII_ENABLED_EYE_BOTH;
-
         private Task<bool> StartCalibrationTask()
         {
             Debug.Log(string.Format("StartCalibrationTask"));
@@ -93,21 +88,11 @@ namespace Tobii
             if (streamEngineDevice.DeviceContext == IntPtr.Zero)
                 return Task.FromResult(false);
 
-            var eye = EnabledEye;
-            var eyeError = ConfigInterop.tobii_set_enabled_eye(streamEngineDevice.DeviceContext, eye);
-            Debug.Log($"[EYE] tracking with {eye}: {eyeError}");
-            var error = ConfigInterop.tobii_calibration_start(streamEngineDevice.DeviceContext, eye);
-            // The webcam processor may not support single-eye mode; never let that fail calibration.
-            if (error != tobii_error_t.TOBII_ERROR_NO_ERROR && eye != tobii_enabled_eye_t.TOBII_ENABLED_EYE_BOTH)
-            {
-                Debug.LogWarning($"[EYE] calibrating {eye} failed ({error}); falling back to both eyes");
-                ConfigInterop.tobii_set_enabled_eye(streamEngineDevice.DeviceContext, tobii_enabled_eye_t.TOBII_ENABLED_EYE_BOTH);
-                error = ConfigInterop.tobii_calibration_start(streamEngineDevice.DeviceContext, tobii_enabled_eye_t.TOBII_ENABLED_EYE_BOTH);
-            }
-            else
-            {
-                Debug.Log($"[EYE] calibrating {eye}: {error}");
-            }
+            // Both eyes even in single-eye rounds. The webcam processor refuses to track one eye
+            // (tobii_set_enabled_eye: TOBII_ERROR_NOT_SUPPORTED) but accepts a one-eye calibration,
+            // and that mismatch made single-eye gaze worse on the robot: raw error 83 -> 99 px with
+            // the right eye and 72 -> 105 px with the left.
+            var error = ConfigInterop.tobii_calibration_start(streamEngineDevice.DeviceContext, tobii_enabled_eye_t.TOBII_ENABLED_EYE_BOTH);
             if (error != tobii_error_t.TOBII_ERROR_NO_ERROR)
             {
                 Debug.Log(string.Format("Error starting calibration: {0}", error));
