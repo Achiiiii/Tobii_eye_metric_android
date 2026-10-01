@@ -270,6 +270,11 @@ namespace Tobii
             metricTest.gameObject.SetActive(false);
             mainCanvas.SetActive(true);
             _currentSide = side;
+            // The calibration that follows this screen, and the tracking during the round, use only
+            // the eye left open. ("right" tests the right eye with the left covered.)
+            streamEngineCalibration.EnabledEye = side == "right" ? Tobii.StreamEngine.tobii_enabled_eye_t.TOBII_ENABLED_EYE_RIGHT
+                : side == "left" ? Tobii.StreamEngine.tobii_enabled_eye_t.TOBII_ENABLED_EYE_LEFT
+                : Tobii.StreamEngine.tobii_enabled_eye_t.TOBII_ENABLED_EYE_BOTH;
             string coverHint;
             switch (side)
             {
@@ -333,6 +338,7 @@ namespace Tobii
 
             _isCalibrating = false;
             _gazeIntroShown = false;
+            streamEngineCalibration.EnabledEye = Tobii.StreamEngine.tobii_enabled_eye_t.TOBII_ENABLED_EYE_BOTH;
             ComponentStatus = ComponentState.Idle;
             CalibrationStatus = CalibrationState.CalibrationNotDone;
 

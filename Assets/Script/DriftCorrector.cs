@@ -35,13 +35,19 @@ public class DriftCorrector : MonoBehaviour
     private const float FixationDispersionPx = 60f;
     // Beyond this from its reference point a sample is not trusted as a look at it.
     private const float MaxResidualPx = 150f;
+    // While the options are hidden nothing else is on screen to look at, so allow more.
+    private const float MaxResidualHiddenPx = 200f;
     private const float MaxCorrectionPx = 150f;
     // Raw samples over the last second of a dwell describe where the gaze sat on the option.
     private const float OptionSampleSeconds = 1f;
     // Per reference point, the most recent residuals kept; a group's value is their median.
     private const int HistoryPerAnchor = 5;
-    // A reference point needs this many samples before its correction is used.
+    // From this many samples a reference point uses their median. Before that, its single sample
+    // is applied at reduced strength: single-eye rounds start with errors of 80-120 px, so waiting
+    // for two samples left the first 5-8 questions of every round uncorrected, while one sample
+    // alone could be a stray.
     private const int MinimumPerAnchor = 2;
+    private const float FirstSampleWeight = 0.5f;
 
     private enum Anchor { Centre, Up, Down, Left, Right }
 
@@ -49,6 +55,8 @@ public class DriftCorrector : MonoBehaviour
     public int Accepted { get; private set; }
     public int Trials { get; private set; }
     public int OptionSamples { get; private set; }
+    // True once this trial has a steady look at the symbol (OptionReveal waits for it).
+    public bool CentreLookFound { get; private set; }
 
     private FollowGazePoint2D _pointer;
     private MetricTest _metricTest;
@@ -172,8 +180,10 @@ public class DriftCorrector : MonoBehaviour
         foreach (Anchor anchor in System.Enum.GetValues(typeof(Anchor)))
         {
             var samples = _residuals[anchor];
-            _known[anchor] = samples.Count >= MinimumPerAnchor;
-            _value[anchor] = _known[anchor] ? Vector2.ClampMagnitude(Median(samples), MaxCorrectionPx) : Vector2.zero;
+            _known[anchor] = samples.Count > 0;
+            Vector2 value = samples.Count >= MinimumPerAnchor ? Median(samples)
+                : samples.Count == 1 ? FirstSampleWeight * samples[0] : Vector2.zero;
+            _value[anchor] = Vector2.ClampMagnitude(value, MaxCorrectionPx);
         }
         Debug.Log("[FIX] " + Describe());
     }
@@ -246,6 +256,7 @@ public class DriftCorrector : MonoBehaviour
         _rejection = null;
         _recent.Clear();
         _candidates.Clear();
+        CentreLookFound = false;
         Trials++;
     }
 
@@ -301,16 +312,20 @@ public class DriftCorrector : MonoBehaviour
         Vector2 shown = Correct(centroid);
         Vector2 symbol = ScreenCentre(_metricTest.blackRT);
         float toSymbol = Vector2.Distance(shown, symbol);
-        foreach (var option in _metricTest.sidesRT)
+        bool optionsShown = _metricTest.OptionsVisible;
+        if (optionsShown)
         {
-            // Looking at a direction (often still the one just chosen); keep searching.
-            if (Vector2.Distance(shown, ScreenCentre(option)) < toSymbol)
+            foreach (var option in _metricTest.sidesRT)
             {
-                _rejection = "fixations were on the options";
-                return;
+                // Looking at a direction (often still the one just chosen); keep searching.
+                if (Vector2.Distance(shown, ScreenCentre(option)) < toSymbol)
+                {
+                    _rejection = "fixations were on the options";
+                    return;
+                }
             }
         }
-        if (toSymbol > MaxResidualPx)
+        if (toSymbol > (optionsShown ? MaxResidualPx : MaxResidualHiddenPx))
         {
             _rejection = $"nearest fixation {toSymbol:0} px from the symbol";
             return;
@@ -318,6 +333,7 @@ public class DriftCorrector : MonoBehaviour
 
         _candidates.Add(centroid);
         _recent.Clear();
+        CentreLookFound = true;
     }
 
     // Ends this trial's search: the median of the fixations found becomes one centre sample.

@@ -89,6 +89,7 @@ public class EyeMetricFlow : MonoBehaviour
         var guideCanvas = UiFactory.CreateOverlayCanvas("GuideOverlay", 15, transform);
         PositionGuide.Create(guideCanvas.transform, font, _headFollow, metricTest);
         _driftCorrector = DriftCorrector.Create(transform, gazePointer, metricTest, _headFollow, gazeCalibrationManager);
+        OptionReveal.Create(transform, metricTest, _driftCorrector, _headFollow);
         BuildHud(hudCanvas.transform);
         BuildHomeButton(resultPage.transform);
 

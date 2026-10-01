@@ -32,6 +32,11 @@ public class MetricTest : MonoBehaviour
     public event Action SymbolShown;
     // The direction just chosen ("up", "down", "left", "right"), before the next symbol.
     public event Action<string> SideChosen;
+
+    // Each option's button object (the parent of its image), hidden while a new symbol is shown
+    // alone. Invisible, not interactable (so no dwell builds up) and not blocking touches.
+    private CanvasGroup[] _optionGroups;
+    public bool OptionsVisible { get; private set; } = true;
     public string FirstSide => Mode == TestMode.Both ? "both" : "right";
 
     private int curLevel = 5;
@@ -79,7 +84,31 @@ public class MetricTest : MonoBehaviour
         RandomSide();
         SetAnswerTransform();
         SetLevel(curLevel);
+        // OptionReveal brings the options in once the user has looked at the symbol, which gives
+        // the gaze correction a clean look at the centre on nearly every trial.
+        SetOptionsVisible(false);
         SymbolShown?.Invoke();
+    }
+
+    public void SetOptionsVisible(bool visible)
+    {
+        if (_optionGroups == null)
+        {
+            _optionGroups = new CanvasGroup[sidesRT.Length];
+            for (int i = 0; i < sidesRT.Length; i++)
+            {
+                var button = sidesRT[i].parent.gameObject;
+                var group = button.GetComponent<CanvasGroup>();
+                _optionGroups[i] = group != null ? group : button.AddComponent<CanvasGroup>();
+            }
+        }
+        OptionsVisible = visible;
+        foreach (var group in _optionGroups)
+        {
+            group.alpha = visible ? 1f : 0f;
+            group.interactable = visible;
+            group.blocksRaycasts = visible;
+        }
     }
 
     public void ResetSession()
@@ -91,6 +120,7 @@ public class MetricTest : MonoBehaviour
         wrong = 0;
         hadWrong = false;
         answerSide = null;
+        SetOptionsVisible(true);
     }
 
     public void SetLevel(int level)
