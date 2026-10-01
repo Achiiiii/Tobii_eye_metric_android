@@ -70,7 +70,7 @@ public class HeadFollow : MonoBehaviour
     // Shorter than ButtonTrigger's 1 s selection cooldown, so the head is still again before the
     // next answer can start filling.
     private const float PostAnswerWindowSeconds = 0.8f;
-    private const float LogIntervalSeconds = 1f;
+    private const float LogIntervalSeconds = 5f;
 
     public FollowMode Mode { get; set; } = FollowMode.BetweenTrials;
     // True from the head distance check until the result page: a session is under way.

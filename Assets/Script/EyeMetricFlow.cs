@@ -68,6 +68,10 @@ public class EyeMetricFlow : MonoBehaviour
 
     private void Awake()
     {
+        // Logs and warnings without stack traces: on the device each one cost a managed stack walk
+        // and made ~3 of every 4 logcat lines. Errors and exceptions keep theirs.
+        Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
+        Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
         _sfx = gameObject.AddComponent<AudioSource>();
         _sfx.playOnAwake = false;
         // MetricTest swaps its selection sound for a neutral tick; keep the original chime for successes.
@@ -251,7 +255,7 @@ public class EyeMetricFlow : MonoBehaviour
         exitButton.onClick.AddListener(OnExitPressed);
 
         _debugOverlay = GazeDebugOverlay.Create(parent, gazePointer, _headFollow, _driftCorrector,
-            FindObjectOfType<AndroidWebcamCaptureClient>(), gazeCalibrationManager);
+            FindObjectOfType<AndroidWebcamCaptureClient>());
         NetworkSignalIcon.Create(parent, new Vector2(-66f, -20f), 36f, IconBackground, ToggleDebugOverlay);
 
         var recalibrate = UiFactory.CreateButton("RecalibrateButton", parent, UiFactory.Circle, IconBackground, Recalibrate);

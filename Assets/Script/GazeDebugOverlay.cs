@@ -2,86 +2,34 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Developer overlay (tap the network icon 5 times) for measuring gaze latency/noise
-// and tuning the fixation smoothing on the device.
+// Read-only diagnostics (tap the network icon 5 times): gaze rate and latency, head follow and
+// drift correction state. The tuning switches used during development were removed for release.
 public class GazeDebugOverlay : MonoBehaviour
 {
-    private const float RadiusFactor = 1.25f;
-    private const float WindowStepSeconds = 0.1f;
-
     private FollowGazePoint2D _pointer;
     private HeadFollow _headFollow;
-    private TextMeshProUGUI _headModeLabel;
     private DriftCorrector _drift;
     private AndroidWebcamCaptureClient _capture;
-    private Tobii.GazeCalibrationManager _calibration;
-    private TextMeshProUGUI _eyeCalibrationLabel;
-    private TextMeshProUGUI _resolutionLabel;
-    private TextMeshProUGUI _driftLabel;
     private TextMeshProUGUI _text;
     private GazeLatencyStats.Snapshot _previous;
     private float _previousTime;
 
-    public static GazeDebugOverlay Create(Transform parent, FollowGazePoint2D pointer, HeadFollow headFollow, DriftCorrector drift, AndroidWebcamCaptureClient capture, Tobii.GazeCalibrationManager calibration)
+    public static GazeDebugOverlay Create(Transform parent, FollowGazePoint2D pointer, HeadFollow headFollow, DriftCorrector drift, AndroidWebcamCaptureClient capture)
     {
         var panel = UiFactory.CreateImage("GazeDebugOverlay", parent, UiFactory.RoundedRect, new Color(0f, 0f, 0f, 0.72f), true);
         panel.type = Image.Type.Sliced;
-        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 448f));
+        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 330f));
 
         var overlay = panel.gameObject.AddComponent<GazeDebugOverlay>();
         overlay._pointer = pointer;
         overlay._headFollow = headFollow;
         overlay._drift = drift;
         overlay._capture = capture;
-        overlay._calibration = calibration;
 
         // The Chinese SDF atlas has no Latin glyphs, so use TMP's default font here.
         var font = TMP_Settings.defaultFontAsset;
         overlay._text = UiFactory.CreateText("Stats", panel.transform, font, "measuring...", 15f, Color.white, TextAlignmentOptions.TopLeft);
-        UiFactory.Place(overlay._text.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -10f), new Vector2(316f, 276f));
-
-        string[] labels = { "radius -", "radius +", "window -", "window +" };
-        for (int i = 0; i < labels.Length; i++)
-        {
-            int index = i;
-            var button = UiFactory.CreateButton(labels[i], panel.transform, UiFactory.RoundedRect, new Color(1f, 1f, 1f, 0.2f), () => overlay.Adjust(index));
-            ((Image)button.targetGraphic).type = Image.Type.Sliced;
-            UiFactory.Place((RectTransform)button.transform, Vector2.zero, Vector2.zero, new Vector2(12f + i * 80f, 10f), new Vector2(74f, 32f));
-            var label = UiFactory.CreateText("Label", button.transform, font, labels[i], 14f, Color.white);
-            UiFactory.Stretch(label.rectTransform);
-        }
-
-        // Cycles Off / BetweenTrials / Continuous, for comparing accuracy with and without it.
-        var headButton = UiFactory.CreateButton("HeadMode", panel.transform, UiFactory.RoundedRect, new Color(1f, 0.65f, 0.14f, 0.35f), overlay.CycleHeadMode);
-        ((Image)headButton.targetGraphic).type = Image.Type.Sliced;
-        UiFactory.Place((RectTransform)headButton.transform, Vector2.zero, Vector2.zero, new Vector2(12f, 48f), new Vector2(155f, 32f));
-        overlay._headModeLabel = UiFactory.CreateText("Label", headButton.transform, font, "", 14f, Color.white);
-        UiFactory.Stretch(overlay._headModeLabel.rectTransform);
-        overlay.RefreshHeadModeLabel();
-
-        // Drift correction on/off, for comparing sessions with and without it.
-        var driftButton = UiFactory.CreateButton("DriftMode", panel.transform, UiFactory.RoundedRect, new Color(0.3f, 0.7f, 1f, 0.35f), overlay.ToggleDrift);
-        ((Image)driftButton.targetGraphic).type = Image.Type.Sliced;
-        UiFactory.Place((RectTransform)driftButton.transform, Vector2.zero, Vector2.zero, new Vector2(171f, 48f), new Vector2(155f, 32f));
-        overlay._driftLabel = UiFactory.CreateText("Label", driftButton.transform, font, "", 14f, Color.white);
-        UiFactory.Stretch(overlay._driftLabel.rectTransform);
-        overlay.RefreshDriftLabel();
-
-        // Frame size handed to Tobii, 700x520 or 1050x780, for comparing accuracy against speed.
-        var resolutionButton = UiFactory.CreateButton("Resolution", panel.transform, UiFactory.RoundedRect, new Color(0.6f, 1f, 0.6f, 0.3f), overlay.ToggleResolution);
-        ((Image)resolutionButton.targetGraphic).type = Image.Type.Sliced;
-        UiFactory.Place((RectTransform)resolutionButton.transform, Vector2.zero, Vector2.zero, new Vector2(12f, 86f), new Vector2(314f, 32f));
-        overlay._resolutionLabel = UiFactory.CreateText("Label", resolutionButton.transform, font, "", 14f, Color.white);
-        UiFactory.Stretch(overlay._resolutionLabel.rectTransform);
-        overlay.RefreshResolutionLabel(null);
-
-        // Single-eye calibration experiment: recalibrate after covering (default) or once, eyes open.
-        var eyeButton = UiFactory.CreateButton("EyeCalibration", panel.transform, UiFactory.RoundedRect, new Color(0.8f, 0.6f, 1f, 0.35f), overlay.ToggleEyeCalibration);
-        ((Image)eyeButton.targetGraphic).type = Image.Type.Sliced;
-        UiFactory.Place((RectTransform)eyeButton.transform, Vector2.zero, Vector2.zero, new Vector2(12f, 124f), new Vector2(314f, 32f));
-        overlay._eyeCalibrationLabel = UiFactory.CreateText("Label", eyeButton.transform, font, "", 14f, Color.white);
-        UiFactory.Stretch(overlay._eyeCalibrationLabel.rectTransform);
-        overlay.RefreshEyeCalibrationLabel(null);
+        UiFactory.Place(overlay._text.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -10f), new Vector2(316f, 310f));
 
         panel.gameObject.SetActive(false);
         return overlay;
@@ -89,8 +37,6 @@ public class GazeDebugOverlay : MonoBehaviour
 
     private void OnEnable()
     {
-        if (_resolutionLabel != null)
-            RefreshResolutionLabel(null);
         _previous = GazeLatencyStats.Take();
         _previousTime = Time.unscaledTime;
     }
@@ -111,6 +57,8 @@ public class GazeDebugOverlay : MonoBehaviour
         double lagPx = lagSamples > 0 ? (current.FilterLagSum - _previous.FilterLagSum) / lagSamples : 0;
         double spreadPx = spreadSamples > 0 ? (current.SpreadSum - _previous.SpreadSum) / spreadSamples : 0;
         float radiusPx = _pointer.FixationRadiusScreenFraction * Screen.width;
+        int factor = _capture != null ? _capture.DownsampleFactor : 0;
+        string resolution = factor == 2 ? "1050x780" : factor == 3 ? "700x520" : factor > 0 ? "x" + factor : "n/a";
 
         _text.text = "<mspace=0.58em>"
             + $"camera fps       {frames / elapsed,7:0.0}\n"
@@ -120,7 +68,8 @@ public class GazeDebugOverlay : MonoBehaviour
             + $"raw vs dot       {lagPx,7:0} px\n"
             + $"fixation spread  {spreadPx,7:0} px\n"
             + $"radius {radiusPx,5:0} px  window {_pointer.FixationWindowSeconds:0.00} s\n"
-            + $"head    {_headFollow.Status}\n"
+            + $"resolution {resolution}  drift fix {(_drift.Enabled ? "on" : "off")}\n"
+            + $"head    {_headFollow.Mode}: {_headFollow.Status}\n"
             + $"head err {_headFollow.Error.x,6:0.0} {_headFollow.Error.y,6:0.0} deg\n"
             + $"distance {_headFollow.Distance * 100f,4:0} cm  cal {_headFollow.CalibrationDistance * 100f,3:0} cm\n"
             + $"lateral  {(_headFollow.Calibrated ? _headFollow.LateralOffsetDeg : 0f),6:0.0} deg\n"
@@ -130,83 +79,5 @@ public class GazeDebugOverlay : MonoBehaviour
 
         _previous = current;
         _previousTime = Time.unscaledTime;
-    }
-
-    private void CycleHeadMode()
-    {
-        _headFollow.CycleMode();
-        RefreshHeadModeLabel();
-    }
-
-    private void RefreshHeadModeLabel()
-    {
-        _headModeLabel.text = "head: " + _headFollow.Mode;
-    }
-
-    // A new frame size makes a new Tobii processor and drops calibration, so only between sessions.
-    private void ToggleResolution()
-    {
-        if (_capture == null)
-            return;
-        if (_headFollow.Engaged)
-        {
-            RefreshResolutionLabel("go home first");
-            return;
-        }
-        int next = _capture.DownsampleFactor == 2 ? 3 : 2;
-        bool ok = _capture.SetDownsampleFactor(next);
-        Debug.Log($"[GazeDebugOverlay] downsample -> {next}: {(ok ? "ok" : "refused")}");
-        RefreshResolutionLabel(ok ? null : "not available");
-    }
-
-    private void RefreshResolutionLabel(string note)
-    {
-        int factor = _capture != null ? _capture.DownsampleFactor : 0;
-        string size = factor == 2 ? "1050x780" : factor == 3 ? "700x520" : factor > 0 ? "x" + factor : "n/a";
-        _resolutionLabel.text = "resolution: " + size + (note != null ? "  (" + note + ")" : "");
-    }
-
-    // Changes the next single-eye session's flow, so only between sessions.
-    private void ToggleEyeCalibration()
-    {
-        if (_calibration == null)
-            return;
-        if (_headFollow.Engaged)
-        {
-            RefreshEyeCalibrationLabel("go home first");
-            return;
-        }
-        _calibration.CalibrateOnceWithEyesOpen = !_calibration.CalibrateOnceWithEyesOpen;
-        Debug.Log("[GazeDebugOverlay] single-eye calibration: " + (_calibration.CalibrateOnceWithEyesOpen ? "once, eyes open" : "after covering"));
-        RefreshEyeCalibrationLabel(null);
-    }
-
-    private void RefreshEyeCalibrationLabel(string note)
-    {
-        bool once = _calibration != null && _calibration.CalibrateOnceWithEyesOpen;
-        _eyeCalibrationLabel.text = "1-eye calib: " + (once ? "once, eyes open" : "after covering") + (note != null ? "  (" + note + ")" : "");
-    }
-
-    private void ToggleDrift()
-    {
-        _drift.SetEnabled(!_drift.Enabled);
-        RefreshDriftLabel();
-    }
-
-    private void RefreshDriftLabel()
-    {
-        _driftLabel.text = "drift fix: " + (_drift.Enabled ? "on" : "off");
-    }
-
-    private void Adjust(int index)
-    {
-        switch (index)
-        {
-            case 0: _pointer.FixationRadiusScreenFraction /= RadiusFactor; break;
-            case 1: _pointer.FixationRadiusScreenFraction *= RadiusFactor; break;
-            case 2: _pointer.FixationWindowSeconds -= WindowStepSeconds; break;
-            case 3: _pointer.FixationWindowSeconds += WindowStepSeconds; break;
-        }
-        Debug.Log($"[GazeDebugOverlay] fixationRadius={_pointer.FixationRadiusScreenFraction:0.000} (x screen width) window={_pointer.FixationWindowSeconds:0.00}s");
     }
 }
