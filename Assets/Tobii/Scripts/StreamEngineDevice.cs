@@ -82,18 +82,6 @@ public class StreamEngineDevice : MonoBehaviour
     private tobii_gaze_callback_t _gazeCallback;
     private tobii_gaze_point_callback_t _gazePointCallback;
     private tobii_head_pose_callback_t _headPoseCallback;
-
-    // Probe: does the webcam processor report each eye separately, and does covering one change it?
-    // Written on the frame worker thread, read on the main thread once a second for [EYEPROBE].
-    private static tobii_gaze_origin_callback_t s_originCallback = OnGazeOrigin;
-    private static tobii_eye_position_normalized_callback_t s_eyePositionCallback = OnEyePosition;
-    private static tobii_absolut_eye_openness_callback_t s_opennessCallback = OnEyeOpenness;
-    private static int s_originCount, s_originLeftValid, s_originRightValid;
-    private static int s_positionCount, s_positionLeftValid, s_positionRightValid;
-    private static int s_opennessCount, s_opennessLeftValid, s_opennessRightValid;
-    private static float s_opennessLeftSum, s_opennessRightSum;
-    private static Vector3 s_lastPositionLeft, s_lastPositionRight;
-    private float _nextProbeLog;
     private Tobii_HeadPose _tobiiHeadPose;
 
     private string err = ""; // Quick and dirty way to display errors
@@ -422,73 +410,6 @@ public class StreamEngineDevice : MonoBehaviour
             Debug.Log($"Failed to subscribe to head pose {result}. Not necessarily critical if license does not support head pose.");
         else
             Debug.Log("Subscribed to head pose!");
-
-        foreach (var stream in new[] { tobii_stream_t.TOBII_STREAM_GAZE_ORIGIN, tobii_stream_t.TOBII_STREAM_EYE_POSITION_NORMALIZED })
-        {
-            var supportedResult = Interop.tobii_stream_supported(deviceContext, stream, out bool supported);
-            Debug.Log($"[EYEPROBE] {stream} supported={supported} ({supportedResult})");
-        }
-        Debug.Log("[EYEPROBE] gaze origin subscribe: " + ScreenbasedInterop.tobii_gaze_origin_subscribe(deviceContext, s_originCallback, IntPtr.Zero));
-        Debug.Log("[EYEPROBE] eye position subscribe: " + ScreenbasedInterop.tobii_eye_position_normalized_subscribe(deviceContext, s_eyePositionCallback, IntPtr.Zero));
-        Debug.Log("[EYEPROBE] eye openness subscribe: " + ScreenbasedInterop.tobii_absolute_eye_openness_subscribe(deviceContext, s_opennessCallback, IntPtr.Zero));
-    }
-
-    [MonoPInvokeCallback(typeof(tobii_gaze_origin_callback_t))]
-    private static void OnGazeOrigin(ref tobii_gaze_origin_t origin, IntPtr userData)
-    {
-        s_originCount++;
-        if (origin.left_validity == tobii_validity_t.TOBII_VALIDITY_VALID) s_originLeftValid++;
-        if (origin.right_validity == tobii_validity_t.TOBII_VALIDITY_VALID) s_originRightValid++;
-    }
-
-    [MonoPInvokeCallback(typeof(tobii_eye_position_normalized_callback_t))]
-    private static void OnEyePosition(ref tobii_eye_position_normalized_t position, IntPtr userData)
-    {
-        s_positionCount++;
-        if (position.left_validity == tobii_validity_t.TOBII_VALIDITY_VALID)
-        {
-            s_positionLeftValid++;
-            s_lastPositionLeft = new Vector3(position.left.x, position.left.y, position.left.z);
-        }
-        if (position.right_validity == tobii_validity_t.TOBII_VALIDITY_VALID)
-        {
-            s_positionRightValid++;
-            s_lastPositionRight = new Vector3(position.right.x, position.right.y, position.right.z);
-        }
-    }
-
-    [MonoPInvokeCallback(typeof(tobii_absolut_eye_openness_callback_t))]
-    private static void OnEyeOpenness(ref tobii_absolute_eye_openness_t openness, IntPtr userData)
-    {
-        s_opennessCount++;
-        if (openness.left_validity == tobii_validity_t.TOBII_VALIDITY_VALID)
-        {
-            s_opennessLeftValid++;
-            s_opennessLeftSum += openness.left_eye_openness;
-        }
-        if (openness.right_validity == tobii_validity_t.TOBII_VALIDITY_VALID)
-        {
-            s_opennessRightValid++;
-            s_opennessRightSum += openness.right_eye_openness;
-        }
-    }
-
-    private void LogEyeProbe()
-    {
-        if (Time.unscaledTime < _nextProbeLog)
-            return;
-        _nextProbeLog = Time.unscaledTime + 1f;
-        if (s_originCount + s_positionCount + s_opennessCount == 0)
-            return;
-        string openLeft = s_opennessLeftValid > 0 ? (s_opennessLeftSum / s_opennessLeftValid).ToString("0.00") : "-";
-        string openRight = s_opennessRightValid > 0 ? (s_opennessRightSum / s_opennessRightValid).ToString("0.00") : "-";
-        Debug.Log($"[EYEPROBE] origin L {s_originLeftValid}/{s_originCount} R {s_originRightValid}/{s_originCount}" +
-                  $" | position L {s_positionLeftValid}/{s_positionCount} R {s_positionRightValid}/{s_positionCount} ({s_lastPositionLeft.x:0.000},{s_lastPositionLeft.y:0.000} | {s_lastPositionRight.x:0.000},{s_lastPositionRight.y:0.000})" +
-                  $" | openness L {s_opennessLeftValid}/{s_opennessCount} {openLeft} R {s_opennessRightValid}/{s_opennessCount} {openRight}");
-        s_originCount = s_originLeftValid = s_originRightValid = 0;
-        s_positionCount = s_positionLeftValid = s_positionRightValid = 0;
-        s_opennessCount = s_opennessLeftValid = s_opennessRightValid = 0;
-        s_opennessLeftSum = s_opennessRightSum = 0f;
     }
 
     // Called from AndroidWebcamCaptureClient when camera is initialized
@@ -579,7 +500,6 @@ public class StreamEngineDevice : MonoBehaviour
 
     void Update()
     {
-        LogEyeProbe();
         // Quit app when Escape is pressed (supports both input systems)
 #if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
         var keyboard = Keyboard.current; // Fully resolved via using above
