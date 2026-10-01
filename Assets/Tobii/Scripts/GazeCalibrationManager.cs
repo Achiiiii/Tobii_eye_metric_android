@@ -242,7 +242,25 @@ namespace Tobii
             }
         }
 
+        // Experiment, switched from the debug overlay: in single-eye mode, calibrate once with both
+        // eyes open and keep that calibration for both rounds, instead of recalibrating after each
+        // eye is covered. Calibrating with an eye covered left single-eye gaze at 72-83 px median raw
+        // error against 46 px binocular, and a one-eye calibration made it worse (the processor
+        // cannot track one eye).
+        public bool CalibrateOnceWithEyesOpen { get; set; }
+        private bool _sessionCalibrated;
+        private bool _countdownRunning;
+
+        private bool SkipsCalibration => CalibrateOnceWithEyesOpen && _currentSide != "both" && _sessionCalibrated;
+
         public void NextButton(){
+            if (SkipsCalibration)
+            {
+                // Already calibrated with both eyes open this session: straight to the countdown.
+                if (!_countdownRunning)
+                    StartCoroutine(CountdownAndStartTest());
+                return;
+            }
             mainCanvas.SetActive(false);
             StartCalibration();
         }
@@ -290,11 +308,26 @@ namespace Tobii
                     coverHint = "";
                     break;
             }
+            // With CalibrateOnceWithEyesOpen, a single-eye session first calibrates with both eyes
+            // open, then asks for the eye to be covered without calibrating again.
+            bool calibrateEyesOpenFirst = CalibrateOnceWithEyesOpen && side != "both" && !_sessionCalibrated;
+            if (calibrateEyesOpenFirst)
+            {
+                sampleImage.sprite = sampleSprites[2];
+                coverHint = "請先睜開雙眼，完成校準後再遮眼";
+            }
             var lines = new List<string>();
             if (coverHint != "")
                 lines.Add("<size=32><b>" + coverHint + "</b></size>");
-            lines.Add("頭部請保持不動，稍後請依序注視<color=#1E88E5>藍色圓點</color>");
-            lines.Add("準備好後，請按右下角的繼續按鈕");
+            if (SkipsCalibration)
+            {
+                lines.Add("遮好後，請按右下角的繼續按鈕開始測驗");
+            }
+            else
+            {
+                lines.Add("頭部請保持不動，稍後請依序注視<color=#1E88E5>藍色圓點</color>");
+                lines.Add("準備好後，請按右下角的繼續按鈕");
+            }
             content.text = string.Join("\n", lines);
             string headHint = headPositionConfirmed ? "接下來請保持頭部不動。" : "請保持頭部不動。";
             PlayTTS(headHint + coverHint);
@@ -333,6 +366,8 @@ namespace Tobii
 
             _isCalibrating = false;
             _gazeIntroShown = false;
+            _sessionCalibrated = false;
+            _countdownRunning = false;
             ComponentStatus = ComponentState.Idle;
             CalibrationStatus = CalibrationState.CalibrationNotDone;
 
@@ -425,6 +460,7 @@ namespace Tobii
             Debug.Log("Calibration was successful");
             pointer.SetActive(true);
 
+            _sessionCalibrated = true;
             if (!_gazeIntroShown)
             {
                 _gazeIntroShown = true;
@@ -434,16 +470,33 @@ namespace Tobii
                 GazeIntroEnded?.Invoke();
             }
 
+            if (SkipsCalibration)
+            {
+                // Calibrated with both eyes open: now ask for the eye to be covered. Its "continue"
+                // goes straight to the countdown (NextButton).
+                Debug.Log("[EYE] calibrated with both eyes open; asking to cover for the " + _currentSide + " eye round");
+                SetTrialCountDown(_currentSide);
+                yield break;
+            }
+
+            yield return CountdownAndStartTest();
+            // blackTestBtn.SetActive(true);
+            // colorTestBtn.SetActive(true);
+            // content.text = "請問您今天想進行哪一種眼動測試呢？\n（凝視選項3秒）";
+            // AudioPlay(questionAudio);
+        }
+
+        private IEnumerator CountdownAndStartTest()
+        {
+            _countdownRunning = true;
+            mainCanvas.SetActive(true);
             TestCountdownStarted?.Invoke(_currentSide, TestCountdownSeconds);
             yield return new WaitForSeconds(TestCountdownSeconds);
             TestCountdownEnded?.Invoke();
 
             metricTest.gameObject.SetActive(true);
             metricTest.StartMeticTest();
-            // blackTestBtn.SetActive(true);
-            // colorTestBtn.SetActive(true);
-            // content.text = "請問您今天想進行哪一種眼動測試呢？\n（凝視選項3秒）";
-            // AudioPlay(questionAudio);
+            _countdownRunning = false;
         }
 
         private void HideObjectsForCalibration()

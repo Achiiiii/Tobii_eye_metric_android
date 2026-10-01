@@ -14,23 +14,26 @@ public class GazeDebugOverlay : MonoBehaviour
     private TextMeshProUGUI _headModeLabel;
     private DriftCorrector _drift;
     private AndroidWebcamCaptureClient _capture;
+    private Tobii.GazeCalibrationManager _calibration;
+    private TextMeshProUGUI _eyeCalibrationLabel;
     private TextMeshProUGUI _resolutionLabel;
     private TextMeshProUGUI _driftLabel;
     private TextMeshProUGUI _text;
     private GazeLatencyStats.Snapshot _previous;
     private float _previousTime;
 
-    public static GazeDebugOverlay Create(Transform parent, FollowGazePoint2D pointer, HeadFollow headFollow, DriftCorrector drift, AndroidWebcamCaptureClient capture)
+    public static GazeDebugOverlay Create(Transform parent, FollowGazePoint2D pointer, HeadFollow headFollow, DriftCorrector drift, AndroidWebcamCaptureClient capture, Tobii.GazeCalibrationManager calibration)
     {
         var panel = UiFactory.CreateImage("GazeDebugOverlay", parent, UiFactory.RoundedRect, new Color(0f, 0f, 0f, 0.72f), true);
         panel.type = Image.Type.Sliced;
-        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 410f));
+        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 448f));
 
         var overlay = panel.gameObject.AddComponent<GazeDebugOverlay>();
         overlay._pointer = pointer;
         overlay._headFollow = headFollow;
         overlay._drift = drift;
         overlay._capture = capture;
+        overlay._calibration = calibration;
 
         // The Chinese SDF atlas has no Latin glyphs, so use TMP's default font here.
         var font = TMP_Settings.defaultFontAsset;
@@ -71,6 +74,14 @@ public class GazeDebugOverlay : MonoBehaviour
         overlay._resolutionLabel = UiFactory.CreateText("Label", resolutionButton.transform, font, "", 14f, Color.white);
         UiFactory.Stretch(overlay._resolutionLabel.rectTransform);
         overlay.RefreshResolutionLabel(null);
+
+        // Single-eye calibration experiment: recalibrate after covering (default) or once, eyes open.
+        var eyeButton = UiFactory.CreateButton("EyeCalibration", panel.transform, UiFactory.RoundedRect, new Color(0.8f, 0.6f, 1f, 0.35f), overlay.ToggleEyeCalibration);
+        ((Image)eyeButton.targetGraphic).type = Image.Type.Sliced;
+        UiFactory.Place((RectTransform)eyeButton.transform, Vector2.zero, Vector2.zero, new Vector2(12f, 124f), new Vector2(314f, 32f));
+        overlay._eyeCalibrationLabel = UiFactory.CreateText("Label", eyeButton.transform, font, "", 14f, Color.white);
+        UiFactory.Stretch(overlay._eyeCalibrationLabel.rectTransform);
+        overlay.RefreshEyeCalibrationLabel(null);
 
         panel.gameObject.SetActive(false);
         return overlay;
@@ -153,6 +164,27 @@ public class GazeDebugOverlay : MonoBehaviour
         int factor = _capture != null ? _capture.DownsampleFactor : 0;
         string size = factor == 2 ? "1050x780" : factor == 3 ? "700x520" : factor > 0 ? "x" + factor : "n/a";
         _resolutionLabel.text = "resolution: " + size + (note != null ? "  (" + note + ")" : "");
+    }
+
+    // Changes the next single-eye session's flow, so only between sessions.
+    private void ToggleEyeCalibration()
+    {
+        if (_calibration == null)
+            return;
+        if (_headFollow.Engaged)
+        {
+            RefreshEyeCalibrationLabel("go home first");
+            return;
+        }
+        _calibration.CalibrateOnceWithEyesOpen = !_calibration.CalibrateOnceWithEyesOpen;
+        Debug.Log("[GazeDebugOverlay] single-eye calibration: " + (_calibration.CalibrateOnceWithEyesOpen ? "once, eyes open" : "after covering"));
+        RefreshEyeCalibrationLabel(null);
+    }
+
+    private void RefreshEyeCalibrationLabel(string note)
+    {
+        bool once = _calibration != null && _calibration.CalibrateOnceWithEyesOpen;
+        _eyeCalibrationLabel.text = "1-eye calib: " + (once ? "once, eyes open" : "after covering") + (note != null ? "  (" + note + ")" : "");
     }
 
     private void ToggleDrift()
