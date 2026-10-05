@@ -510,4 +510,12 @@ public class TobiiController : MonoBehaviour
                 break;
         }
     }
+    public void ExitApp()
+    {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
+    }
 }

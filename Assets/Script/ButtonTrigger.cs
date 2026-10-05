@@ -14,6 +14,9 @@ public class ButtonTrigger : MonoBehaviour
     private bool _isScaleReset = true;
     private float _delayTriggerTime = 0.1f;
     private float _triggerTime = 1.5f;
+    private Image _childImage;
+    private Color _childImageColor;
+    private readonly Color _enterColor = new Color32(0x02, 0xDF, 0x82, 0xFF);
 
     void Start()
     {
@@ -52,6 +55,13 @@ public class ButtonTrigger : MonoBehaviour
         boxCollider.offset = new Vector2(offsetX, offsetY);
         boxCollider.isTrigger = true;
         boxCollider.size = new Vector2(rect.sizeDelta.x, rect.sizeDelta.y);
+        Transform imageChild = transform.Find("Image");
+        if (imageChild)
+        {
+            _childImage = imageChild.GetComponent<Image>();
+            if (_childImage)
+                _childImageColor = _childImage.color;
+        }
         btn.onClick.AddListener(ClickAudio);
     }
     private void OnTriggerEnter2D(Collider2D other)
@@ -60,9 +70,12 @@ public class ButtonTrigger : MonoBehaviour
         if (_isScaleReset)
         {
             _isScaleReset = false;
+            if (_childImage)
+                _childImage.DOColor(_enterColor, _triggerTime).SetEase(Ease.OutCubic);
             transform.DOScale(1.2f, _triggerTime).SetEase(Ease.OutCubic).OnComplete(() =>
             {
                 transform.DOScale(1, 0);
+                ResetChildImageColor();
                 btn.onClick.Invoke();
                 _isScaleReset = true;
             });
@@ -82,8 +95,17 @@ public class ButtonTrigger : MonoBehaviour
         {
             transform.DOKill();
             transform.DOScale(1, 0);
+            ResetChildImageColor();
             _isScaleReset = true;
         }
+    }
+
+    private void ResetChildImageColor()
+    {
+        if (!_childImage)
+            return;
+        _childImage.DOKill();
+        _childImage.color = _childImageColor;
     }
     private void ClickAudio()
     {
@@ -97,6 +119,7 @@ public class ButtonTrigger : MonoBehaviour
             transform.DOKill();
             transform.DOScale(1, 0);
         }
+        ResetChildImageColor();
         _isEnter = false;
         _isScaleReset = true;
     }

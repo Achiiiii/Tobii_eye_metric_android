@@ -202,6 +202,18 @@ public class MetricTest : MonoBehaviour
             int avgScore = Mathf.RoundToInt(avg);
             avgScore = Mathf.Clamp(avgScore, 1, 11);
             float metric = GetEyeMetric(avgScore);
+            string vision_both_level = metric <= 0.3f ? "0" : (metric <= 0.5f ? "1" : "2");
+            string vision_gap_flag = Mathf.Abs(scoreList[0] - scoreList[1]) > 2 ? "1" : "0";
+            string timestamp = ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds().ToString();
+            Debug.Log("vision_gap_flag: " + vision_gap_flag);
+            Debug.Log("vision_both_level: " + vision_both_level + " (metric: " + metric.ToString() + ")");
+            Debug.Log("time: " + timestamp);
+            RobotDataSender.SendData(new Dictionary<string, string>
+            {
+                { "vision_gap_flag", vision_gap_flag },
+                { "vision_both_level", vision_both_level },
+                { "time", timestamp },
+            });
 
             // 取得結果文字並顯示 + TTS
             string message = GetResultMessage(metric, scoreList[0], scoreList[1]);
