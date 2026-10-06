@@ -98,8 +98,6 @@ public class EyeMetricFlow : MonoBehaviour
         OptionReveal.Create(transform, metricTest, _driftCorrector, _headFollow, gazePointer);
         // Focuses the camera on the user's face at each head distance check.
         FaceFocus.Create(transform, detectDistance, _headFollow, FindObjectOfType<AndroidWebcamCaptureClient>());
-        // Temporary: odd sessions collect each calibration point once, even ones 3 times 0.5 s apart.
-        CalibrationDataProbe.Create(transform, detectDistance);
         BuildHud(hudCanvas.transform);
         BuildHomeButton(resultPage.transform);
 
