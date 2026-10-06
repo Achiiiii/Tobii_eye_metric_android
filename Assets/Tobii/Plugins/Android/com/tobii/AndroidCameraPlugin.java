@@ -135,6 +135,33 @@ public class AndroidCameraPlugin {
         return downsampleFactor;
     }
 
+    // Diagnostic / experiment: hold the lens at a fixed focus distance (diopters, 1/m). While it is
+    // held, the AF re-trigger below stays off - with AF off the state reads INACTIVE, which would
+    // otherwise re-trigger autofocus every 2 s and undo the manual focus.
+    private static volatile boolean manualFocus = false;
+
+    public static boolean setManualFocus(float diopters) {
+        if (captureSession == null || captureRequestBuilder == null || backgroundHandler == null) return false;
+        try {
+            manualFocus = true;
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF);
+            captureRequestBuilder.set(CaptureRequest.LENS_FOCUS_DISTANCE, diopters);
+            captureSession.setRepeatingRequest(captureRequestBuilder.build(), afCaptureCallback, backgroundHandler);
+            Log.i(TAG, "[FOCUS] manual focus " + diopters + " D (" + (diopters > 0 ? Math.round(100f / diopters) : 0) + " cm)");
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "[FOCUS] manual focus failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public static void restoreAutoFocus() {
+        manualFocus = false;
+        Log.i(TAG, "[FOCUS] back to autofocus");
+        triggerAutoFocus();
+    }
+
     public static void triggerAutoFocus() {
         if (captureSession == null || captureRequestBuilder == null || backgroundHandler == null) return;
         try {
@@ -163,7 +190,7 @@ public class AndroidCameraPlugin {
             super.onCaptureCompleted(session, request, result);
             Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
             logCameraStatus(result, afState);
-            if (afState == null) return;
+            if (afState == null || manualFocus) return;
 
             // If AF reports that it failed to focus or became inactive, re-trigger
             if (afState == CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED

@@ -96,10 +96,8 @@ public class EyeMetricFlow : MonoBehaviour
         PositionGuide.Create(guideCanvas.transform, font, _headFollow, metricTest);
         _driftCorrector = DriftCorrector.Create(transform, gazePointer, metricTest, _headFollow, gazeCalibrationManager);
         OptionReveal.Create(transform, metricTest, _driftCorrector, _headFollow, gazePointer);
-        // Temporary: odd sessions collect each calibration point 3 times, even ones shift the targets.
-        CalibrationExperimentProbe.Create(transform, detectDistance);
-        // Temporary: saves a few camera frames (focus / exposure check).
-        FrameCaptureProbe.Create(transform, detectDistance, gazeCalibrationManager, metricTest);
+        // Temporary: focus sweep at the head distance check, saving a frame per focus distance.
+        FocusSweepProbe.Create(transform, detectDistance, FindObjectOfType<AndroidWebcamCaptureClient>());
         BuildHud(hudCanvas.transform);
         BuildHomeButton(resultPage.transform);
 

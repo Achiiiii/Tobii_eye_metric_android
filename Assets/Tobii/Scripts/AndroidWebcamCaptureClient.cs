@@ -237,6 +237,19 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
     }
 
     // Takes effect on the next frame and recreates the Tobii processor, clearing calibration.
+    // Diagnostic: hold the camera at a fixed focus distance, or go back to autofocus.
+    public bool SetManualFocus(float diopters)
+    {
+        if (pluginClass == null)
+            return false;
+        return pluginClass.CallStatic<bool>("setManualFocus", diopters);
+    }
+
+    public void RestoreAutoFocus()
+    {
+        pluginClass?.CallStatic("restoreAutoFocus");
+    }
+
     public bool SetDownsampleFactor(int factor)
     {
         if (Application.platform != RuntimePlatform.Android || pluginClass == null)
