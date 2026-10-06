@@ -28,11 +28,14 @@ public class AccuracyValidation : MonoBehaviour
     private const float SettleSeconds = 0.6f;
     private const float CollectSeconds = 1f;
     private const int MinSamples = 5;
-    private static readonly Color Background = new Color32(0x22, 0x26, 0x2B, 0xFF);
-    private static readonly Color DotColor = new Color32(0xFF, 0xC2, 0x3D, 0xFF);
-    private static readonly Color TargetColor = new Color(1f, 1f, 1f, 0.55f);
-    private static readonly Color RawColor = new Color32(0xF2, 0x6D, 0x5B, 0xFF);
-    private static readonly Color CorrectedColor = new Color32(0x5B, 0xD1, 0x8A, 0xFF);
+    // Bright, like the test's sky-blue scenes: a dark background let the pupils widen and the gaze
+    // drift 110 -> 143 -> 192 px over three runs, which says nothing about the test itself.
+    private static readonly Color Background = new Color32(0xBF, 0xE3, 0xF2, 0xFF);
+    private static readonly Color TextColor = new Color32(0x1F, 0x2A, 0x2E, 0xFF);
+    private static readonly Color DotColor = new Color32(0x1F, 0x2A, 0x2E, 0xFF);
+    private static readonly Color TargetColor = new Color32(0x1F, 0x2A, 0x2E, 0x99);
+    private static readonly Color RawColor = new Color32(0xD6, 0x3B, 0x2E, 0xFF);
+    private static readonly Color CorrectedColor = new Color32(0x1E, 0x8E, 0x4F, 0xFF);
 
     private FollowGazePoint2D _pointer;
     private HeadFollow _head;
@@ -65,7 +68,7 @@ public class AccuracyValidation : MonoBehaviour
         v._area = UiFactory.Stretch(UiFactory.CreateRect("Area", canvas.transform));
 
         // Between the middle and bottom rows of dots, clear of the points.
-        v._text = UiFactory.CreateText("Text", canvas.transform, font, "", 20f, Color.white);
+        v._text = UiFactory.CreateText("Text", canvas.transform, font, "", 20f, TextColor);
         UiFactory.Place(v._text.rectTransform, new Vector2(0.5f, 0.34f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(760f, 80f));
 
         v._buttons = UiFactory.CreateRect("Buttons", canvas.transform).gameObject;
@@ -79,7 +82,7 @@ public class AccuracyValidation : MonoBehaviour
 
     private void AddButton(string label, Vector2 position, Action onClick)
     {
-        var button = UiFactory.CreateButton(label, _buttons.transform, UiFactory.RoundedRect, new Color(1f, 1f, 1f, 0.18f), () => onClick());
+        var button = UiFactory.CreateButton(label, _buttons.transform, UiFactory.RoundedRect, new Color32(0x1F, 0x2A, 0x2E, 0xCC), () => onClick());
         ((Image)button.targetGraphic).type = Image.Type.Sliced;
         UiFactory.Place((RectTransform)button.transform, new Vector2(0.5f, 0.2f), new Vector2(0.5f, 0.5f), position, new Vector2(150f, 46f));
         var text = UiFactory.CreateText("Label", button.transform, _font, label, 22f, Color.white);
