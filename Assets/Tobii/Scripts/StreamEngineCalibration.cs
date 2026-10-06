@@ -150,16 +150,25 @@ namespace Tobii
 
             success.Value = task.Result;
         }
+        // Experiment (CalibrationExperimentProbe): collect each point this many times, and report the
+        // target shifted by this much (viewport units) to test whether the calibration is used at all.
+        public static int CollectRepeats = 1;
+        public static Vector2 TargetOffset = Vector2.zero;
+
         private Task<bool> CollectCalibrationDataTask(Vector2 stimuliPositionShown)
         {
             Debug.Log(string.Format("CollectCalibrationDataTask"));
             if (streamEngineDevice.DeviceContext == IntPtr.Zero) return Task.FromResult(false);
 
-            var error = ConfigInterop.tobii_calibration_collect_data_2d(streamEngineDevice.DeviceContext, stimuliPositionShown.x, 1 - stimuliPositionShown.y);
-            if (error != tobii_error_t.TOBII_ERROR_NO_ERROR)
+            Vector2 target = stimuliPositionShown + TargetOffset;
+            for (int i = 0; i < Mathf.Max(1, CollectRepeats); i++)
             {
-                Debug.Log(string.Format("Error calibration collect2d: {0}", error));
-                return Task.FromResult(false);
+                var error = ConfigInterop.tobii_calibration_collect_data_2d(streamEngineDevice.DeviceContext, target.x, 1 - target.y);
+                if (error != tobii_error_t.TOBII_ERROR_NO_ERROR)
+                {
+                    Debug.Log(string.Format("Error calibration collect2d: {0}", error));
+                    return Task.FromResult(false);
+                }
             }
 
             return Task.FromResult(true);

@@ -68,6 +68,9 @@ public class StreamEngineDevice : MonoBehaviour
     // Tobii Stream Engine context
     public IntPtr DeviceContext => _streamEngineContext.DeviceContext;
     public IntPtr ApiContext => apiContext;
+    // The display area's size in millimetres.
+    public Vector2 DisplaySizeMm => new Vector2(displayCornerTopRightPosInMeters.x - displayCornerTopLeftPosInMeters.x,
+        displayCornerTopLeftPosInMeters.y - displayCornerBottomLeftPosInMeters.y) * 1000f;
     private static IntPtr deviceContext;
     private StreamEngineContext _streamEngineContext;
     private IntPtr processorContext = IntPtr.Zero;

@@ -44,8 +44,9 @@ namespace Tobii
             s_points.Add(point);
         }
 
-        // screenPx: the display size in pixels, to express the errors in pixels.
-        public static void LogAsync(StreamEngineDevice device, Vector2 screenPx)
+        // screenPx / displayMm: the display size in pixels and millimetres. The parsed points are in
+        // display-area millimetres (the centre point reads 77,43 on the 154 x 86 mm screen).
+        public static void LogAsync(StreamEngineDevice device, Vector2 screenPx, Vector2 displayMm)
         {
             if (device == null)
                 return;
@@ -58,7 +59,7 @@ namespace Tobii
                 try
                 {
                     lock (s_lock)
-                        Log(deviceContext, apiContext, screenPx);
+                        Log(deviceContext, apiContext, new Vector2(screenPx.x / displayMm.x, screenPx.y / displayMm.y));
                 }
                 catch (Exception e)
                 {
@@ -67,7 +68,7 @@ namespace Tobii
             });
         }
 
-        private static void Log(IntPtr deviceContext, IntPtr apiContext, Vector2 screenPx)
+        private static void Log(IntPtr deviceContext, IntPtr apiContext, Vector2 pxPerMm)
         {
             s_blob = null;
             var retrieved = Retrieve(deviceContext, s_dataReceiver, IntPtr.Zero);
@@ -96,24 +97,24 @@ namespace Tobii
             foreach (var p in s_points)
             {
                 var target = new Vector2(p.point_xy.x, p.point_xy.y);
-                string left = Describe(p.left_status, p.left_mapping_xy, target, screenPx, ref leftSum, ref leftCount);
-                string right = Describe(p.right_status, p.right_mapping_xy, target, screenPx, ref rightSum, ref rightCount);
-                Debug.Log($"[CALREPORT] point ({target.x:0.00},{target.y:0.00}) left {left} | right {right}");
+                string left = Describe(p.left_status, p.left_mapping_xy, target, pxPerMm, ref leftSum, ref leftCount);
+                string right = Describe(p.right_status, p.right_mapping_xy, target, pxPerMm, ref rightSum, ref rightCount);
+                Debug.Log($"[CALREPORT] point ({target.x:0.0},{target.y:0.0}) mm: left {left} | right {right}");
             }
             Debug.Log($"[CALREPORT] mean mapping error: left {(leftCount > 0 ? (leftSum / leftCount).ToString("0") + " px" : "-")}, right {(rightCount > 0 ? (rightSum / rightCount).ToString("0") + " px" : "-")}");
         }
 
-        private static string Describe(tobii_calibration_point_status_t status, TobiiVector2 mapping, Vector2 target, Vector2 screenPx, ref float sum, ref int count)
+        private static string Describe(tobii_calibration_point_status_t status, TobiiVector2 mapping, Vector2 target, Vector2 pxPerMm, ref float sum, ref int count)
         {
             string state = status == tobii_calibration_point_status_t.TOBII_CALIBRATION_POINT_STATUS_VALID_AND_USED_IN_CALIBRATION ? "used"
                 : status == tobii_calibration_point_status_t.TOBII_CALIBRATION_POINT_STATUS_VALID_BUT_NOT_USED_IN_CALIBRATION ? "not used"
                 : "failed";
             if (status == tobii_calibration_point_status_t.TOBII_CALIBRATION_POINT_STATUS_FAILED_OR_INVALID)
                 return state;
-            var offset = Vector2.Scale(new Vector2(mapping.x, mapping.y) - target, screenPx);
+            var offset = Vector2.Scale(new Vector2(mapping.x, mapping.y) - target, pxPerMm);
             sum += offset.magnitude;
             count++;
-            return $"{state} {offset.x:+0;-0},{offset.y:+0;-0} px";
+            return $"{state} mapped ({mapping.x:0.0},{mapping.y:0.0}) mm = {offset.x:+0;-0},{offset.y:+0;-0} px";
         }
     }
 }
