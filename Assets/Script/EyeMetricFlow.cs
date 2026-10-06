@@ -96,8 +96,6 @@ public class EyeMetricFlow : MonoBehaviour
         PositionGuide.Create(guideCanvas.transform, font, _headFollow, metricTest);
         _driftCorrector = DriftCorrector.Create(transform, gazePointer, metricTest, _headFollow, gazeCalibrationManager);
         OptionReveal.Create(transform, metricTest, _driftCorrector, _headFollow, gazePointer);
-        // Temporary: alternates the camera FOV handed to Tobii between sessions (horizontal / diagonal).
-        FovABProbe.Create(transform, detectDistance);
         BuildHud(hudCanvas.transform);
         BuildHomeButton(resultPage.transform);
 

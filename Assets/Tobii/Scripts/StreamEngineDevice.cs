@@ -304,31 +304,10 @@ public class StreamEngineDevice : MonoBehaviour
         }
     }
 
-    // Experiment (FovABProbe): a camera FOV to switch to; the processor is recreated with it on the
-    // next frame, which drops any calibration, so it is only requested before a calibration.
-    private volatile float _requestedFov = -1f;
-    // The FOV reported by the camera plugin (the horizontal one since V2.3.5).
-    public float CameraReportedFov { get; private set; }
-    public Vector2 FrameSize => lastAspectRatio;
-
-    public void RequestFov(float fov)
-    {
-        _requestedFov = fov;
-    }
-
     private void ProcessFrameLocked(tobii_image_frame_t frame)
     {
         try
         {
-            float requestedFov = _requestedFov;
-            if (requestedFov > 0f && !Mathf.Approximately(requestedFov, CameraFov) && lastAspectRatio != Vector2.zero
-                && lastAspectRatio == new Vector2(frame.width, frame.height))
-            {
-                Debug.Log($"[FOVAB] recreating the processor with FOV {requestedFov:0.0} (was {CameraFov:0.0})");
-                CameraFov = requestedFov;
-                CreateWebcamProcessor();
-            }
-
             if (lastAspectRatio == Vector2.zero || lastAspectRatio != new Vector2(frame.width, frame.height))
             {
                 Debug.Log($"Creating new processor for resolution: {frame.width}x{frame.height}");
@@ -438,7 +417,6 @@ public class StreamEngineDevice : MonoBehaviour
     {
         Debug.Log("Camera FOV set from Android: " + fov);
         CameraFov = fov;
-        CameraReportedFov = fov;
     }
 
     private Queue<(Vector2 point, long enqueuedAt)> gazePointQueue = new Queue<(Vector2 point, long enqueuedAt)>();
