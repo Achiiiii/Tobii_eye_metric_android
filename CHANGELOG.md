@@ -6,6 +6,18 @@
 
 ---
 
+## V2.3.6（2026-10-06）
+
+### 準確度
+- 修正 Tobii display area 的相機位置：相機在螢幕上緣上方 **10 mm**（實測），原本設定為 15 mm。螢幕顯示區域 154 × 86 mm 與水平置中不變。（`TobiiSample_new.unity` 的 `displayCorner*PosInMeters`：上緣 y −0.010、下緣 y −0.096）
+
+### 診斷
+- 訂閱 gaze origin，每 5 秒記錄左右眼的 3D 位置、兩眼距離（瞳距）與眼睛到相機的距離（`[EYEPOS]`）。成人瞳距約 60～65 mm，可用來驗證 FOV 與幾何設定是否正確。
+- 每次校準後讀取並解析校準結果，記錄每個校準點左右眼的映射誤差與是否採用（`[CALREPORT]`，`CalibrationReport.cs`）。官方 C# 包裝以 lambda 作為原生回呼，IL2CPP 下無法使用，改用自己的 import 與靜態回呼。
+- 校準點的位置是 Tobii 的設計，不另外查詢 `tobii_calibration_stimulus_points_get`。
+
+---
+
 ## V2.3.5（2026-10-06）
 
 ### 準確度
