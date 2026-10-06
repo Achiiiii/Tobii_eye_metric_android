@@ -10863,9 +10863,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0dade8f0de86b8a45830dd109f5ff49a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  displayCornerTopLeftPosInMeters: {x: -0.077, y: -0.015, z: 0}
-  displayCornerTopRightPosInMeters: {x: 0.077, y: -0.015, z: 0}
-  displayCornerBottomLeftPosInMeters: {x: -0.077, y: -0.101, z: 0}
+  displayCornerTopLeftPosInMeters: {x: -0.077, y: -0.01, z: 0}
+  displayCornerTopRightPosInMeters: {x: 0.077, y: -0.01, z: 0}
+  displayCornerBottomLeftPosInMeters: {x: -0.077, y: -0.096, z: 0}
   CameraFov: 79
   nexusCaptureClients: {fileID: 991650841}
   webcamUI: {fileID: 2079732803}

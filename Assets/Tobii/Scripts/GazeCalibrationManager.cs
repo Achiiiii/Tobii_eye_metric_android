@@ -427,6 +427,7 @@ namespace Tobii
 
             // The flow goes on even when compute-and-apply failed (CalibrationFail), so log which.
             Debug.Log("Calibration finished: " + CalibrationStatus);
+            CalibrationReport.LogAsync(FindObjectOfType<StreamEngineDevice>(), new Vector2(Screen.width, Screen.height));
             pointer.SetActive(true);
 
             if (!_gazeIntroShown)

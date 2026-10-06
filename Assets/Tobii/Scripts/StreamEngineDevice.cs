@@ -67,6 +67,7 @@ public class StreamEngineDevice : MonoBehaviour
 
     // Tobii Stream Engine context
     public IntPtr DeviceContext => _streamEngineContext.DeviceContext;
+    public IntPtr ApiContext => apiContext;
     private static IntPtr deviceContext;
     private StreamEngineContext _streamEngineContext;
     private IntPtr processorContext = IntPtr.Zero;
@@ -82,6 +83,18 @@ public class StreamEngineDevice : MonoBehaviour
     private tobii_gaze_callback_t _gazeCallback;
     private tobii_gaze_point_callback_t _gazePointCallback;
     private tobii_head_pose_callback_t _headPoseCallback;
+
+    // Each eye's 3D position (mm, tracker space) from the gaze origin stream. The distance between
+    // the eyes checks the geometry: adult interpupillary distance is about 60-65 mm, so a value far
+    // off means the FOV or display setup is still wrong. Summed on the frame worker thread, logged
+    // every few seconds as [EYEPOS].
+    private static readonly tobii_gaze_origin_callback_t s_gazeOriginCallback = OnGazeOrigin;
+    private static readonly object s_eyeLock = new object();
+    private static Vector3 s_leftSum, s_rightSum;
+    private static float s_ipdSum;
+    private static int s_eyeSamples, s_eyeFrames;
+    private const float EyeLogSeconds = 5f;
+    private float _nextEyeLog;
     private Tobii_HeadPose _tobiiHeadPose;
 
     private string err = ""; // Quick and dirty way to display errors
@@ -336,6 +349,7 @@ public class StreamEngineDevice : MonoBehaviour
             {
                 ScreenbasedInterop.tobii_gaze_unsubscribe(deviceContext);
                 ScreenbasedInterop.tobii_head_pose_unsubscribe(deviceContext);
+                ScreenbasedInterop.tobii_gaze_origin_unsubscribe(deviceContext);
                 ConnectionManagerInterop.tobii_disconnect(deviceContext);
             }
             tobii_processor_destroy(processorContext);
@@ -410,6 +424,56 @@ public class StreamEngineDevice : MonoBehaviour
             Debug.Log($"Failed to subscribe to head pose {result}. Not necessarily critical if license does not support head pose.");
         else
             Debug.Log("Subscribed to head pose!");
+
+        result = ScreenbasedInterop.tobii_gaze_origin_subscribe(deviceContext, s_gazeOriginCallback, IntPtr.Zero);
+        Debug.Log("[EYEPOS] gaze origin subscribe: " + result);
+    }
+
+    [MonoPInvokeCallback(typeof(tobii_gaze_origin_callback_t))]
+    private static void OnGazeOrigin(ref tobii_gaze_origin_t origin, IntPtr userData)
+    {
+        bool left = origin.left_validity == tobii_validity_t.TOBII_VALIDITY_VALID;
+        bool right = origin.right_validity == tobii_validity_t.TOBII_VALIDITY_VALID;
+        lock (s_eyeLock)
+        {
+            s_eyeFrames++;
+            if (!left || !right)
+                return;
+            var l = new Vector3(origin.left.x, origin.left.y, origin.left.z);
+            var r = new Vector3(origin.right.x, origin.right.y, origin.right.z);
+            s_leftSum += l;
+            s_rightSum += r;
+            s_ipdSum += Vector3.Distance(l, r);
+            s_eyeSamples++;
+        }
+    }
+
+    private void LogEyePositions()
+    {
+        if (Time.unscaledTime < _nextEyeLog)
+            return;
+        _nextEyeLog = Time.unscaledTime + EyeLogSeconds;
+        Vector3 left, right;
+        float ipd;
+        int samples, frames;
+        lock (s_eyeLock)
+        {
+            samples = s_eyeSamples;
+            frames = s_eyeFrames;
+            if (samples == 0)
+            {
+                s_eyeFrames = 0;
+                return;
+            }
+            left = s_leftSum / samples;
+            right = s_rightSum / samples;
+            ipd = s_ipdSum / samples;
+            s_leftSum = s_rightSum = Vector3.zero;
+            s_ipdSum = 0f;
+            s_eyeSamples = s_eyeFrames = 0;
+        }
+        Vector3 mid = (left + right) * 0.5f;
+        Debug.Log($"[EYEPOS] IPD {ipd:0.0} mm | left ({left.x:0},{left.y:0},{left.z:0}) right ({right.x:0},{right.y:0},{right.z:0}) mm | eyes at {mid.magnitude / 10f:0.0} cm | {samples}/{frames} valid");
     }
 
     // Called from AndroidWebcamCaptureClient when camera is initialized
@@ -500,6 +564,7 @@ public class StreamEngineDevice : MonoBehaviour
 
     void Update()
     {
+        LogEyePositions();
         // Quit app when Escape is pressed (supports both input systems)
 #if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
         var keyboard = Keyboard.current; // Fully resolved via using above
@@ -570,6 +635,7 @@ public class StreamEngineDevice : MonoBehaviour
                 else
                 {
                     Debug.Log("Unsubscribing from headpose");
+                    ScreenbasedInterop.tobii_gaze_origin_unsubscribe(deviceContext);
                     result = ScreenbasedInterop.tobii_head_pose_unsubscribe(deviceContext);
                     if (result != tobii_error_t.TOBII_ERROR_NO_ERROR)
                         Debug.LogWarning($"Failed to unsubscribe from headpose {result}");
