@@ -2,7 +2,16 @@
 
 每個版本的改動累計在這裡，最新的版本在最上面。設計理由、參數與已知限制請見 [HANDOVER.md](HANDOVER.md)。給現場人員的說明每版另外輸出成 Word 文件，不存在專案裡。
 
-版本號規則：`versionName` 寫 `主版本.次版本`（例如 `2.3`），`versionCode` = 主版本 × 100 + 次版本（例如 `203`）。兩者都在 Unity 的 Player Settings 設定（`ProjectSettings/ProjectSettings.asset` 的 `bundleVersion`、`AndroidBundleVersionCode`）。versionCode 必須比凱比上已安裝的版本大，才能覆蓋安裝。
+版本號規則：`versionName` 寫 `主版本.次版本` 或 `主版本.次版本.修訂號`（例如 `2.3`、`2.3.5`），`versionCode` = 主版本 × 10000 + 次版本 × 100 + 修訂號（例如 V2.3.5 = `20305`、V2.4 = `20400`）。V2.3 當時用舊規則設成 `203`，比之後所有版本都小，不影響覆蓋安裝。兩者都在 Unity 的 Player Settings 設定（`ProjectSettings/ProjectSettings.asset` 的 `bundleVersion`、`AndroidBundleVersionCode`）。versionCode 必須比凱比上已安裝的版本大，才能覆蓋安裝。
+
+---
+
+## V2.3.5（2026-10-06）
+
+### 準確度
+- 修正傳給 Tobii processor 的相機視角：原本傳的是 Camera2 算出的**對角線**視角（凱比為 82.0°），Tobii 預期的是畫面寬度方向的**水平**視角（69.9°）。畫面旋轉 90°／270° 時改傳垂直視角。（`AndroidCameraPlugin.java` 的 `initAndGetCameraParameters`）
+- 連帶影響：Tobii 估算的頭部距離原本約被低估 20%，修正後會接近實際距離；頭部位置的角度原本約被高估 25%，修正後與機器人馬達角度一致。頭部距離確認（30～50 cm）與高度檢查的門檻是在舊的讀數下設定的，需要實測確認。
+- 凱比前鏡頭實測：感光元件 4.71 × 3.49 mm、焦距 3.37 mm；相機驅動沒有提供內參與畸變係數，也不支援畸變校正（程式裡的 `DISTORTION_CORRECTION_MODE_OFF` 沒有作用）。
 
 ---
 

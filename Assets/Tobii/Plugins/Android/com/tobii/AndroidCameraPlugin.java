@@ -637,12 +637,15 @@ public class AndroidCameraPlugin {
             float diagonalAngle = (float)Math.toDegrees((float)2.0f*Math.atan2(Math.sqrt(sensorWidthAndHeight[0]*sensorWidthAndHeight[0] + sensorWidthAndHeight[1]*sensorWidthAndHeight[1])/2.0f, focalLength[0]));
 
             Log.d(TAG, "hfov= " + horizontalAngle + ", vfov= " + verticalAngle + ", dfov= " + diagonalAngle + "aspect ratio= " + (sensorWidthAndHeight[0] / sensorWidthAndHeight[1]) + " focal_length= " + focalLength[0] + " sensor array=" + sensorWidthAndHeight[0] + "x" + sensorWidthAndHeight[1]);
-            
+
+            // The Tobii processor expects the horizontal FOV of the image it receives. This used to
+            // pass the diagonal one (82 deg on the Kebbi instead of 69.9 deg horizontal). When the
+            // image is rotated a quarter turn, its width runs along the sensor's height.
             if (rotationCompensation == 90 || rotationCompensation == 270)
             {
-                return new float[]{diagonalAngle, selectedSize.getHeight(), selectedSize.getWidth()};
+                return new float[]{verticalAngle, selectedSize.getHeight(), selectedSize.getWidth()};
             }
-            return new float[]{diagonalAngle, selectedSize.getWidth(), selectedSize.getHeight()};            
+            return new float[]{horizontalAngle, selectedSize.getWidth(), selectedSize.getHeight()};
 
         } catch (CameraAccessException e) {
             e.printStackTrace();
