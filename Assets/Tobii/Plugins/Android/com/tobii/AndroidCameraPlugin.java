@@ -136,15 +136,11 @@ public class AndroidCameraPlugin {
         return downsampleFactor;
     }
 
-    // Diagnostic / experiment: hold the lens at a fixed focus distance (diopters, 1/m). While it is
-    // held, the AF re-trigger below stays off - with AF off the state reads INACTIVE, which would
-    // otherwise re-trigger autofocus every 2 s and undo the manual focus.
-    private static volatile boolean manualFocus = false;
-
+    // Diagnostic: hold the lens at a fixed focus distance. The value is in diopters (1/m) but this
+    // camera's scale is uncalibrated: a seated user at ~45 cm was sharp around 5.5-6.5.
     public static boolean setManualFocus(float diopters) {
         if (captureSession == null || captureRequestBuilder == null || backgroundHandler == null) return false;
         try {
-            manualFocus = true;
             captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
             captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF);
             captureRequestBuilder.set(CaptureRequest.LENS_FOCUS_DISTANCE, diopters);
@@ -169,7 +165,6 @@ public class AndroidCameraPlugin {
                     active.left + Math.round(left * active.width()), active.top + Math.round(top * active.height()),
                     active.left + Math.round(right * active.width()), active.top + Math.round(bottom * active.height()));
             MeteringRectangle[] regions = { new MeteringRectangle(region, MeteringRectangle.METERING_WEIGHT_MAX) };
-            manualFocus = true; // keep the 2 s re-trigger away from the lock
             captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
             captureRequestBuilder.set(CaptureRequest.CONTROL_AF_REGIONS, regions);
             captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
@@ -187,7 +182,6 @@ public class AndroidCameraPlugin {
     }
 
     public static void restoreAutoFocus() {
-        manualFocus = false;
         Log.i(TAG, "[FOCUS] back to autofocus");
         triggerAutoFocus();
     }
@@ -213,34 +207,20 @@ public class AndroidCameraPlugin {
         }
     }
 
-    // CaptureCallback to monitor AF state and re-trigger autofocus when focus is lost
+    // Logs the camera state ([CAM]). It used to re-trigger autofocus every 2 s whenever focus read
+    // inactive or lost, which kept moving the lens; focus is now set once per session on the face
+    // (triggerRegionAutoFocus, from FaceFocus) and left alone.
     private static CameraCaptureSession.CaptureCallback afCaptureCallback = new CameraCaptureSession.CaptureCallback() {
         @Override
         public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
             super.onCaptureCompleted(session, request, result);
-            Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
-            logCameraStatus(result, afState);
-            if (afState == null || manualFocus) return;
-
-            // If AF reports that it failed to focus or became inactive, re-trigger
-            if (afState == CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED
-                    || afState == CaptureResult.CONTROL_AF_STATE_INACTIVE
-                    || afState == CaptureResult.CONTROL_AF_STATE_PASSIVE_UNFOCUSED) {
-                long currentTime = System.currentTimeMillis();
-                if (currentTime - lastAfTriggerTimeMillis > 2000) {
-                    lastAfTriggerTimeMillis = currentTime;
-                    Log.d(TAG, "[AF] Focus lost or inactive (state=" + afState + "), re-triggering AF");
-                    afRetriggers++;
-                    triggerAutoFocus();
-                }
-            }
+            logCameraStatus(result, result.get(CaptureResult.CONTROL_AF_STATE));
         }
     };
 
     // Diagnostic: focus and exposure every 2 s ([CAM]), to see whether the camera refocuses or
     // changes exposure during a session. Focus distance is in diopters (1/m; 0 = infinity).
     private static long lastStatusLogMillis;
-    private static int afRetriggers;
 
     private static void logCameraStatus(CaptureResult result, Integer afState) {
         long now = System.currentTimeMillis();
@@ -254,7 +234,7 @@ public class AndroidCameraPlugin {
         Log.i(TAG, "[CAM] af mode " + afMode + " state " + afState
                 + " | focus " + (focus != null ? String.format("%.2f D (%.0f cm)", focus, focus > 0 ? 100f / focus : 0f) : "n/a")
                 + " | exposure " + (exposureNs != null ? String.format("%.1f ms", exposureNs / 1e6) : "n/a")
-                + " | iso " + iso + " | ae state " + aeState + " | af retriggers " + afRetriggers);
+                + " | iso " + iso + " | ae state " + aeState);
     }
 
     public static void registerConfigurationChangeListener() {

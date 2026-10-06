@@ -96,8 +96,8 @@ public class EyeMetricFlow : MonoBehaviour
         PositionGuide.Create(guideCanvas.transform, font, _headFollow, metricTest);
         _driftCorrector = DriftCorrector.Create(transform, gazePointer, metricTest, _headFollow, gazeCalibrationManager);
         OptionReveal.Create(transform, metricTest, _driftCorrector, _headFollow, gazePointer);
-        // Temporary: focus sweep at the head distance check, saving a frame per focus distance.
-        FocusSweepProbe.Create(transform, detectDistance, FindObjectOfType<AndroidWebcamCaptureClient>());
+        // Focuses the camera on the user's face at each head distance check.
+        FaceFocus.Create(transform, detectDistance, _headFollow, FindObjectOfType<AndroidWebcamCaptureClient>());
         BuildHud(hudCanvas.transform);
         BuildHomeButton(resultPage.transform);
 
