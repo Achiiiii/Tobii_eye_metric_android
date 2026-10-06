@@ -98,6 +98,8 @@ public class EyeMetricFlow : MonoBehaviour
         OptionReveal.Create(transform, metricTest, _driftCorrector, _headFollow, gazePointer);
         // Temporary: odd sessions collect each calibration point 3 times, even ones shift the targets.
         CalibrationExperimentProbe.Create(transform, detectDistance);
+        // Temporary: saves a few camera frames (focus / exposure check).
+        FrameCaptureProbe.Create(transform, detectDistance, gazeCalibrationManager, metricTest);
         BuildHud(hudCanvas.transform);
         BuildHomeButton(resultPage.transform);
 

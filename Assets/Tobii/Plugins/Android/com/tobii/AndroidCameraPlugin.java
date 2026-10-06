@@ -162,6 +162,7 @@ public class AndroidCameraPlugin {
         public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
             super.onCaptureCompleted(session, request, result);
             Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
+            logCameraStatus(result, afState);
             if (afState == null) return;
 
             // If AF reports that it failed to focus or became inactive, re-trigger
@@ -172,11 +173,32 @@ public class AndroidCameraPlugin {
                 if (currentTime - lastAfTriggerTimeMillis > 2000) {
                     lastAfTriggerTimeMillis = currentTime;
                     Log.d(TAG, "[AF] Focus lost or inactive (state=" + afState + "), re-triggering AF");
+                    afRetriggers++;
                     triggerAutoFocus();
                 }
             }
         }
     };
+
+    // Diagnostic: focus and exposure every 2 s ([CAM]), to see whether the camera refocuses or
+    // changes exposure during a session. Focus distance is in diopters (1/m; 0 = infinity).
+    private static long lastStatusLogMillis;
+    private static int afRetriggers;
+
+    private static void logCameraStatus(CaptureResult result, Integer afState) {
+        long now = System.currentTimeMillis();
+        if (now - lastStatusLogMillis < 2000) return;
+        lastStatusLogMillis = now;
+        Float focus = result.get(CaptureResult.LENS_FOCUS_DISTANCE);
+        Long exposureNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME);
+        Integer iso = result.get(CaptureResult.SENSOR_SENSITIVITY);
+        Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
+        Integer afMode = result.get(CaptureResult.CONTROL_AF_MODE);
+        Log.i(TAG, "[CAM] af mode " + afMode + " state " + afState
+                + " | focus " + (focus != null ? String.format("%.2f D (%.0f cm)", focus, focus > 0 ? 100f / focus : 0f) : "n/a")
+                + " | exposure " + (exposureNs != null ? String.format("%.1f ms", exposureNs / 1e6) : "n/a")
+                + " | iso " + iso + " | ae state " + aeState + " | af retriggers " + afRetriggers);
+    }
 
     public static void registerConfigurationChangeListener() {
         // Get the current Unity Activity

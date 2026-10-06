@@ -72,6 +72,7 @@ public sealed class GazeFrameWorker : IDisposable
             }
             if (data == null)
                 continue;
+            FrameCapture.TryWrite(data, width, height);
 
             GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
             try
