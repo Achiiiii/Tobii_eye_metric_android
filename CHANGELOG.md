@@ -14,6 +14,7 @@
 - 移除相機外掛每 2 秒強制重新對焦的程式：它在對焦狀態為「閒置／失焦」時反覆移動鏡頭。
 
 ### 診斷
+- 準確度驗證畫面（debug 面板的「accuracy check」按鈕，`AccuracyValidation.cs`）：隱藏紅點，3×3 共 9 個點（畫面 10%／50%／90%，刻意避開校準點）依序出現，每點等 0.6 秒後收集 1 秒注視資料，同時記錄 Tobii 原始輸出與飄移校正後的輸出。結果以 px 與角度顯示準確度（平均注視位置與目標的距離）與精確度（抖動的 RMS），寫入 `[VALID]` log 與 app 資料夾的 `validation.csv`。
 - 訂閱 gaze origin，每 5 秒記錄左右眼的 3D 位置、兩眼距離（瞳距）與眼睛到相機的距離（`[EYEPOS]`）。瞳距實測永遠是 63.0 mm（模型的固定假設），所以只能用眼睛位置與距離。
 - 每次校準後讀取並解析校準結果，記錄每個校準點左右眼的映射誤差與是否採用（`[CALREPORT]`，`CalibrationReport.cs`）。官方 C# 包裝以 lambda 作為原生回呼，IL2CPP 下無法使用，改用自己的 import 與靜態回呼。
 - 校準點的位置是 Tobii 的設計，不另外查詢 `tobii_calibration_stimulus_points_get`。

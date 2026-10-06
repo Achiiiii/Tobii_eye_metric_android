@@ -2,8 +2,9 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Read-only diagnostics (tap the network icon 5 times): gaze rate and latency, head follow and
-// drift correction state. The tuning switches used during development were removed for release.
+// Diagnostics (tap the network icon 5 times): gaze rate and latency, head follow and drift
+// correction state, and a button for the 9-point accuracy check. The tuning switches used during
+// development were removed for release.
 public class GazeDebugOverlay : MonoBehaviour
 {
     private FollowGazePoint2D _pointer;
@@ -14,11 +15,11 @@ public class GazeDebugOverlay : MonoBehaviour
     private GazeLatencyStats.Snapshot _previous;
     private float _previousTime;
 
-    public static GazeDebugOverlay Create(Transform parent, FollowGazePoint2D pointer, HeadFollow headFollow, DriftCorrector drift, AndroidWebcamCaptureClient capture)
+    public static GazeDebugOverlay Create(Transform parent, FollowGazePoint2D pointer, HeadFollow headFollow, DriftCorrector drift, AndroidWebcamCaptureClient capture, System.Action onAccuracyCheck)
     {
         var panel = UiFactory.CreateImage("GazeDebugOverlay", parent, UiFactory.RoundedRect, new Color(0f, 0f, 0f, 0.72f), true);
         panel.type = Image.Type.Sliced;
-        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 330f));
+        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 376f));
 
         var overlay = panel.gameObject.AddComponent<GazeDebugOverlay>();
         overlay._pointer = pointer;
@@ -30,6 +31,13 @@ public class GazeDebugOverlay : MonoBehaviour
         var font = TMP_Settings.defaultFontAsset;
         overlay._text = UiFactory.CreateText("Stats", panel.transform, font, "measuring...", 15f, Color.white, TextAlignmentOptions.TopLeft);
         UiFactory.Place(overlay._text.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -10f), new Vector2(316f, 310f));
+
+        // The only control on the panel: the 9-point accuracy check (AccuracyValidation).
+        var check = UiFactory.CreateButton("AccuracyCheck", panel.transform, UiFactory.RoundedRect, new Color(1f, 0.76f, 0.24f, 0.35f), () => onAccuracyCheck?.Invoke());
+        ((Image)check.targetGraphic).type = Image.Type.Sliced;
+        UiFactory.Place((RectTransform)check.transform, Vector2.zero, Vector2.zero, new Vector2(12f, 10f), new Vector2(316f, 36f));
+        var checkLabel = UiFactory.CreateText("Label", check.transform, font, "accuracy check (9 points)", 15f, Color.white);
+        UiFactory.Stretch(checkLabel.rectTransform);
 
         panel.gameObject.SetActive(false);
         return overlay;
