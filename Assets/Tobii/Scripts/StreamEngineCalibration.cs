@@ -150,16 +150,31 @@ namespace Tobii
 
             success.Value = task.Result;
         }
+        // Experiment (CalibrationDataProbe): collect each point this many times, pausing between
+        // collections so the processor gets new frames - back to back, the 2nd and 3rd calls
+        // returned in 0.04-0.1 s and added nothing measurable.
+        public static int CollectRepeats = 1;
+        public static int CollectGapMilliseconds = 500;
+
         private Task<bool> CollectCalibrationDataTask(Vector2 stimuliPositionShown)
         {
             Debug.Log(string.Format("CollectCalibrationDataTask"));
             if (streamEngineDevice.DeviceContext == IntPtr.Zero) return Task.FromResult(false);
 
-            var error = ConfigInterop.tobii_calibration_collect_data_2d(streamEngineDevice.DeviceContext, stimuliPositionShown.x, 1 - stimuliPositionShown.y);
-            if (error != tobii_error_t.TOBII_ERROR_NO_ERROR)
+            int repeats = Mathf.Max(1, CollectRepeats);
+            for (int i = 0; i < repeats; i++)
             {
-                Debug.Log(string.Format("Error calibration collect2d: {0}", error));
-                return Task.FromResult(false);
+                if (i > 0)
+                    System.Threading.Thread.Sleep(CollectGapMilliseconds);
+                var started = System.Diagnostics.Stopwatch.StartNew();
+                var error = ConfigInterop.tobii_calibration_collect_data_2d(streamEngineDevice.DeviceContext, stimuliPositionShown.x, 1 - stimuliPositionShown.y);
+                if (repeats > 1)
+                    Debug.Log($"[CALCOLLECT] point ({stimuliPositionShown.x:0.00},{stimuliPositionShown.y:0.00}) collection {i + 1}/{repeats}: {started.ElapsedMilliseconds} ms, {error}");
+                if (error != tobii_error_t.TOBII_ERROR_NO_ERROR)
+                {
+                    Debug.Log(string.Format("Error calibration collect2d: {0}", error));
+                    return Task.FromResult(false);
+                }
             }
 
             return Task.FromResult(true);
