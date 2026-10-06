@@ -39,6 +39,7 @@ import java.util.ArrayList;
 import java.util.List;
 import android.graphics.Rect;
 import android.hardware.camera2.params.StreamConfigurationMap;
+import android.hardware.camera2.params.MeteringRectangle;
 import static android.hardware.camera2.CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP;
 import java.text.DecimalFormat;
 import java.math.RoundingMode;
@@ -152,6 +153,35 @@ public class AndroidCameraPlugin {
             return true;
         } catch (Exception e) {
             Log.e(TAG, "[FOCUS] manual focus failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    // Experiment: run one autofocus pass on a region of the image (normalised 0-1, image axes), then
+    // keep the lens where it locked. Left alone, autofocus picked the ceiling light or background
+    // and locked at the wrong distance. Exposure is left as it is.
+    public static boolean triggerRegionAutoFocus(float left, float top, float right, float bottom) {
+        if (captureSession == null || captureRequestBuilder == null || backgroundHandler == null || selectedCameraId == null) return false;
+        try {
+            CameraManager manager = (CameraManager) UnityPlayer.currentActivity.getSystemService(Context.CAMERA_SERVICE);
+            Rect active = manager.getCameraCharacteristics(selectedCameraId).get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+            Rect region = new Rect(
+                    active.left + Math.round(left * active.width()), active.top + Math.round(top * active.height()),
+                    active.left + Math.round(right * active.width()), active.top + Math.round(bottom * active.height()));
+            MeteringRectangle[] regions = { new MeteringRectangle(region, MeteringRectangle.METERING_WEIGHT_MAX) };
+            manualFocus = true; // keep the 2 s re-trigger away from the lock
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_REGIONS, regions);
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
+            captureSession.capture(captureRequestBuilder.build(), null, backgroundHandler);
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+            captureSession.capture(captureRequestBuilder.build(), null, backgroundHandler);
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
+            captureSession.setRepeatingRequest(captureRequestBuilder.build(), afCaptureCallback, backgroundHandler);
+            Log.i(TAG, "[FOCUS] region autofocus on " + region + " of " + active);
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "[FOCUS] region autofocus failed: " + e.getMessage());
             return false;
         }
     }

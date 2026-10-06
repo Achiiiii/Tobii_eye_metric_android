@@ -245,6 +245,14 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
         return pluginClass.CallStatic<bool>("setManualFocus", diopters);
     }
 
+    // Diagnostic: one autofocus pass on a region of the image (normalised 0-1, y down), then hold.
+    public bool TriggerRegionAutoFocus(Rect region)
+    {
+        if (pluginClass == null)
+            return false;
+        return pluginClass.CallStatic<bool>("triggerRegionAutoFocus", region.xMin, region.yMin, region.xMax, region.yMax);
+    }
+
     public void RestoreAutoFocus()
     {
         pluginClass?.CallStatic("restoreAutoFocus");

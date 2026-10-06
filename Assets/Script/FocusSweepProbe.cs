@@ -1,16 +1,22 @@
 using System.Collections;
 using UnityEngine;
 
-// Temporary experiment: which focus distance gives the sharpest eyes? The camera locked its focus
-// at 28 cm when the app started and never refocused, while the user sat at about 44 cm. When a
-// head distance check starts (the user is seated at test distance), this holds the lens at each
-// distance below, saves a frame for each (FrameCapture), then returns to autofocus - which now
-// focuses on the seated user.
+// Temporary experiment: where is this lens sharp for a seated user, and can autofocus find it?
+// Left alone, autofocus locked at the wrong distance (it picked the ceiling light or background),
+// and a first sweep from 1.7 to 4.0 diopters came out uniformly blurry. When a head distance check
+// starts, this waits for the robot's head to settle, then:
+// 1. holds the lens at 2.5-8.0 diopters in 0.5 steps and saves a frame at each (the scale is
+//    uncalibrated on this camera, so the values are only relative positions);
+// 2. runs one autofocus pass limited to the face area and saves a frame 3 s and 8 s later.
 public class FocusSweepProbe : MonoBehaviour
 {
-    private static readonly int[] DistancesCm = { 25, 33, 42, 50, 60 };
-    private const float StartDelaySeconds = 2f;
-    private const float SettleSeconds = 1.2f;
+    private const float StartDelaySeconds = 4f;
+    private const float SettleSeconds = 1.5f;
+    private const float FirstDiopter = 2.5f;
+    private const float LastDiopter = 8f;
+    private const float StepDiopter = 0.5f;
+    // Where the face sits in the frame at the test seat (normalised, y down).
+    private static readonly Rect FaceRegion = Rect.MinMaxRect(0.35f, 0.45f, 0.65f, 0.85f);
 
     private DetectDistance _detectDistance;
     private AndroidWebcamCaptureClient _camera;
@@ -41,21 +47,25 @@ public class FocusSweepProbe : MonoBehaviour
         _sweeping = true;
         yield return new WaitForSecondsRealtime(StartDelaySeconds);
         Debug.Log("[FOCUS] sweep start");
-        foreach (int cm in DistancesCm)
+        for (float d = FirstDiopter; d <= LastDiopter + 0.01f; d += StepDiopter)
         {
-            if (!_camera.SetManualFocus(100f / cm))
+            if (!_camera.SetManualFocus(d))
             {
                 Debug.Log("[FOCUS] manual focus not available; sweep stopped");
                 break;
             }
             yield return new WaitForSecondsRealtime(SettleSeconds);
-            FrameCapture.Request($"focus{cm}cm");
+            FrameCapture.Request($"d{d:0.0}");
             yield return new WaitForSecondsRealtime(0.3f);
         }
-        _camera.RestoreAutoFocus();
-        yield return new WaitForSecondsRealtime(2.5f);
-        FrameCapture.Request("autofocus");
-        Debug.Log("[FOCUS] sweep done");
+
+        Debug.Log("[FOCUS] face-region autofocus");
+        _camera.TriggerRegionAutoFocus(FaceRegion);
+        yield return new WaitForSecondsRealtime(3f);
+        FrameCapture.Request("faceaf3s");
+        yield return new WaitForSecondsRealtime(5f);
+        FrameCapture.Request("faceaf8s");
+        Debug.Log("[FOCUS] sweep done; the lens stays where the face-region autofocus locked");
         _sweeping = false;
     }
 }
