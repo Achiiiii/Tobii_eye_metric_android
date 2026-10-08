@@ -15,10 +15,10 @@ public class HeadDistanceGuide : MonoBehaviour
     private static readonly Color OutOfRangeZoneTint = new Color32(0xFF, 0xD6, 0xC4, 0xFF);
     private static readonly Color TextDark = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
     private static readonly Color NoticeFill = new Color32(0xF5, 0xA6, 0x23, 0xFF);
-    private const string TooHighText = "眼睛比機器人高太多，請把機器人墊高或把座椅調低";
-    private const string TooLowText = "眼睛比機器人低太多，請把機器人放低或把座椅調高";
+    private const string TooHighText = "眼睛比機器人的鏡頭高，請把機器人墊高或把座椅調低";
+    private const string TooLowText = "眼睛比機器人的鏡頭低，請把機器人放低或把座椅調高";
     // Height scale on the right: the user's eye elevation seen from the robot, in degrees, top = high.
-    private const float HeightScaleDeg = 35f;
+    private const float HeightScaleDeg = 20f;
     private const float HeightScaleHeight = 300f;
     private const float HeightScaleWidth = 64f;
     private const float NoticeRefreshSeconds = 0.5f;
@@ -167,11 +167,10 @@ public class HeadDistanceGuide : MonoBehaviour
             _eyeLevelText.text = UiFactory.WithLatinFallback((show > 0 ? TooHighText : TooLowText) + "（約差 " + cm + " 公分）", _font);
     }
 
-    // How far the eyes are beyond the accepted height, in cm, at the current distance (at least 1).
+    // How far the eyes are from the camera's level, in cm, at the current distance (at least 1).
     private int HeightOffsetCm(int side)
     {
-        float edge = side > 0 ? HeadFollow.EyeLevelHighDeg : HeadFollow.EyeLevelLowDeg;
-        float meters = _detectDistance.DistanceMeters * Mathf.Abs(Mathf.Tan(_head.EyeElevationDeg * Mathf.Deg2Rad) - Mathf.Tan(edge * Mathf.Deg2Rad));
+        float meters = _detectDistance.DistanceMeters * Mathf.Abs(Mathf.Tan(_head.EyeElevationDeg * Mathf.Deg2Rad));
         return Mathf.Max(1, Mathf.CeilToInt(meters * 100f));
     }
 

@@ -41,10 +41,13 @@ public class HeadFollow : MonoBehaviour
     private const float PitchUpLimitDeg = -14.5f;
     private const float PitchDownLimitDeg = 12f;
     // How far beyond the head's tilt range the user may sit before the setup is flagged.
-    private const float EyeLevelMarginDeg = 3f;
-    // The accepted range of EyeElevationDeg: +17.5 to -15 degrees.
-    public const float EyeLevelHighDeg = -PitchUpLimitDeg + EyeLevelMarginDeg;
-    public const float EyeLevelLowDeg = -PitchDownLimitDeg - EyeLevelMarginDeg;
+    // The accepted range of EyeElevationDeg: the user's eyes level with the camera, within 5 degrees
+    // (about 4 cm at 45 cm), so the camera looks at the face straight on. It used to be anything the
+    // head could tilt to (+17.5 to -15), and users sat 18-25 degrees above the camera with the head
+    // tilted up to its stop, the camera looking up at the face.
+    private const float EyeLevelToleranceDeg = 5f;
+    public const float EyeLevelHighDeg = EyeLevelToleranceDeg;
+    public const float EyeLevelLowDeg = -EyeLevelToleranceDeg;
     // The motors ignored moves of 1.4 and 2.5 degrees on the device, so no move is smaller than
     // this (overshooting by at most ExitDeadzone).
     private const float MinMoveDeg = 3f;
@@ -86,8 +89,8 @@ public class HeadFollow : MonoBehaviour
     public bool IsMoving => Time.unscaledTime < _yaw.SettleUntil || Time.unscaledTime < _pitch.SettleUntil;
     public bool Calibrated => _calibrationDepth > 0f;
 
-    // Whether the user sits outside what the robot's head can tilt to: +1 too high for it (it
-    // would have to look up past its stop), -1 too low, 0 fine. It uses the user's elevation from
+    // Whether the user's eyes are off the camera's level: +1 too high (the camera would look up),
+    // -1 too low, 0 fine. It uses the user's elevation from
     // the robot's base - direction in the image minus the head's tilt - so it holds before the
     // head has moved and in any follow mode. On the robot, sitting low gave 12.6 degrees,
     // sitting high 17-19, and the earlier high-seated runs 21-22.
