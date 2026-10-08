@@ -311,6 +311,8 @@ public class MetricTest : MonoBehaviour
             metric = GetEyeMetric(avgScore);
             largeEyeGap = Mathf.Abs(scoreList[0] - scoreList[1]) > 2;
             robotData["vision_gap_flag"] = largeEyeGap ? "1" : "0";
+            robotData["vision_right_value"] = FormatMetric(GetEyeMetric(scoreList[0]));
+            robotData["vision_left_value"] = FormatMetric(GetEyeMetric(scoreList[1]));
         }
         else
         {
@@ -320,6 +322,9 @@ public class MetricTest : MonoBehaviour
         }
 
         robotData["vision_both_level"] = metric <= 0.3f ? "0" : (metric <= 0.5f ? "1" : "2");
+        // The vision value shown on the result page (both eyes, or the average of the two in
+        // single-eye mode), alongside the 0/1/2 level the backend already reads.
+        robotData["vision_value"] = FormatMetric(metric);
         robotData["time"] = ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds().ToString();
         foreach (var entry in robotData)
             Debug.Log(entry.Key + ": " + entry.Value);
@@ -383,6 +388,11 @@ public class MetricTest : MonoBehaviour
         rect.pivot = new Vector2(0.5f, 0.5f);
         rect.anchoredPosition = new Vector2(artPixel.x - 512f, (600f - artPixel.y) * artScale);
         rect.sizeDelta = new Vector2(artSize.x, artSize.y * artScale);
+    }
+
+    private static string FormatMetric(float metric)
+    {
+        return metric.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private string GetResultMessage(float metric, bool largeEyeGap)
