@@ -88,6 +88,10 @@ namespace Tobii
             if (streamEngineDevice.DeviceContext == IntPtr.Zero)
                 return Task.FromResult(false);
 
+            // Both eyes even in single-eye rounds. The webcam processor refuses to track one eye
+            // (tobii_set_enabled_eye: TOBII_ERROR_NOT_SUPPORTED) but accepts a one-eye calibration,
+            // and that mismatch made single-eye gaze worse on the robot: raw error 83 -> 99 px with
+            // the right eye and 72 -> 105 px with the left.
             var error = ConfigInterop.tobii_calibration_start(streamEngineDevice.DeviceContext, tobii_enabled_eye_t.TOBII_ENABLED_EYE_BOTH);
             if (error != tobii_error_t.TOBII_ERROR_NO_ERROR)
             {
@@ -179,14 +183,20 @@ namespace Tobii
             Debug.Log(string.Format("ComputeAndApplyCalibrationTask"));
             if (streamEngineDevice.DeviceContext == IntPtr.Zero) return Task.FromResult(false);
 
+            // The webcam processor returns TOBII_ERROR_INTERNAL from every compute_and_apply, yet the
+            // runtime log (logcat tag TobiiRT) shows a new calibration id each time and the id read
+            // back changes: the calibration is applied. So success is judged by the id changing.
+            ConfigInterop.tobii_get_calibration_id(streamEngineDevice.DeviceContext, out uint idBefore);
             var error = ConfigInterop.tobii_calibration_compute_and_apply(streamEngineDevice.DeviceContext);
-            if (error != tobii_error_t.TOBII_ERROR_NO_ERROR)
-            {
-                Debug.Log(string.Format("Error calibration compute and apply: {0}", error));
-                return Task.FromResult(false);
-            }
+            if (error == tobii_error_t.TOBII_ERROR_NO_ERROR)
+                return Task.FromResult(true);
 
-            return Task.FromResult(true);
+            var idResult = ConfigInterop.tobii_get_calibration_id(streamEngineDevice.DeviceContext, out uint idAfter);
+            bool applied = idResult == tobii_error_t.TOBII_ERROR_NO_ERROR && idAfter != 0 && idAfter != idBefore;
+            Debug.Log(applied
+                ? string.Format("Calibration compute and apply returned {0}, but calibration id {1} -> {2}: applied", error, idBefore, idAfter)
+                : string.Format("Error calibration compute and apply: {0} (calibration id {1} -> {2})", error, idBefore, idAfter));
+            return Task.FromResult(applied);
         }
 
         public IEnumerator StopCalibrationRoutine(ReferenceBool success)

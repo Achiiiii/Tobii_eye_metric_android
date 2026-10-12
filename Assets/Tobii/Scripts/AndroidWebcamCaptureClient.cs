@@ -23,7 +23,10 @@ using System.Runtime.InteropServices;
 public class AndroidWebcamCaptureClient : MonoBehaviour
 {
     private Color32[] _pixels;
-    private long _timestamp = 0;
+    // Capture time of the first frame, so the timestamps handed to the processor start near zero.
+    private long _firstTimestampUs = -1;
+    // Processes frames off the main thread (see GazeFrameWorker).
+    private GazeFrameWorker _worker;
 
     public MediaCaptureEvent mediaCaptureEvent;
     public UnityEvent<float, float, float> OnInitialized;
@@ -48,6 +51,12 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
     {
         if (Application.platform == RuntimePlatform.Android)
         {
+            var device = FindObjectOfType<StreamEngineDevice>();
+            if (device != null)
+                _worker = new GazeFrameWorker(device);
+            else
+                Debug.LogError("StreamEngineDevice not found; camera frames will not be processed.");
+
             if (!Permission.HasUserAuthorizedPermission(Permission.Camera))
             {
                 Debug.Log("Requesting camera permission...");
@@ -155,66 +164,105 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
 
     private void Update()
     {
-        if (Application.platform == RuntimePlatform.Android)
+        if (Application.platform != RuntimePlatform.Android)
+            return;
+        if (!isInitialized || pluginClass == null)
+            return;
+
+        try
         {
-            var elapsedTimeInUs = Time.unscaledDeltaTime * 1_000_000;
-            if (isInitialized && pluginClass != null)
+            AndroidJavaObject[] latest = pluginClass.CallStatic<AndroidJavaObject[]>("getLatestImageData");
+            if (latest == null)
+                return;
+
+            try
             {
-                try
+                sbyte[] rawData = AndroidJNIHelper.ConvertFromJNIArray<sbyte[]>(latest[0].GetRawObject());
+                int[] imageWidthAndHeight = AndroidJNIHelper.ConvertFromJNIArray<int[]>(latest[1].GetRawObject());
+                long[] timestampNs = AndroidJNIHelper.ConvertFromJNIArray<long[]>(latest[2].GetRawObject());
+                int width = imageWidthAndHeight[0];
+                int height = imageWidthAndHeight[1];
+
+                // The camera's own capture time rather than Unity's frame delta: the processor
+                // filters gaze over this clock, so a timestamp that drifts with the render rate
+                // distorts it.
+                long timestampUs = timestampNs[0] / 1000;
+                if (_firstTimestampUs < 0)
+                    _firstTimestampUs = timestampUs;
+
+                // Inference takes 80-110 ms a frame on the robot, so it runs on the worker thread.
+                // The mediaCaptureEvent is no longer raised on Android: its other listener, the
+                // FrameDataPreview debug view, uploads a texture and must stay on the main thread.
+                if (_worker != null)
+                    _worker.Submit(rawData, width, height, timestampUs - _firstTimestampUs);
+            }
+            finally
+            {
+                // Each wrapper holds a JNI global reference; without this they pile up until a
+                // finaliser happens to run, which is rare now that the frames are small.
+                foreach (var wrapper in latest)
                 {
-                    AndroidJavaObject[] rawDataAndWidthHeight = pluginClass.CallStatic<AndroidJavaObject[]>("getLatestImageData");
-                    if (rawDataAndWidthHeight != null)
-                    {
-                        sbyte[] rawData = AndroidJNIHelper.ConvertFromJNIArray<sbyte[]>(rawDataAndWidthHeight[0].GetRawObject());
-                        int[] imageWidthAndHeight = AndroidJNIHelper.ConvertFromJNIArray<int[]>(rawDataAndWidthHeight[1].GetRawObject());
-                        int width = imageWidthAndHeight[0];
-                        int height = imageWidthAndHeight[1];
-
-                        // Use GCHandle to pin the array and obtain its address safely.
-                        GCHandle handle = GCHandle.Alloc(rawData, GCHandleType.Pinned);
-                        try
-                        {
-                            IntPtr dataPtr = handle.AddrOfPinnedObject();
-                            _timestamp += (long)elapsedTimeInUs;
-                            tobii_image_frame_t frame = new tobii_image_frame_t
-                            {
-                                format = 0, //Interop.TOBII_FRAME_FORMAT_GRAY8,
-                                width = width,
-                                height = height,
-                                stride = width,
-                                timestamp_us = _timestamp,
-                                data_size = new IntPtr(width * height),
-                                data = dataPtr
-                            };
-
-                            //Debug.Log("Frame captured: " + frame.timestamp_us + " " + frame.width + "x" + frame.height + " " +
-                            //    frame.stride + " " + frame.data_size + " " + frame.data);
-
-                            mcclient_frame_format_type formatType = mcclient_frame_format_type.MCCLIENT_FRAME_FORMAT_GRAY16;
-
-                            UnityMainThreadDispatcher.Dispatcher.Enqueue(() =>
-                            {
-                                mediaCaptureEvent.Invoke(frame, formatType);
-                            });
-                        }
-                        finally
-                        {
-                            // Always free the handle
-                            handle.Free();
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError($"Error in Update: {e.Message}\n{e.StackTrace}");
+                    if (wrapper != null)
+                        wrapper.Dispose();
                 }
             }
         }
+        catch (Exception e)
+        {
+            Debug.LogError($"Error in Update: {e.Message}\n{e.StackTrace}");
+        }
     }
+
     private void OnDestroy()
     {
+        if (_worker != null)
+        {
+            _worker.Dispose();
+            _worker = null;
+        }
         if (mediaCaptureEvent != null)
             mediaCaptureEvent.RemoveAllListeners();
+    }
+
+    // The integer factor the 2100x1560 camera stream is shrunk by before Tobii sees it: 3 gives
+    // 700x520, 2 gives 1050x780. 0 when unavailable (not Android, camera not started).
+    public int DownsampleFactor
+    {
+        get
+        {
+            if (Application.platform != RuntimePlatform.Android || pluginClass == null)
+                return 0;
+            return pluginClass.CallStatic<int>("getDownsampleFactor");
+        }
+    }
+
+    // Takes effect on the next frame and recreates the Tobii processor, clearing calibration.
+    // Diagnostic: hold the camera at a fixed focus distance, or go back to autofocus.
+    public bool SetManualFocus(float diopters)
+    {
+        if (pluginClass == null)
+            return false;
+        return pluginClass.CallStatic<bool>("setManualFocus", diopters);
+    }
+
+    // Diagnostic: one autofocus pass on a region of the image (normalised 0-1, y down), then hold.
+    public bool TriggerRegionAutoFocus(Rect region)
+    {
+        if (pluginClass == null)
+            return false;
+        return pluginClass.CallStatic<bool>("triggerRegionAutoFocus", region.xMin, region.yMin, region.xMax, region.yMax);
+    }
+
+    public void RestoreAutoFocus()
+    {
+        pluginClass?.CallStatic("restoreAutoFocus");
+    }
+
+    public bool SetDownsampleFactor(int factor)
+    {
+        if (Application.platform != RuntimePlatform.Android || pluginClass == null)
+            return false;
+        return pluginClass.CallStatic<bool>("setDownsampleFactor", factor);
     }
 
     public void TriggerAutoFocus()
