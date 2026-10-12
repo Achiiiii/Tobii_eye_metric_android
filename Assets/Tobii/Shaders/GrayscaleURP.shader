@@ -6,18 +6,17 @@ Shader "Unlit/GrayscaleURP"
     }
     SubShader
     {
-        Tags { 
-            "RenderType"="Opaque"
-            "RenderPipeline"="UniversalPipeline"
-        }
+        // Built-in pipeline: the project no longer has URP. A pass without a LightMode tag
+        // also renders under URP, so this works if URP is ever added back.
+        Tags { "RenderType"="Opaque" }
         LOD 100
 
         Pass
         {
-            HLSLPROGRAM
+            CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "UnityCG.cginc"
 
             struct Attributes
             {
@@ -31,23 +30,22 @@ Shader "Unlit/GrayscaleURP"
                 float2 uv : TEXCOORD0;
             };
 
-            TEXTURE2D(_MainTex);
-            SAMPLER(sampler_MainTex);
+            sampler2D _MainTex;
 
             Varyings vert(Attributes IN)
             {
                 Varyings OUT;
-                OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
+                OUT.positionHCS = UnityObjectToClipPos(IN.positionOS.xyz);
                 OUT.uv = IN.uv;
                 return OUT;
             }
 
             half4 frag(Varyings IN) : SV_Target
             {
-                half r = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, IN.uv).r;
+                half r = tex2D(_MainTex, IN.uv).r;
                 return half4(r, r, r, 1);
             }
-            ENDHLSL
+            ENDCG
         }
     }
 }
