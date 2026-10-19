@@ -10,6 +10,9 @@
 
 準確度改善的一系列修正與實驗。原本的 V2.3.5（只含相機視角修正，versionCode 20305）曾作為測試版安裝在凱比上，已併入這個版本。
 
+### 授權
+- 更換 Tobii Stream Engine 授權檔（`Assets/Resources/se_license_key.bytes`）為 medicaldesign temporary nexus 授權，**到期日 2027-04-20**，到期前需再更換。（2026-10-19）
+
 ### 準確度
 - 修正傳給 Tobii processor 的相機視角：原本傳的是 Camera2 算出的**對角線**視角（凱比為 82.0°），Tobii 預期的是畫面寬度方向的**水平**視角（69.9°）。畫面旋轉 90°／270° 時改傳垂直視角。（`AndroidCameraPlugin.java` 的 `initAndGetCameraParameters`）連帶影響：頭部距離原本約被低估 20%、頭部角度約被高估 25%，修正後與實際距離、機器人馬達角度一致。
 - 修正 Tobii display area 的相機位置：相機在螢幕上緣上方 **10 mm**（實測），原本設定為 15 mm。螢幕顯示區域 154 × 86 mm 與水平置中不變。（`TobiiSample_new.unity` 的 `displayCorner*PosInMeters`：上緣 y −0.010、下緣 y −0.096）
