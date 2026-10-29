@@ -48,6 +48,17 @@ public class PositionGuide : MonoBehaviour
     // True while guiding; gaze selection and drift sampling pause meanwhile.
     public static bool Active { get; private set; }
 
+    // For the V3 pause card, which draws the guide when V3Drawn is set (this one's panel then stays hidden):
+    // the instruction, the arrow (0 none, 1 left, 2 right, 3 closer, 4 back), whether the user is back in
+    // place, the offsets and how far the hold has run (0-1).
+    public static bool V3Drawn;
+    public static string Text { get; private set; } = "";
+    public static int Arrow { get; private set; }
+    public static bool Good { get; private set; }
+    public static float LateralDeg { get; private set; }
+    public static float DistanceCm { get; private set; }
+    public static float HoldFraction { get; private set; }
+
     private enum Direction { None, Left, Right, Closer, Back }
 
     private HeadFollow _head;
@@ -220,6 +231,9 @@ public class PositionGuide : MonoBehaviour
         float distanceCm = _head.DistanceOffset * 100f;
         _lateralScale.Set(lateral);
         _distanceScale.Set(distanceCm);
+        LateralDeg = lateral;
+        DistanceCm = distanceCm;
+        HoldFraction = Mathf.Clamp01(_holdTimer / HoldSeconds);
         float lateralRatio = Mathf.Abs(lateral) / ExitLateralDeg;
         float distanceRatio = Mathf.Abs(distanceCm) / ExitDistanceCm;
 
@@ -270,7 +284,8 @@ public class PositionGuide : MonoBehaviour
         Active = true;
         ButtonTrigger.Paused = true;
         _head.SetHoldAtCalibration(true);
-        _visual.SetActive(true);
+        _visual.SetActive(!V3Drawn);
+        HoldFraction = 0f;
         _startedAt = now;
         _holdTimer = 0f;
         _saidGood = false;
@@ -286,6 +301,8 @@ public class PositionGuide : MonoBehaviour
         _pendingSince = now;
         _lateralScale.Set(lateral);
         _distanceScale.Set(distanceCm);
+        LateralDeg = lateral;
+        DistanceCm = distanceCm;
         Show(direction, TextFor(direction), MoveColor);
         Nuwa.stopTTS();
         Nuwa.startTTS(TitleText + "，" + TextFor(direction));
@@ -326,6 +343,9 @@ public class PositionGuide : MonoBehaviour
 
     private void Show(Direction direction, string text, Color color)
     {
+        Text = text;
+        Arrow = (int)direction;
+        Good = direction == Direction.None && color == GoodColor;
         _instruction.text = UiFactory.WithLatinFallback(text, _font);
         _instruction.color = direction == Direction.None && color == GoodColor ? GoodColor : TextColor;
 

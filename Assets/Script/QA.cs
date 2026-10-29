@@ -14,6 +14,11 @@ public class QA : MonoBehaviour
     public GameObject canvasTrackBoxGO;
     public DetectDistance detectDistance;
     public event Action Completed;
+    // The question now on screen (0-based), raised whenever one is shown; the V3 page draws it.
+    public event Action<int> QuestionShown;
+    public int Current { get; private set; }
+    // Optional: the words spoken for a question (the V3 page's wording); null = the display text.
+    public Func<int, string> SpeechText;
     public Image[] Q4Toggles = new Image[7];
     public Image[] Q6Toggles = new Image[5];
     public Image[] Q7Toggles = new Image[4];
@@ -75,6 +80,9 @@ public class QA : MonoBehaviour
     private const int TOTAL_QUESTIONS = 7;
     private string directoryPath;
     private const string FILE_PREFIX = "health_quiz_";
+    // The file this session's answers went to; going back from the head position page and finishing
+    // again rewrites it rather than leaving a second file.
+    private string savedPath;
 
     // 是非題答案 (Q1, Q2, Q3, Q5)
     private bool?[] boolAnswers = new bool?[TOTAL_QUESTIONS]; // index 0~6 對應 Q1~Q7
@@ -302,7 +310,8 @@ public class QA : MonoBehaviour
         string json = JsonUtility.ToJson(dataToSave, true);
 
         string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        string filePath = Path.Combine(directoryPath, FILE_PREFIX + timestamp + ".json");
+        string filePath = savedPath ?? Path.Combine(directoryPath, FILE_PREFIX + timestamp + ".json");
+        savedPath = filePath;
 
         try
         {
@@ -313,7 +322,16 @@ public class QA : MonoBehaviour
         {
             Debug.LogError("問卷記錄儲存失敗: " + e.Message);
         }
-        ResetAnswers();
+        // 答案留到下一位受測者開始時才清（RestartQuestionnaire），從頭部位置頁按「上一步」回來還看得到
+    }
+
+    /// <summary>
+    /// 從頭部位置頁回到最後一題（答案保留，完成時覆寫同一個檔案）
+    /// </summary>
+    public void ReopenLastQuestion()
+    {
+        questionPage.SetActive(true);
+        ShowQuestion(TOTAL_QUESTIONS - 1);
     }
 
     private static List<string> SelectedOptions(bool[] selections, string[] options)
@@ -345,6 +363,7 @@ public class QA : MonoBehaviour
     /// </summary>
     public void ResetAnswers()
     {
+        savedPath = null;
         boolAnswers = new bool?[TOTAL_QUESTIONS];
         q4Selections = new bool[displayQ4Options.Length];
         q6Selections = new bool[displayQ6Options.Length];
@@ -390,15 +409,43 @@ public class QA : MonoBehaviour
 
     private void ShowQuestion(int index, bool speak = true)
     {
+        Current = index;
         for (int i = 0; i < questions.Length; i++)
             questions[i].SetActive(i == index);
         RefreshGate(index);
         if (speak)
             SpeakQuestion(index);
+        QuestionShown?.Invoke(index);
+    }
+
+    /// <summary>
+    /// 回到上一題（答案保留）；已經在第 1 題時回傳 false，由呼叫端回到首頁
+    /// </summary>
+    public bool PreviousQuestion()
+    {
+        if (Current <= 0)
+            return false;
+        ShowQuestion(Current - 1);
+        return true;
+    }
+
+    // ==================== 給 V3 畫面讀取的作答狀態 ====================
+
+    public bool? BoolAnswer(int index) => IsValidIndex(index) ? boolAnswers[index] : null;
+
+    public bool IsOptionSelected(int index, int option)
+    {
+        switch (index)
+        {
+            case 3: return option >= 0 && option < q4Selections.Length && q4Selections[option];
+            case 5: return option >= 0 && option < q6Selections.Length && q6Selections[option];
+            case 6: return option == q7Selection;
+            default: return false;
+        }
     }
 
     // Q4 與 Q6 是多選、Q7 是單選，三題都不能空白前進。
-    private bool HasSelection(int index)
+    public bool HasSelection(int index)
     {
         switch (index)
         {
@@ -436,7 +483,7 @@ public class QA : MonoBehaviour
         if (index < 0 || index >= displayQuestionTexts.Length)
             return;
         // 換行只是排版用的，句尾的冒號和逗號唸出來會斷得很奇怪，都先去掉。
-        string text = displayQuestionTexts[index].Replace("\n", "").TrimEnd('：', ':', '，', ',', ' ');
+        string text = (SpeechText?.Invoke(index) ?? displayQuestionTexts[index]).Replace("\n", "").TrimEnd('：', ':', '，', ',', ' ');
 
         // 題目本身已經寫了「請勾選」就不用再補一次。
         if ((index == 3 || index == 5) && !text.Contains("勾選"))

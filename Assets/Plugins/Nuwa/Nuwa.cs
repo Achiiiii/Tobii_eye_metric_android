@@ -102,12 +102,40 @@ public static class Nuwa
 #endif
     }
 
+    // Set by the app: the English words for a Chinese line when the app is in English (null = speak as given).
+    public static Func<string, string> English;
+    // Locale handed to the robot's TTS for English lines (NuwaRobotAPI.startTTS(text, locale)).
+    public const string EnglishLocale = "en_US";
+
+    // The last line handed to startTTS (the app estimates from it how long the robot will speak).
+    public static string LastTTS;
+
     public static void startTTS(string tts)
     {
-
+        LastTTS = tts;
         if (onStartTTs != null) onStartTTs();
 
+        string english = English != null ? English(tts) : null;
 #if UNITY_ANDROID && !UNITY_EDITOR
+        if (english != null)
+        {
+            // The plugin only wraps startTTS(text); the robot API it holds also takes a locale.
+            try
+            {
+                using (var robot = androidJavaClass.GetStatic<AndroidJavaObject>("mRobot"))
+                {
+                    if (robot != null)
+                    {
+                        robot.Call("startTTS", english, EnglishLocale);
+                        return;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[TTS] English speech failed, speaking as given: " + e.Message);
+            }
+        }
 		androidJavaClass.CallStatic("startTTS", tts);
 #else
         Debug.Log("Nuwa.startTTS(" + tts + ");");

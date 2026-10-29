@@ -195,9 +195,9 @@ public class DetectDistance : MonoBehaviour
                 break;
             default:
                 if (EyeLevel > 0)
-                    PlayTTS("眼睛比機器人的鏡頭高，請把座椅調低，或把機器人墊高");
+                    PlayTTS("眼睛比凱比的鏡頭高，請把凱比墊高，例如放在書本或盒子上，或把座椅調低");
                 else if (EyeLevel < 0)
-                    PlayTTS("眼睛比機器人的鏡頭低，請把座椅調高，或把機器人放低");
+                    PlayTTS("眼睛比凱比的鏡頭低，請把座椅調高，或把凱比放低");
                 else
                     PlayTTS("很好，請保持不動");
                 break;

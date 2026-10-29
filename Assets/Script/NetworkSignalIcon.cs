@@ -11,9 +11,10 @@ public class NetworkSignalIcon : MonoBehaviour
     private const float TapWindowSeconds = 6f;
     private const int Offline = -1;
     private const int Unknown = -2;
-    private static readonly Color InactiveColor = new Color32(0xBD, 0xBD, 0xBD, 0xFF);
-    private static readonly Color GoodColor = new Color32(0x43, 0xA0, 0x47, 0xFF);
-    private static readonly Color FairColor = new Color32(0xF9, 0xA8, 0x25, 0xFF);
+    // V3: violet bars (the signal is a quiet status glyph, not a traffic light); offline keeps the red cross.
+    private static readonly Color InactiveColor = new Color32(0x6E, 0x56, 0xCF, 0x40);
+    private static readonly Color GoodColor = new Color32(0x6E, 0x56, 0xCF, 0xFF);
+    private static readonly Color FairColor = new Color32(0x6E, 0x56, 0xCF, 0xFF);
     private static readonly Color PoorColor = new Color32(0xE5, 0x39, 0x35, 0xFF);
 
     private Image[] _bars;

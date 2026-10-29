@@ -84,6 +84,12 @@ namespace Tobii
         /// </summary>
         public bool HasFocus { get; private set; }
 
+        // The point on screen now, and how far its focus time has run (0-1), for the V3 calibration target.
+        public static StimulusPoint Current { get; private set; }
+        public float Progress => focusTime > 0f ? 1f - timeToPop / focusTime : 1f;
+        // Set by the V3 pages: the point keeps its collider and timing but draws nothing (the V3 target does).
+        public static bool HideVisual;
+
         // --- PREVIOUS COLLIDER GROWTH STATE (KEPT FOR BACKWARD COMPATIBILITY / HISTORY) ---
         // private Vector3 _gazeColliderStartSize;
         // private Vector3 _gazeColliderEndSize;
@@ -140,6 +146,10 @@ namespace Tobii
             saveScale = stimulusObject.transform.localScale;
             if (stimulusObject.gameObject.scene.name == null) // Is a prefab
                 stimulusObject = Instantiate(stimulusObject, transform);
+            Current = this;
+            if (HideVisual)
+                foreach (var r in GetComponentsInChildren<Renderer>(true))
+                    r.enabled = false;
 
             StartCoroutine(Calibrate());
         }
@@ -191,14 +201,12 @@ namespace Tobii
 
             stimulusCompleteEvent.Invoke();
 
-            if (success == false)
-            {
-                Instantiate(failPrefab, new Vector3(transform.position.x, transform.position.y, transform.position.z - 0.01f), Quaternion.identity);
-            }
-            else
-            {
-                Instantiate(successPrefab, new Vector3(transform.position.x, transform.position.y, transform.position.z - 0.01f), Quaternion.identity);
-            }
+            var effect = Instantiate(success == false ? failPrefab : successPrefab, new Vector3(transform.position.x, transform.position.y, transform.position.z - 0.01f), Quaternion.identity);
+            if (HideVisual && effect != null)
+                foreach (var r in effect.GetComponentsInChildren<Renderer>(true))
+                    r.enabled = false;
+            if (Current == this)
+                Current = null;
             Destroy(gameObject);
         }
 

@@ -41,6 +41,11 @@ public class EyeMetricFlow : MonoBehaviour
 
     private Canvas _flowCanvas;
     private GameObject _modeMenu;
+    private V3Home _home;
+    private V3Flow _v3;
+    private V3Setup _v3Setup;
+    private RectTransform _networkIcon;
+    private HudSlot _exitSlot, _networkSlot;
     private GameObject _recalibrateButton;
     private GameObject _exitDialog;
     private GazeDebugOverlay _debugOverlay;
@@ -57,7 +62,6 @@ public class EyeMetricFlow : MonoBehaviour
     private TextMeshProUGUI _testCountdownTitle;
     private TextMeshProUGUI _testCountdownNumber;
     private AudioSource _sfx;
-    private AudioClip _successClip;
     private Coroutine _headConfirmedRoutine;
     private Coroutine _testCountdownRoutine;
     private volatile bool _robotServiceStarted;
@@ -74,8 +78,6 @@ public class EyeMetricFlow : MonoBehaviour
         Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
         _sfx = gameObject.AddComponent<AudioSource>();
         _sfx.playOnAwake = false;
-        // MetricTest swaps its selection sound for a neutral tick; keep the original chime for successes.
-        _successClip = metricTest.audioSource.clip;
 
         // Flow overlay sits above the main Canvas (0) but below the gaze dot canvas (10); the HUD sits above everything.
         _flowCanvas = UiFactory.CreateOverlayCanvas("FlowOverlay", 5, transform);
@@ -86,11 +88,17 @@ public class EyeMetricFlow : MonoBehaviour
         // Created before the head distance guide, which shows its eye-level notice.
         _headFollow = HeadFollow.Create(transform, gazeCalibrationManager, metricTest, resultPage);
         detectDistance.HeadFollow = _headFollow;
-        HeadDistanceGuide.Create(_flowCanvas.transform, detectDistance, canvasTrackBox, font, _headFollow);
         BuildHeadConfirmed(_flowCanvas.transform);
         BuildGazeIntro(_flowCanvas.transform);
         BuildTestCountdown(_flowCanvas.transform);
-        BuildModeMenu(_flowCanvas.transform);
+        BuildHome();
+        _v3 = V3Flow.Create(transform, _modeMenu);
+        V3Sounds.Install(transform);
+        V3Speech.Install();
+        V3Questionnaire.Create(_v3, qa, GoHome);
+        V3Position.Create(_v3, detectDistance, _headFollow, canvasTrackBox, metricTest, BackToQuestionnaire);
+        _v3Setup = V3Setup.Create(_v3, gazeCalibrationManager, metricTest, mainCanvas, Recalibrate);
+        V3Test.Create(_v3, metricTest, resultPage, GoHome);
         // Above the gaze dot (10), below the HUD (20), so exit and recalibrate stay usable.
         var guideCanvas = UiFactory.CreateOverlayCanvas("GuideOverlay", 15, transform);
         PositionGuide.Create(guideCanvas.transform, font, _headFollow, metricTest);
@@ -99,10 +107,15 @@ public class EyeMetricFlow : MonoBehaviour
         // Focuses the camera on the user's face at each head distance check.
         FaceFocus.Create(transform, detectDistance, _headFollow, FindObjectOfType<AndroidWebcamCaptureClient>());
         BuildHud(hudCanvas.transform);
+        V3Overlays.RestyleHud(exitButton, _networkIcon, _recalibrateButton);
+        V3Overlays.Create(transform, _headFollow);
         BuildHomeButton(resultPage.transform);
 
         GazeVisual.Attach(gazePointer);
         GazeDwellIndicator.Attach(gazePointer.transform);
+
+        _home.ShownChanged += ArrangeHudForHome;
+        _modeMenu.SetActive(true);
     }
 
     private void OnEnable()
@@ -212,33 +225,11 @@ public class EyeMetricFlow : MonoBehaviour
 
     // ==================== Test mode menu ====================
 
-    private void BuildModeMenu(Transform parent)
+    // The V3 home (3D E field, headline, two mode buttons) replaces the old mode menu; _modeMenu is its root.
+    private void BuildHome()
     {
-        var background = UiFactory.CreateImage("ModeMenu", parent, qa.GetComponent<Image>().sprite, Color.white, true);
-        UiFactory.Stretch(background.rectTransform);
-        _modeMenu = background.gameObject;
-
-        var title = UiFactory.CreateText("Title", background.transform, font, "視覺健康量測", 32f, Color.white);
-        UiFactory.Place(title.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(858f, 141f));
-
-        var prompt = UiFactory.CreateText("Prompt", background.transform, font, "請選擇要進行的測驗", 28f, TextDark);
-        UiFactory.Place(prompt.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 150f), new Vector2(700f, 50f));
-
-        CreateModeCard(background.transform, new Vector2(-200f, -20f), "單眼測驗", "右眼、左眼分別檢測", MetricTest.TestMode.Single);
-        CreateModeCard(background.transform, new Vector2(200f, -20f), "雙眼測驗", "兩眼同時檢測", MetricTest.TestMode.Both);
-    }
-
-    private void CreateModeCard(Transform parent, Vector2 position, string title, string description, MetricTest.TestMode mode)
-    {
-        var card = UiFactory.CreateButton(title, parent, UiFactory.RoundedRect, new Color(1f, 1f, 1f, 0.95f), () => SelectMode(mode));
-        ((Image)card.targetGraphic).type = Image.Type.Sliced;
-        UiFactory.Place((RectTransform)card.transform, UiFactory.Center, UiFactory.Center, position, new Vector2(340f, 230f));
-
-        var titleText = UiFactory.CreateText("Title", card.transform, font, title, 40f, Teal);
-        UiFactory.Place(titleText.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 30f), new Vector2(300f, 60f));
-        var descriptionText = UiFactory.CreateText("Description", card.transform, font, description, 22f, DescriptionText);
-        UiFactory.UsePlainMaterial(descriptionText);
-        UiFactory.Place(descriptionText.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -35f), new Vector2(300f, 40f));
+        _home = V3Home.Create(transform, gazePointer, SelectMode);
+        _modeMenu = _home.gameObject;
     }
 
     private void SelectMode(MetricTest.TestMode mode)
@@ -263,7 +254,7 @@ public class EyeMetricFlow : MonoBehaviour
                 _debugOverlay.gameObject.SetActive(false);
                 validation.Run();
             });
-        NetworkSignalIcon.Create(parent, new Vector2(-66f, -20f), 36f, IconBackground, ToggleDebugOverlay);
+        _networkIcon = (RectTransform)NetworkSignalIcon.Create(parent, new Vector2(-66f, -20f), 36f, IconBackground, ToggleDebugOverlay).transform;
 
         var recalibrate = UiFactory.CreateButton("RecalibrateButton", parent, UiFactory.Circle, IconBackground, Recalibrate);
         UiFactory.Place((RectTransform)recalibrate.transform, Vector2.one, Vector2.one, new Vector2(-112f, -20f), new Vector2(36f, 36f));
@@ -273,6 +264,43 @@ public class EyeMetricFlow : MonoBehaviour
         _recalibrateButton.SetActive(false);
 
         BuildExitDialog(parent);
+    }
+
+    // On the V3 home exit keeps its corner and the zh/EN toggle sits left of it (x 800-926), so the
+    // network glyph moves left of the toggle, centred on the chrome row (y 56); elsewhere it goes back.
+    private struct HudSlot
+    {
+        public bool Saved;
+        public Vector2 AnchorMin, AnchorMax, Pivot, Position, Size;
+    }
+
+    private void ArrangeHudForHome(bool home)
+    {
+        MoveHudIcon(_networkIcon, ref _networkSlot, home, 800f - 14f);
+    }
+
+    private static void MoveHudIcon(RectTransform rect, ref HudSlot slot, bool home, float rightEdge)
+    {
+        if (!slot.Saved)
+        {
+            slot = new HudSlot { Saved = true, AnchorMin = rect.anchorMin, AnchorMax = rect.anchorMax, Pivot = rect.pivot, Position = rect.anchoredPosition, Size = rect.sizeDelta };
+        }
+        if (home)
+        {
+            Vector2 size = rect.rect.size;
+            rect.anchorMin = rect.anchorMax = Vector2.one;
+            rect.pivot = new Vector2(1f, 0.5f);
+            rect.sizeDelta = size;
+            rect.anchoredPosition = new Vector2(rightEdge - 1024f, -56f);
+        }
+        else
+        {
+            rect.anchorMin = slot.AnchorMin;
+            rect.anchorMax = slot.AnchorMax;
+            rect.pivot = slot.Pivot;
+            rect.sizeDelta = slot.Size;
+            rect.anchoredPosition = slot.Position;
+        }
     }
 
     private void ToggleDebugOverlay()
@@ -308,24 +336,7 @@ public class EyeMetricFlow : MonoBehaviour
 
     private void BuildExitDialog(Transform parent)
     {
-        var dim = UiFactory.CreateImage("ExitDialog", parent, null, new Color(0f, 0f, 0f, 0.55f), true);
-        UiFactory.Stretch(dim.rectTransform);
-
-        var card = UiFactory.CreateImage("Card", dim.transform, UiFactory.RoundedRect, Color.white);
-        card.type = Image.Type.Sliced;
-        UiFactory.Place(card.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(480f, 250f));
-
-        var title = UiFactory.CreateText("Title", card.transform, font, "確定要回到首頁嗎？", 32f, TextDark);
-        UiFactory.Place(title.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 55f), new Vector2(440f, 50f));
-        var subtitle = UiFactory.CreateText("Subtitle", card.transform, font, "測驗進度將不會保留", 22f, DescriptionText);
-        UiFactory.UsePlainMaterial(subtitle);
-        UiFactory.Place(subtitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 10f), new Vector2(440f, 36f));
-
-        CreateDialogButton(card.transform, new Vector2(-95f, -62f), "取消", CancelGrey, () => _exitDialog.SetActive(false));
-        CreateDialogButton(card.transform, new Vector2(95f, -62f), "確定", Teal, GoHome);
-
-        _exitDialog = dim.gameObject;
-        _exitDialog.SetActive(false);
+        _exitDialog = V3Overlays.ExitDialog(parent, () => _exitDialog.SetActive(false), GoHome);
     }
 
     private void CreateDialogButton(Transform parent, Vector2 position, string text, Color color, UnityEngine.Events.UnityAction onClick)
@@ -360,6 +371,15 @@ public class EyeMetricFlow : MonoBehaviour
         UiFactory.Stretch(label.rectTransform);
     }
 
+    // "上一步" on the head position page: back to the last question, answers kept.
+    private void BackToQuestionnaire()
+    {
+        ResetTestSession();
+        _recalibrateButton.SetActive(false);
+        mainCanvas.SetActive(true);
+        qa.ReopenLastQuestion();
+    }
+
     private void GoHome()
     {
         ResetTestSession();
@@ -374,6 +394,7 @@ public class EyeMetricFlow : MonoBehaviour
     private void ResetTestSession()
     {
         Nuwa.stopTTS();
+        _v3Setup.Clear();
         // A session cut short mid-question must not leave gaze selection held for the next one.
         GazeSelectionGate.Open();
         _headFollow.ReturnHome();
@@ -421,9 +442,9 @@ public class EyeMetricFlow : MonoBehaviour
 
     private IEnumerator HeadConfirmedRoutine()
     {
-        _headConfirmed.SetActive(true);
-        if (_successClip != null)
-            _sfx.PlayOneShot(_successClip);
+        // The V3 position page shows the confirmation in its status line; the old full-screen panel stays hidden.
+        _headConfirmed.SetActive(false);
+        V3Sounds.Play(V3Sounds.Cue.Done);
         PlayTTS("頭部位置確認完成");
 
         for (float t = 0f; t < HeadConfirmedSeconds; t += Time.deltaTime)
@@ -480,7 +501,8 @@ public class EyeMetricFlow : MonoBehaviour
         string title = side == "left" ? "左眼測驗" : side == "both" ? "雙眼測驗" : "右眼測驗";
         _testCountdownTitle.text = title;
         _testCountdown.alpha = 0f;
-        _testCountdown.gameObject.SetActive(true);
+        // V3Setup draws the countdown; this keeps the ticks and the speech
+        _testCountdown.gameObject.SetActive(false);
         PlayTTS(title + "，即將開始");
 
         int shownNumber = -1;
@@ -492,7 +514,7 @@ public class EyeMetricFlow : MonoBehaviour
             {
                 shownNumber = number;
                 _testCountdownNumber.text = number.ToString();
-                _sfx.PlayOneShot(UiSounds.Tick);
+                V3Sounds.Play(number <= 1 ? V3Sounds.Cue.CountLast : V3Sounds.Cue.Count);
             }
 
             float intoSecond = number - remaining;
@@ -506,8 +528,6 @@ public class EyeMetricFlow : MonoBehaviour
     private void OnTestCountdownEnded()
     {
         StopTestCountdown();
-        _testCountdown.gameObject.SetActive(true);
-        _testCountdownRoutine = StartCoroutine(FadeOutTestCountdown());
     }
 
     private IEnumerator FadeOutTestCountdown()
@@ -562,11 +582,28 @@ public class EyeMetricFlow : MonoBehaviour
         HideCalibrationHints();
     }
 
+    // While the calibration dots run, the top-right keys (signal, recalibrate, exit) are hidden: nothing to look
+    // at but the dot. They come back when it ends, fails or the session is reset.
+    private bool _hudHidden, _recalibrateWasOn;
+
+    private void SetHudHidden(bool hidden)
+    {
+        if (hidden == _hudHidden)
+            return;
+        _hudHidden = hidden;
+        if (hidden)
+            _recalibrateWasOn = _recalibrateButton.activeSelf;
+        exitButton.gameObject.SetActive(!hidden);
+        _networkIcon.gameObject.SetActive(!hidden);
+        _recalibrateButton.SetActive(!hidden && _recalibrateWasOn);
+    }
+
     private void OnCalibrationStarted()
     {
+        SetHudHidden(true);
         _stimulusBadge.gameObject.SetActive(false);
         ShowBanner("請保持頭部不動，眼睛依序注視藍色圓點");
-        PlayTTS("眼睛校正開始，請保持頭部不動，依序看著藍色圓點");
+        PlayTTS("眼睛校正開始，請保持頭部不動，依序看著紫色圓點");
     }
 
     private void OnStimulusShown(int index, int count, Vector2 screenPosition)
@@ -583,7 +620,7 @@ public class EyeMetricFlow : MonoBehaviour
         var towardCenter = new Vector2(Mathf.Sign(Screen.width * 0.5f - screenPosition.x), Mathf.Sign(Screen.height * 0.5f - screenPosition.y));
         _stimulusBadge.anchoredPosition = screenPosition / _flowCanvas.scaleFactor + towardCenter * 64f;
         _stimulusBadgeText.text = index.ToString();
-        _stimulusBadge.gameObject.SetActive(true);
+        _stimulusBadge.gameObject.SetActive(false);
     }
 
     private void OnStimulusCleared()
@@ -594,19 +631,24 @@ public class EyeMetricFlow : MonoBehaviour
 
     private void OnCalibrationFailed()
     {
+        SetHudHidden(false);
         _stimulusBadge.gameObject.SetActive(false);
         ShowBanner("校正失敗，請按右上角的按鈕重新校準");
-        PlayTTS("校正失敗，請按右上角的按鈕重新校準");
+        PlayTTS("校正沒有成功，請按重新校正，再看一次圓點");
     }
 
     private void ShowBanner(string text)
     {
         _bannerText.text = text;
-        _banner.SetActive(true);
+        // V3: the calibration page shows its own line at the top
+        _banner.SetActive(false);
     }
 
     private void HideCalibrationHints()
     {
+        // also called when the calibration ends and when the session is reset
+        if (_recalibrateButton != null)
+            SetHudHidden(false);
         _banner.SetActive(false);
         _stimulusBadge.gameObject.SetActive(false);
     }
@@ -637,10 +679,10 @@ public class EyeMetricFlow : MonoBehaviour
         _gazeIntro.SetActive(false);
     }
 
+    // V3Setup shows (and speaks) the gaze practice instead of the red-dot intro.
     private void OnGazeIntroStarted()
     {
-        _gazeIntro.SetActive(true);
-        PlayTTS("這個紅點是您的視線位置，請試著看看四周，準備好後，請注視下方的繼續按鈕");
+        _gazeIntro.SetActive(false);
     }
 
     private void HideGazeIntro()

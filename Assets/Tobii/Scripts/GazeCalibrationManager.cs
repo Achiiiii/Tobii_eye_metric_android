@@ -180,6 +180,10 @@ namespace Tobii
         /// (side: "right" / "left" / "both", countdown seconds) fired before each test round starts.
         /// </summary>
         public event Action<string, float> TestCountdownStarted;
+        /// <summary>
+        /// (side: "right" / "left" / "both") the instructions before a calibration are on screen; NextButton() goes on.
+        /// </summary>
+        public event Action<string> TrialInstructionsShown;
         public event Action TestCountdownEnded;
 
         private float _countDownTime = 5;
@@ -301,6 +305,7 @@ namespace Tobii
             content.text = string.Join("\n", lines);
             string headHint = headPositionConfirmed ? "接下來請保持頭部不動。" : "請保持頭部不動。";
             PlayTTS(headHint + coverHint);
+            TrialInstructionsShown?.Invoke(side);
         }
 
         public void StartCalibration()

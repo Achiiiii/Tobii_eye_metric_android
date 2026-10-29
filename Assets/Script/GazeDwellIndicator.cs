@@ -10,8 +10,11 @@ public class GazeDwellIndicator : MonoBehaviour
     private const float PopSeconds = 0.2f;
     private const float HoldSeconds = 0.3f;
     private const float FadeSeconds = 0.25f;
-    private static readonly Color ProgressColor = new Color32(0x1E, 0x88, 0xE5, 0xFF);
-    private static readonly Color SelectedColor = new Color32(0x64, 0xB5, 0xF6, 0xFF);
+    // V3: a mint arc outside the dial's ticks (r ~31 of the 80 px dial, ~5 px wide) over a faint track, so the
+    // dwell reads clearly while choosing an answer.
+    private static readonly Color ProgressColor = new Color32(0x7C, 0xF2, 0xA8, 0xFF);
+    private static readonly Color SelectedColor = new Color32(0x7C, 0xF2, 0xA8, 0xFF);
+    private static readonly Color TrackColor = new Color32(0x14, 0x14, 0x14, 0x24);
 
     private static GazeDwellIndicator _instance;
 
@@ -32,13 +35,9 @@ public class GazeDwellIndicator : MonoBehaviour
         indicator._group.blocksRaycasts = false;
         indicator._group.interactable = false;
 
-        // Dark halo plus a light track keep the ring readable on white and on coloured backgrounds.
-        var halo = UiFactory.CreateImage("Halo", visual, UiFactory.ThickRing, new Color(0f, 0f, 0f, 0.35f));
-        UiFactory.Place(halo.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * (RingSize + 8f));
-        var track = UiFactory.CreateImage("Track", visual, UiFactory.ThickRing, new Color(1f, 1f, 1f, 0.75f));
+        var track = UiFactory.CreateImage("Track", visual, V3Setup.RingSprite(46f, 4f), TrackColor);
         UiFactory.Place(track.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * RingSize);
-
-        indicator._fill = UiFactory.CreateImage("Fill", visual, UiFactory.ThickRing, ProgressColor);
+        indicator._fill = UiFactory.CreateImage("Fill", visual, V3Setup.RingSprite(46f, 4f), ProgressColor);
         UiFactory.Place(indicator._fill.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * RingSize);
         indicator._fill.type = Image.Type.Filled;
         indicator._fill.fillMethod = Image.FillMethod.Radial360;

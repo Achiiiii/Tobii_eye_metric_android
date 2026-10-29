@@ -40,14 +40,13 @@ public class HeadFollow : MonoBehaviour
     private const float YawLimitDeg = 30f;
     private const float PitchUpLimitDeg = -14.5f;
     private const float PitchDownLimitDeg = 12f;
-    // How far beyond the head's tilt range the user may sit before the setup is flagged.
-    // The accepted range of EyeElevationDeg: the user's eyes level with the camera, within 5 degrees
-    // (about 4 cm at 45 cm), so the camera looks at the face straight on. It used to be anything the
-    // head could tilt to (+17.5 to -15), and users sat 18-25 degrees above the camera with the head
-    // tilted up to its stop, the camera looking up at the face.
-    private const float EyeLevelToleranceDeg = 5f;
-    public const float EyeLevelHighDeg = EyeLevelToleranceDeg;
-    public const float EyeLevelLowDeg = -EyeLevelToleranceDeg;
+    // The accepted range of EyeElevationDeg: anything the head can tilt to, plus a 3 degree margin
+    // (+17.5 to -15). V2.3.6 asked for the eyes level with the camera (within 5 degrees), but users
+    // could not get there - "look level with Kebbi" meant nothing to them - so V3 accepts the less
+    // straight-on view again rather than blocking the test.
+    private const float EyeLevelMarginDeg = 3f;
+    public const float EyeLevelHighDeg = -PitchUpLimitDeg + EyeLevelMarginDeg;
+    public const float EyeLevelLowDeg = -PitchDownLimitDeg - EyeLevelMarginDeg;
     // The motors ignored moves of 1.4 and 2.5 degrees on the device, so no move is smaller than
     // this (overshooting by at most ExitDeadzone).
     private const float MinMoveDeg = 3f;

@@ -30,3 +30,7 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# local only: design mockups and tool settings (git only syncs the project)
+Design/
+.claude/

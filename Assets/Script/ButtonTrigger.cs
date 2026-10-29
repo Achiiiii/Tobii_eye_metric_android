@@ -17,6 +17,10 @@ public class ButtonTrigger : MonoBehaviour
     private float _dwellTime = 0f;
     private float _exitTime = 0f;
     private readonly float _triggerTime = 1.5f;
+
+    // For drawing: whether the gaze is on the button, and how far its dwell has got (0-1).
+    public bool Gazed => _isEnter;
+    public float Progress => _dwellTime / _triggerTime;
     // Brief gaze jitter outside the button should not throw away dwell progress.
     private readonly float _exitGraceTime = 0.3f;
 

@@ -3,7 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 
 // Diagnostics (tap the network icon 5 times): gaze rate and latency, head follow and drift
-// correction state, and a button for the 9-point accuracy check. The tuning switches used during
+// correction state, a button for the 9-point accuracy check and one for the V3 3D performance test. The tuning switches used during
 // development were removed for release.
 public class GazeDebugOverlay : MonoBehaviour
 {
@@ -19,7 +19,7 @@ public class GazeDebugOverlay : MonoBehaviour
     {
         var panel = UiFactory.CreateImage("GazeDebugOverlay", parent, UiFactory.RoundedRect, new Color(0f, 0f, 0f, 0.72f), true);
         panel.type = Image.Type.Sliced;
-        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 376f));
+        UiFactory.Place(panel.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(12f, -12f), new Vector2(340f, 414f));
 
         var overlay = panel.gameObject.AddComponent<GazeDebugOverlay>();
         overlay._pointer = pointer;

@@ -29,6 +29,9 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
     private GazeFrameWorker _worker;
 
     public MediaCaptureEvent mediaCaptureEvent;
+    // Set while a page shows the camera mirror (V3 head position page): each grey frame (width, height) on the
+    // main thread, for display only - nothing is kept or saved.
+    public static Action<sbyte[], int, int> PreviewSink;
     public UnityEvent<float, float, float> OnInitialized;
     public TMP_Dropdown dropdownCameraSelect;
 
@@ -193,6 +196,7 @@ public class AndroidWebcamCaptureClient : MonoBehaviour
                 // Inference takes 80-110 ms a frame on the robot, so it runs on the worker thread.
                 // The mediaCaptureEvent is no longer raised on Android: its other listener, the
                 // FrameDataPreview debug view, uploads a texture and must stay on the main thread.
+                PreviewSink?.Invoke(rawData, width, height);
                 if (_worker != null)
                     _worker.Submit(rawData, width, height, timestampUs - _firstTimestampUs);
             }

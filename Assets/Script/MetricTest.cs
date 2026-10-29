@@ -43,6 +43,11 @@ public class MetricTest : MonoBehaviour
     private const float OptionPopSeconds = 0.3f;
     private const float OptionPopFromScale = 0.2f;
     public string FirstSide => Mode == TestMode.Both ? "both" : "right";
+    // For the V3 status bar: the level being tested (1-11) and the eye ("both", "right", "left").
+    public int Level => curLevel;
+    public string CurrentSide => Mode == TestMode.Both ? "both" : scoreList.Count == 0 ? "right" : "left";
+    // Raised with the final result: (mode, eye levels in test order, the message shown and spoken).
+    public event Action<TestMode, List<int>, string> ResultShown;
 
     private int curLevel = 5;
     private string answerSide = null;
@@ -335,6 +340,7 @@ public class MetricTest : MonoBehaviour
         string message = GetResultMessage(metric, largeEyeGap);
         resultText.text = message;
         PlayTTS(message);
+        ResultShown?.Invoke(Mode, new List<int>(scoreList), message);
     }
 
     private void ShowBothEyesLayout(bool bothEyes)
@@ -479,7 +485,7 @@ public class MetricTest : MonoBehaviour
             Debug.LogError("測驗分數儲存失敗: " + e.Message);
         }
     }
-    private float GetEyeMetric(int eyeScore)
+    public static float GetEyeMetric(int eyeScore)
     {
         switch (eyeScore)
         {
