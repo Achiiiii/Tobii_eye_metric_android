@@ -1,0 +1,146 @@
+[
+  {
+    "name": "ui_tap",
+    "group": "ui",
+    "seconds": 0.077,
+    "use": "any key pressed"
+  },
+  {
+    "name": "ui_confirm",
+    "group": "ui",
+    "seconds": 0.46,
+    "use": "an answer or option chosen"
+  },
+  {
+    "name": "ui_back",
+    "group": "ui",
+    "seconds": 0.253,
+    "use": "back, previous, cancel"
+  },
+  {
+    "name": "ui_toggle_on",
+    "group": "ui",
+    "seconds": 0.132,
+    "use": "a switch or tick turned on"
+  },
+  {
+    "name": "ui_toggle_off",
+    "group": "ui",
+    "seconds": 0.132,
+    "use": "a switch or tick turned off"
+  },
+  {
+    "name": "ui_dwell_done",
+    "group": "ui",
+    "seconds": 0.62,
+    "use": "a gaze dwell completed"
+  },
+  {
+    "name": "flow_page",
+    "group": "flow",
+    "seconds": 0.23,
+    "use": "a page changes"
+  },
+  {
+    "name": "flow_step",
+    "group": "flow",
+    "seconds": 0.45,
+    "use": "one step further"
+  },
+  {
+    "name": "flow_tick",
+    "group": "flow",
+    "seconds": 0.154,
+    "use": "countdown 3, 2"
+  },
+  {
+    "name": "flow_go",
+    "group": "flow",
+    "seconds": 0.625,
+    "use": "countdown 1 / start"
+  },
+  {
+    "name": "flow_done",
+    "group": "flow",
+    "seconds": 0.93,
+    "use": "a stage completed"
+  },
+  {
+    "name": "state_attention",
+    "group": "state",
+    "seconds": 0.6,
+    "use": "please look / pause (gentle)"
+  },
+  {
+    "name": "state_inrange",
+    "group": "state",
+    "seconds": 0.59,
+    "use": "position right / back in place"
+  },
+  {
+    "name": "state_softfail",
+    "group": "state",
+    "seconds": 0.83,
+    "use": "did not work, try again (warm, not an alarm)"
+  },
+  {
+    "name": "test_dot_show",
+    "group": "test",
+    "seconds": 0.35,
+    "use": "a calibration dot appears"
+  },
+  {
+    "name": "test_dot_done",
+    "group": "test",
+    "seconds": 0.25,
+    "use": "a calibration dot taken"
+  },
+  {
+    "name": "kebbi_hi",
+    "group": "kebbi",
+    "seconds": 0.294,
+    "use": "Kebbi says hello"
+  },
+  {
+    "name": "kebbi_happy",
+    "group": "kebbi",
+    "seconds": 0.352,
+    "use": "a happy moment"
+  },
+  {
+    "name": "kebbi_thinking",
+    "group": "kebbi",
+    "seconds": 0.374,
+    "use": "thinking / waiting"
+  },
+  {
+    "name": "kebbi_curious",
+    "group": "kebbi",
+    "seconds": 0.352,
+    "use": "a question"
+  },
+  {
+    "name": "kebbi_encourage",
+    "group": "kebbi",
+    "seconds": 1.74,
+    "use": "warm encouragement"
+  },
+  {
+    "name": "kebbi_cheer",
+    "group": "kebbi",
+    "seconds": 1.825,
+    "use": "well done (the same for every result)"
+  },
+  {
+    "name": "kebbi_bye",
+    "group": "kebbi",
+    "seconds": 0.448,
+    "use": "goodbye"
+  },
+  {
+    "name": "brand_intro",
+    "group": "brand",
+    "seconds": 2.85,
+    "use": "the app opens"
+  }
+]

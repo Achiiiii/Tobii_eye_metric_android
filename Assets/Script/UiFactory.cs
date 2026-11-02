@@ -15,7 +15,6 @@ public static class UiFactory
     private static Sprite _white;
     private static Sprite _circle;
     private static Sprite _ring;
-    private static Sprite _thickRing;
     private static Sprite _roundedRect;
     private static Sprite _roundedFrame;
     private static Sprite _check;
@@ -24,7 +23,6 @@ public static class UiFactory
     public static Sprite White => _white != null ? _white : (_white = MakeSprite(4, (p, size) => -1f));
     public static Sprite Circle => _circle != null ? _circle : (_circle = MakeSprite(128, CircleDistance));
     public static Sprite Ring => _ring != null ? _ring : (_ring = MakeSprite(128, RingDistance));
-    public static Sprite ThickRing => _thickRing != null ? _thickRing : (_thickRing = MakeSprite(128, (p, size) => RingDistance(p, size, 0.18f)));
     public static Sprite RoundedRect => _roundedRect != null ? _roundedRect : (_roundedRect = MakeSprite(64, RoundedRectDistance, new Vector4(24f, 24f, 24f, 24f)));
     public static Sprite RoundedFrame => _roundedFrame != null ? _roundedFrame : (_roundedFrame = MakeSprite(64, RoundedFrameDistance, new Vector4(24f, 24f, 24f, 24f)));
     public static Sprite Check => _check != null ? _check : (_check = MakeSprite(128, CheckDistance));

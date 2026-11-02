@@ -14,7 +14,7 @@ public static class AndroidBuild
     public static void BuildApk()
     {
         string output = GetArgument("-apkPath")
-            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Eye_Metric_V2.apk");
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "EyeMetric.apk");
 
         EditorUserBuildSettings.buildAppBundle = false;
         var options = new BuildPlayerOptions

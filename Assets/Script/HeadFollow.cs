@@ -72,6 +72,9 @@ public class HeadFollow : MonoBehaviour
     // Shorter than ButtonTrigger's 1 s selection cooldown, so the head is still again before the
     // next answer can start filling.
     private const float PostAnswerWindowSeconds = 0.8f;
+    // On the head position check the user adjusts the seat / Kebbi first; turning the head at once
+    // read as Kebbi not waiting for them. Only after this long does the head start to centre them.
+    private const float UserAdjustSeconds = 8f;
     private const float LogIntervalSeconds = 5f;
 
     public FollowMode Mode { get; set; } = FollowMode.BetweenTrials;
@@ -131,6 +134,7 @@ public class HeadFollow : MonoBehaviour
     private float _nextCommand;
     private float _nextLog;
     private float _answerWindowUntil;
+    private float _engagedAt;
 
     private bool _hasPose;
     private float _lastPoseTime;
@@ -244,6 +248,7 @@ public class HeadFollow : MonoBehaviour
     public void Engage()
     {
         _engaged = true;
+        _engagedAt = Time.unscaledTime;
         _calibrationDepth = 0f;
         _holdAtCalibration = false;
         _catchingUp = false;
@@ -418,6 +423,7 @@ public class HeadFollow : MonoBehaviour
         if (!_robotReady) { reason = "waiting for robot"; return false; }
         if (_holdAtCalibration) { reason = "guiding: facing calibrated position"; return false; }
         if (_calibrating) { reason = "hold: calibrating"; return false; }
+        if (!Calibrated && Time.unscaledTime - _engagedAt < UserAdjustSeconds) { reason = "hold: user adjusting"; return false; }
 
         float sinceFace = Time.unscaledTime - _lastPoseTime;
         if (!_hasPose || sinceFace > PoseStaleSeconds)
@@ -595,9 +601,10 @@ public class HeadFollow : MonoBehaviour
             Debug.Log("[HeadFollow] robot service ready");
     }
 
+    // Leaving the app (home key, another app, the exit key): the head goes back to centre whatever it was doing.
     private void OnApplicationPause(bool paused)
     {
-        if (paused && _engaged)
+        if (paused)
             DriveTo(HomeYawDeg, HomePitchDeg);
     }
 

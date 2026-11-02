@@ -6,10 +6,10 @@ using UnityEngine;
 using UnityEngine.UI;
 
 // V3 test and result pages. The test stays MetricTest's own: same symbol, sizes, rules
-// and gaze-dwell buttons. Only the look changes: a plain page, a status bar (eye, level, 11-step bar), the four
+// and gaze-dwell buttons. Only the look changes: the light box, a status row (eye, level, 11 small lights), the four
 // answer E's bare (same size as the symbol, the ophthalmologist's design) placed 80 px in from the edges, and
 // pressed like keys while looked at.
-// The result is redrawn from MetricTest's ResultShown (values, message) on a V3 panel.
+// The result is redrawn from MetricTest's ResultShown (values, message) as backlit windows, one per value.
 public class V3Test : MonoBehaviour
 {
     // answer E centres on the 1024 x 600 screen (y down)
@@ -24,19 +24,17 @@ public class V3Test : MonoBehaviour
     private Action _goHome;
 
     private GameObject _testView;
-    private Image _tagFill;
     private TextMeshProUGUI _tag, _level;
-    private Image[] _bar = new Image[11];
+    private Image[] _bar = new Image[11], _barRing = new Image[11];
     private RectTransform[] _options;
     private ButtonTrigger[] _optionTriggers;
     private Vector2[] _optionRest;
     private bool _laidOut;
 
     private GameObject _resultView;
-    private V3.PanelParts _panel;
+    private TextMeshProUGUI _resNote;
     private V3.LineParts _line;
     private RectTransform _scores;
-    private TextMeshProUGUI _date;
     private bool _hasResult;
 
     public static V3Test Create(V3Flow flow, MetricTest test, GameObject resultPage, Action goHome)
@@ -82,11 +80,14 @@ public class V3Test : MonoBehaviour
     {
         _testView = V3.Full("TestView", root).gameObject;
         var t = _testView.transform;
-        _tagFill = V3.Box("Tag", t, V3.Violet, 40f, 41f, 96f, 30f);
-        _tag = V3.Text("Text", _tagFill.transform, V3.Zh, "", 18f, Color.white, 0f, 0f, 96f, 30f, TextAlignmentOptions.Center);
-        _level = V3.Text("Level", t, V3.Zh, "", 18f, V3.Ink, 148f, 34f, 84f, 44f, TextAlignmentOptions.Left);
+        // the eye, the level, then eleven small lights (done green, the current one ringed, the rest dark)
+        _tag = V3.Note(t, 40f, 34f, 120f);
+        _level = V3.Text("Level", t, V3.Mono, "", 12f, V3.Ink, 128f, 26f, 110f, 30f, TextAlignmentOptions.Left, 0.12f);
         for (int i = 0; i < 11; i++)
-            _bar[i] = V3.Box("Step", t, V3.A(V3.Ink, 0.12f), 232f + i * 11f, 49f, 8f, 14f);
+        {
+            _barRing[i] = Rounded(V3.Sprite("Ring", t, UiFactory.RoundedRect, V3.Green, 236f + i * 26f - 1.5f, 36.5f, 25f, 9f), 4.5f);
+            _bar[i] = Rounded(V3.Sprite("Light", t, UiFactory.RoundedRect, V3.A(V3.Ink, 0.3f), 236f + i * 26f, 38f, 22f, 6f), 3f);
+        }
         _testView.SetActive(false);
     }
 
@@ -110,6 +111,8 @@ public class V3Test : MonoBehaviour
         bool result = flow && _hasResult && _resultPage.activeInHierarchy;
         if (_resultView.activeSelf != result)
             _resultView.SetActive(result);
+        if (result)
+            _flow.SetProgress(1f);
         if (!_resultPage.activeInHierarchy)
             _hasResult = false;
     }
@@ -119,9 +122,12 @@ public class V3Test : MonoBehaviour
         string side = _test.CurrentSide;
         _tag.text = side == "left" ? V3.T("左眼測驗", "Left eye") : side == "both" ? V3.T("雙眼測驗", "Both eyes") : V3.T("右眼測驗", "Right eye");
         int level = _test.Level;
-        _level.text = V3.T($"第 <size=20>{level}</size> 級", $"Level <size=20>{level}</size>");
+        _level.text = V3.T($"第 <size=22>{level}</size> 級", $"LEVEL <size=22>{level}</size>");
         for (int i = 0; i < 11; i++)
-            _bar[i].color = i + 1 < level ? V3.Mint : i + 1 == level ? V3.Ink : V3.A(V3.Ink, 0.12f);
+        {
+            _bar[i].color = i + 1 < level ? V3.Green : i + 1 == level ? Color.white : new Color32(0x1C, 0x22, 0x2C, 0x4D);
+            _barRing[i].enabled = i + 1 == level;
+        }
 
         if (!_laidOut)
             LayOutOptions();
@@ -160,14 +166,12 @@ public class V3Test : MonoBehaviour
     private void BuildResult(Transform root)
     {
         _resultView = V3.Full("Result", root).gameObject;
+        _resultView.AddComponent<V3PageIn>();
         var t = _resultView.transform;
-        var side = V3.Rect("Side", t, 40f, 132f, 224f, 60f);
-        V3.Text("Label", side, V3.Mono, "COMPLETED", 11f, V3.A(V3.Ink, 0.6f), 0f, 0f, 224f, 14f, TextAlignmentOptions.TopLeft, 0.14f);
-        _date = V3.Text("Date", side, V3.Mono, "", 22f, V3.Text2, 0f, 19f, 224f, 26f);
-        V3.Key(t, "回到首頁", "Home", "home", V3.Mint, 40f, 488f, 224f, false, () => _goHome?.Invoke());
-        _panel = V3.Panel(t, "eye", "視力結果", "Your result", "RESULT");
-        _scores = V3.Rect("Scores", _panel.Root, 29f, 61f, 622f, 170f);
-        _line = V3.KebbiLine(_panel.Root, 37f, 255f, 24f, 500f);
+        _resNote = V3.Note(t, 40f, 100f);
+        _scores = V3.Rect("Scores", t, 0f, 0f, V3.W, V3.H);
+        _line = V3.KebbiLine(t, 40f, 432f, 22f, 600f);
+        V3.Key(t, "回到首頁", "Home", "home", V3.Green, 742f, 470f, 240f, false, () => _goHome?.Invoke());
         _resultView.SetActive(false);
     }
 
@@ -175,42 +179,42 @@ public class V3Test : MonoBehaviour
     {
         _hasResult = true;
         V3Sounds.Play(V3Sounds.Cue.Result);
-        _date.text = DateTime.Now.ToString("yyyy.MM.dd");
-        V3.SetTag(_panel, mode == MetricTest.TestMode.Both ? V3.T("雙眼", "Both eyes") : V3.T("單眼", "One eye"));
+        // the same small celebration for every result
+        KebbiMotion.Allowed = true;
+        KebbiMotion.Play("clap");
+        KebbiLight.Breathe(KebbiLight.Green);
+        bool both = mode == MetricTest.TestMode.Both;
+        _resNote.text = V3.T("視力結果", "Your result") + "  ·  " + (both ? V3.T("雙眼測驗", "both eyes") : V3.T("單眼測驗", "one eye at a time"));
         foreach (Transform child in _scores)
             Destroy(child.gameObject);
-        if (mode == MetricTest.TestMode.Both)
-            ScoreBox(V3.T("雙眼視力", "Both eyes"), levels[0], 0f, 622f);
+        if (both)
+            ScoreCard(V3.T("雙眼視力", "Both eyes"), levels[0], 40f);
         else
         {
-            ScoreBox(V3.T("右眼", "Right eye"), levels[0], 0f, 302f);
-            ScoreBox(V3.T("左眼", "Left eye"), levels.Count > 1 ? levels[1] : levels[0], 320f, 302f);
+            ScoreCard(V3.T("右眼", "Right eye"), levels[0], 40f);
+            ScoreCard(V3.T("左眼", "Left eye"), levels.Count > 1 ? levels[1] : levels[0], 362f);
         }
         V3.SetLine(_line, V3.Lang == 1 && ResultEn.TryGetValue(message, out var en) ? en : message);
-        // the line sits centred in the space under the scores (y 255-404 in the panel)
-        _line.Root.anchoredPosition = new Vector2(37f, -(255f + Mathf.Max(0f, (149f - _line.Root.sizeDelta.y) / 2f)));
     }
 
-    // One score box: eye label, the value in Unbounded 64, the 11-step scale with the level marked.
-    private void ScoreBox(string label, int level, float x, float w)
+    // One value: a backlit window with the eye, the level, the value large and the level as a green light guide.
+    private void ScoreCard(string label, int level, float x)
     {
-        var box = V3.Rect("Score", _scores, x, 0f, w, 170f);
-        V3.Box("Fill", box, new Color32(0xFB, 0xFB, 0xFA, 0xFF), 0f, 0f, w, 170f);
-        V3.Hairline(box, V3.Ink, 0f, 0f, w, 170f);
-        V3.Sprite("Icon", box, V3.Icon("eye"), V3.Ink, 21f, 17f, 24f, 24f);
-        V3.Text("Label", box, V3.Zh, label, 20f, V3.Ink, 53f, 17f, w - 70f, 24f, TextAlignmentOptions.Left);
+        const float y = 136f, w = 300f, h = 270f;
+        V3.Patch(_scores, x, y, w, h);
+        V3.Text("Label", _scores, V3.Zh, label, 24f, V3.Ink, x + 26f, y + 20f, 160f, 32f, TextAlignmentOptions.TopLeft);
+        V3.Text("Level", _scores, V3.Mono, V3.T($"第 {level} 級", $"LEVEL {level}"), 12f, V3.Ink, x + w - 26f - 140f, y + 30f, 140f, 16f, TextAlignmentOptions.TopRight, 0.12f);
         float value = MetricTest.GetEyeMetric(level);
-        V3.Text("Value", box, V3.Head, value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture), 64f, V3.Ink, 21f, 48f, w - 42f, 70f, TextAlignmentOptions.TopLeft);
-        float span = w - 42f - 10f, step = span / 10f;
-        int[] labelled = { 0, 4, 7, 10 };
-        string[] names = { "0.1", "0.5", "1.0", "2.0" };
-        for (int i = 0; i < 11; i++)
-        {
-            bool current = i + 1 == level;
-            V3.Box("Step", box, i + 1 < level ? V3.Violet : current ? V3.Ink : V3.A(V3.Ink, 0.15f), 21f + i * step, current ? 130f : 133f, 10f, current ? 14f : 8f);
-        }
-        for (int j = 0; j < labelled.Length; j++)
-            V3.Text("Tick", box, V3.Mono, names[j], 11f, V3.Text2, 21f + labelled[j] * step - 5f, 147f, 20f, 12f, TextAlignmentOptions.Top);
+        V3.Text("Value", _scores, V3.Num, value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture), 124f, V3.Ink, x + 22f, y + 50f, w - 44f, 150f, TextAlignmentOptions.TopLeft, -0.02f);
+        V3.SetGuide(V3.Guide(_scores, x + 26f, y + 214f, w - 52f, true), (level - 1) / 10f);
+    }
+
+    // RoundedRect sliced so its corners come out at the given radius
+    private static Image Rounded(Image image, float radius)
+    {
+        image.type = Image.Type.Sliced;
+        image.pixelsPerUnitMultiplier = 24f / radius;
+        return image;
     }
 
     // English for MetricTest's result messages (shown when the page is in English; speech stays Chinese).

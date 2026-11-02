@@ -30,14 +30,12 @@ public class V3Questionnaire : MonoBehaviour
             OptsEn = new[] { "Yes, glasses", "Yes, contact lenses", "No", "Ortho-K lens (last night)" } },
     };
 
-    private const float BodyW = 624f, BodyH = 355f;
 
     private QA _qa;
     private V3Flow _flow;
     private Action _goHome;
     private GameObject _page;
-    private V3.SideParts _side;
-    private V3.PanelParts _panel;
+    private TextMeshProUGUI _note, _title;
     private V3.LineParts _line;
     private V3.KeyParts _back, _next;
     private RectTransform _content;
@@ -66,6 +64,7 @@ public class V3Questionnaire : MonoBehaviour
         page._flow = flow;
         page._goHome = goHome;
         page._page = V3.Full("View", root).gameObject;
+        page._page.AddComponent<V3PageIn>();
         page.Build();
         // The scene's question pages keep their buttons wired to QA but are no longer drawn or touched.
         V3Flow.Conceal(qa.questionPage);
@@ -74,17 +73,19 @@ public class V3Questionnaire : MonoBehaviour
         return page;
     }
 
+    // V3.1 layout: a mono note (question number and topic) and the question as a big title on the left, the answers
+    // as backlit windows on the right, Kebbi's line under the title, back and continue along the bottom.
     private void Build()
     {
         var t = _page.transform;
-        _side = V3.Side(t, "Question", 7);
-        _back = V3.Key(t, "上一題", "Back", "arrowL", new Color32(0xED, 0xED, 0xEA, 0xFF), 40f, 0f, 224f, true, OnBack);
-        _next = V3.Key(t, "繼續", "Continue", "arrowR", V3.Mint, 40f, 488f, 224f, false, OnNext);
-        _panel = V3.Panel(t, "list", "", "", "QUESTIONNAIRE");
-        _content = V3.Rect("Content", _panel.Body, 0f, 0f, BodyW, BodyH);
+        _content = V3.Full("Content", t);
         _contentGroup = _content.gameObject.AddComponent<CanvasGroup>();
-        _line = V3.KebbiLine(_content, 8f, 0f, 30f, 480f);
-        _answers = V3.Rect("Answers", _content, 0f, 0f, BodyW, BodyH);
+        _note = V3.Note(_content, 40f, 100f);
+        _title = V3.Title(_content, 40f, 132f, 480f, 120f, 42f);
+        _line = V3.KebbiLine(_content, 40f, 300f, 19f, 360f);
+        _answers = V3.Rect("Answers", _content, 0f, 0f, V3.W, V3.H);
+        _back = V3.Key(t, "上一題", "Back", "arrowL", Color.white, 40f, 470f, 210f, false, OnBack);
+        _next = V3.Key(t, "繼續", "Continue", "arrowR", V3.Green, 772f, 470f, 210f, false, OnNext);
     }
 
     private void Update()
@@ -111,39 +112,39 @@ public class V3Questionnaire : MonoBehaviour
     {
         var q = Questions[index];
         bool yesNo = !(index == 3 || index == 5 || index == 6);
-        _panel.Title.text = V3.T(q.Cat, q.CatEn);
-        V3.SetTag(_panel, yesNo ? V3.T("點一下作答", "Tap to answer") : index == 6 ? V3.T("單選", "Choose one") : V3.T("可複選", "Choose all that apply"));
-        V3.SetNumber(_side, index + 1);
+        string how = yesNo ? V3.T("點一下作答", "Tap to answer") : index == 6 ? V3.T("單選", "Choose one") : V3.T("可複選", "Choose all that apply");
+        _note.text = $"Q{index + 1} / 7  ·  {V3.T(q.Cat, q.CatEn)}" + (yesNo ? "" : "  ·  " + how);
+        // English wraps by itself; Chinese keeps its set line break
+        _title.text = V3.Lang == 1 ? q.WordsEn.Replace('\n', ' ') : q.Words;
+        _title.rectTransform.sizeDelta = new Vector2(yesNo ? 500f : 370f, 120f);
+        // English wraps on its own at a comfortable line height; Chinese keeps its two set lines, closer together
+        _title.lineSpacing = V3.Lang == 1 ? 0f : -14f;
+        _title.fontSizeMax = V3.Lang == 1 ? 36f : 42f;
         _back.Label.text = index == 0 ? V3.T("回首頁", "Home") : V3.T("上一題", "Back");
         _next.Label.text = index == 6 ? V3.T("完成", "Done") : V3.T("繼續", "Continue");
         _next.Root.gameObject.SetActive(!yesNo);
-        // back sits on the bottom line when it is alone, above continue otherwise
-        _back.Root.anchoredPosition = new Vector2(40f, -(yesNo ? 504f : 420f));
 
         foreach (Transform child in _answers)
             Destroy(child.gameObject);
         _cells.Clear();
-        float top;
         if (yesNo)
         {
-            const float h = 124f, gap = 16f, w = (BodyW - gap) / 2f;
-            top = BodyH - h;
-            AddCell(0, V3.T(_qa.displayYesLabels[index], q.OptsEn[0]), 0f, top, w, h, false, true);
-            AddCell(1, V3.T(_qa.displayNoLabels[index], q.OptsEn[1]), w + gap, top, w, h, false, true);
+            AddCell(0, V3.T(_qa.displayYesLabels[index], q.OptsEn[0]), 560f, 132f, 196f, 170f, false, true);
+            AddCell(1, V3.T(_qa.displayNoLabels[index], q.OptsEn[1]), 776f, 132f, 196f, 170f, false, true);
         }
         else
         {
+            // two columns from x 430 between y 120 and 446
             string[] options = index == 3 ? _qa.displayQ4Options : index == 5 ? _qa.displayQ6Options : _qa.displayQ7Options;
             int rows = (options.Length + 1) / 2;
-            float h = options.Length <= 4 ? 66f : 48f, gap = 10f, w = (BodyW - gap) / 2f;
-            top = BodyH - (rows * h + (rows - 1) * gap);
+            const float gap = 14f, w = 262f;
+            float h = Mathf.Min(88f, (326f - (rows - 1) * gap) / rows);
             for (int o = 0; o < options.Length; o++)
-                AddCell(o, V3.T(options[o], o < q.OptsEn.Length ? q.OptsEn[o] : options[o]), (o % 2) * (w + gap), top + (o / 2) * (h + gap), w, h, index == 6, false);
+                AddCell(o, V3.T(options[o], o < q.OptsEn.Length ? q.OptsEn[o] : options[o]), 430f + (o % 2) * (w + 18f), 120f + (o / 2) * (h + gap), w, h, index == 6, false);
         }
 
         FitOptionLabels();
-        V3.SetLine(_line, V3.T(q.Words, q.WordsEn));
-        _line.Root.anchoredPosition = new Vector2(8f, -Mathf.Max(0f, (top - _line.Root.sizeDelta.y) / 2f));
+        V3.SetLine(_line, how);
         Paint(index);
 
         if (animate)
@@ -156,56 +157,61 @@ public class V3Questionnaire : MonoBehaviour
     private void AddCell(int option, string label, float x, float y, float w, float h, bool radio, bool yesNo)
     {
         var c = new Cell { Option = option, Radio = radio, YesNo = yesNo };
-        V3.KeyShadow(_answers, x, y, w, h);
-        c.Button = UiFactory.CreateButton("Answer", _answers, UiFactory.White, Color.white, () => OnCell(c));
+        V3.PatchShadow(_answers, x, y, w, h);
+        c.Button = UiFactory.CreateButton("Answer", _answers, V3.PatchSprite, Color.white, () => OnCell(c));
         c.Button.transition = Selectable.Transition.None;
         var rect = V3.At((RectTransform)c.Button.transform, x, y, w, h);
         c.Bg = (Image)c.Button.targetGraphic;
+        c.Bg.type = Image.Type.Sliced;
         c.Rest = rect.anchoredPosition;
         // pressed in: a dark inner edge along the top
         c.Inset = V3.Box("Inset", rect, new Color(10 / 255f, 60 / 255f, 30 / 255f, 0.3f), 1f, 1f, w - 2f, 3f);
         c.Inset.enabled = false;
-        var lineColor = yesNo ? V3.Ink : V3.A(V3.Ink, 0x47 / 255f);
-        c.Lines = new[]
-        {
-            V3.Box("LineT", rect, lineColor, 0f, 0f, w, 1f), V3.Box("LineB", rect, lineColor, 0f, h - 1f, w, 1f),
-            V3.Box("LineL", rect, lineColor, 0f, 0f, 1f, h), V3.Box("LineR", rect, lineColor, w - 1f, 0f, 1f, h)
-        };
+        // chosen: a green rim just outside the window, following its rounded corners
+        var rim = V3.Sprite("Rim", rect, V3.RimSprite, V3.Green, -4f, -4f, w + 8f, h + 8f);
+        rim.type = Image.Type.Sliced;
+        c.Lines = new[] { rim };
         if (yesNo)
         {
-            V3.Brackets(rect, 0f, 0f, w, h, 7f, 1.5f, 4f, false);
-            V3.Text("Label", rect, V3.Zh, label, 46f, V3.Ink, 0f, 0f, w, h, TextAlignmentOptions.Center);
+            V3.Text("Label", rect, V3.Zh, label, 48f, V3.Ink, 0f, 0f, w, h, TextAlignmentOptions.Center);
+            c.Mark = V3.Sprite("Badge", rect, UiFactory.Circle, V3.Green, w - 44f, 14f, 30f, 30f);
+            V3.Sprite("Check", c.Mark.transform, V3.Icon("check"), V3.Ink, 6f, 6f, 18f, 18f);
         }
         else
         {
-            float by = (h - 20f) / 2f;
+            float by = (h - 26f) / 2f;
             if (radio)
             {
-                V3.Sprite("Ring", rect, V3.RingSprite, V3.Ink, 16f, by, 20f, 20f);
-                c.Mark = V3.Sprite("Dot", rect, UiFactory.Circle, V3.Ink, 21f, by + 5f, 10f, 10f);
+                V3.Sprite("Ring", rect, V3.RingSprite, V3.A(V3.Ink, 0.4f), 20f, by, 26f, 26f);
+                c.Box = V3.Sprite("Fill", rect, UiFactory.Circle, V3.Green, 20f, by, 26f, 26f);
+                c.Mark = V3.Sprite("Check", rect, V3.Icon("check"), V3.Ink, 24f, by + 4f, 18f, 18f);
             }
             else
             {
-                V3.Hairline(rect, V3.Ink, 16f, by, 20f, 20f, 1.5f);
-                c.Box = V3.Box("Fill", rect, V3.Ink, 16f, by, 20f, 20f);
-                c.Mark = V3.Sprite("Check", rect, V3.Icon("check"), V3.Mint, 16f, by, 20f, 20f);
+                V3.Hairline(rect, V3.A(V3.Ink, 0.4f), 20f, by, 26f, 26f, 1.5f);
+                c.Box = V3.Box("Fill", rect, V3.Green, 20f, by, 26f, 26f);
+                c.Mark = V3.Sprite("Check", rect, V3.Icon("check"), V3.Ink, 24f, by + 4f, 18f, 18f);
             }
-            c.Label = V3.Text("Label", rect, V3.Zh, label, 21f, V3.Ink, 50f, 0f, w - 60f, h, TextAlignmentOptions.Left);
+            c.Label = V3.Text("Label", rect, V3.Zh, label, 20f, V3.Ink, 58f, 0f, w - 68f, h, TextAlignmentOptions.Left);
+            c.Label.enableWordWrapping = true;
+            c.Label.lineSpacing = -12f;
         }
         _cells.Add(c);
     }
 
+    // One size for every option: as large as lets the longest wrap into two lines (at least 15).
     private void FitOptionLabels()
     {
-        float size = 21f;
+        float size = 20f;
         foreach (var c in _cells)
         {
             if (c.Label == null)
                 continue;
+            c.Label.fontSize = 20f;
             c.Label.ForceMeshUpdate();
-            float room = c.Label.rectTransform.sizeDelta.x;
-            if (c.Label.preferredWidth > room)
-                size = Mathf.Min(size, Mathf.Max(15f, 21f * room / c.Label.preferredWidth));
+            float room = c.Label.rectTransform.sizeDelta.y;
+            if (c.Label.preferredHeight > room)
+                size = Mathf.Min(size, Mathf.Max(15f, 20f * room / c.Label.preferredHeight));
         }
         foreach (var c in _cells)
             if (c.Label != null)
@@ -219,16 +225,14 @@ public class V3Questionnaire : MonoBehaviour
             bool on = c.YesNo
                 ? _qa.BoolAnswer(index) == (c.Option == 0)
                 : _qa.IsOptionSelected(index, c.Option);
-            c.Bg.color = on ? V3.Mint : Color.white;
-            c.Inset.enabled = on;
-            ((RectTransform)c.Button.transform).anchoredPosition = c.Rest + new Vector2(0f, on ? -1f : 0f);
-            if (!c.YesNo)
-                foreach (var line in c.Lines)
-                    line.color = on ? V3.Ink : V3.A(V3.Ink, 0x47 / 255f);
+            c.Inset.enabled = false;
+            ((RectTransform)c.Button.transform).anchoredPosition = c.Rest;
+            foreach (var line in c.Lines)
+                line.enabled = on;
             if (c.Box != null)
                 c.Box.enabled = on;
             if (c.Mark != null)
-                c.Mark.enabled = on;
+                c.Mark.gameObject.SetActive(on);
         }
         bool yesNo = !(index == 3 || index == 5 || index == 6);
         if (!yesNo)
@@ -245,10 +249,14 @@ public class V3Questionnaire : MonoBehaviour
             // show the choice in mint for a moment, then answer (QA moves to the next question)
             _busy = true;
             V3Sounds.Play(V3Sounds.Cue.Select);
+            KebbiMotion.Play("ok");
+            KebbiLight.Flash(KebbiLight.Green);
             foreach (var other in _cells)
             {
-                other.Bg.color = other == c ? V3.Mint : Color.white;
-                other.Inset.enabled = other == c;
+                foreach (var line in other.Lines)
+                    line.enabled = other == c;
+                if (other.Mark != null)
+                    other.Mark.gameObject.SetActive(other == c);
             }
             StartCoroutine(AnswerLater(index, c.Option == 0));
             return;
@@ -273,6 +281,8 @@ public class V3Questionnaire : MonoBehaviour
         int index = _qa.Current;
         if (_busy || !_qa.HasSelection(index))
             return;
+        KebbiMotion.Play("ok");
+        KebbiLight.Flash(KebbiLight.Green);
         if (index == 3) _qa.ConfirmQ4();
         else if (index == 5) _qa.ConfirmQ6();
         else if (index == 6) _qa.ConfirmQ7();
@@ -286,14 +296,14 @@ public class V3Questionnaire : MonoBehaviour
             _goHome?.Invoke();
     }
 
-    // the next card comes in from the right (.35 s, ease out)
+    // the next question rises in (.45 s, ease out)
     private IEnumerator SlideIn()
     {
-        for (float t = 0f; t < 0.35f; t += Time.unscaledDeltaTime)
+        for (float t = 0f; t < 0.45f; t += Time.unscaledDeltaTime)
         {
-            float k = 1f - Mathf.Pow(1f - t / 0.35f, 3f);
+            float k = 1f - Mathf.Pow(1f - t / 0.45f, 3f);
             _contentGroup.alpha = k;
-            _content.anchoredPosition = new Vector2(60f * (1f - k), 0f);
+            _content.anchoredPosition = new Vector2(0f, -22f * (1f - k));
             yield return null;
         }
         _contentGroup.alpha = 1f;

@@ -256,8 +256,24 @@ public class QA : MonoBehaviour
         }
         else
         {
-            ShowQuestion(currentIndex + 1);
+            ShowQuestion(NextIndex(currentIndex));
         }
+    }
+
+    // 第 5 題答「否」（沒有做過眼科手術）就跳過第 6 題，第 6 題存成「無」。
+    private bool SkipsSurgeryQuestion => boolAnswers[4] == false;
+
+    private int NextIndex(int currentIndex)
+    {
+        if (currentIndex == 4 && SkipsSurgeryQuestion)
+        {
+            q6Selections = new bool[displayQ6Options.Length];
+            int none = System.Array.IndexOf(displayQ6Options, NoneOption);
+            if (none >= 0)
+                q6Selections[none] = true;
+            return 6;
+        }
+        return currentIndex + 1;
     }
 
     // ==================== 儲存 JSON ====================
@@ -425,7 +441,10 @@ public class QA : MonoBehaviour
     {
         if (Current <= 0)
             return false;
-        ShowQuestion(Current - 1);
+        int previous = Current - 1;
+        if (previous == 5 && SkipsSurgeryQuestion)
+            previous = 4;
+        ShowQuestion(previous);
         return true;
     }
 

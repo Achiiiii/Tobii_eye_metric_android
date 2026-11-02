@@ -10,16 +10,16 @@ public class GazeDwellIndicator : MonoBehaviour
     private const float PopSeconds = 0.2f;
     private const float HoldSeconds = 0.3f;
     private const float FadeSeconds = 0.25f;
-    // V3: a mint arc outside the dial's ticks (r ~31 of the 80 px dial, ~5 px wide) over a faint track, so the
-    // dwell reads clearly while choosing an answer.
-    private static readonly Color ProgressColor = new Color32(0x7C, 0xF2, 0xA8, 0xFF);
-    private static readonly Color SelectedColor = new Color32(0x7C, 0xF2, 0xA8, 0xFF);
-    private static readonly Color TrackColor = new Color32(0x14, 0x14, 0x14, 0x24);
+    // V3.1: the home's light guide outside the dial's ticks - a groove with a bright outer lip, then the green guide
+    // as a soft spill, a body and a pale core.
+    private static readonly Color ProgressColor = new Color32(0x56, 0xCF, 0x9F, 0xFF);
+    private static readonly Color TrackColor = new Color32(0x1C, 0x22, 0x2C, 0x2E);
 
     private static GazeDwellIndicator _instance;
 
     private CanvasGroup _group;
-    private Image _fill;
+    private Image[] _fill;
+    private float _shown;
     private Object _owner;
     private bool _completing;
     private float _completeElapsed;
@@ -35,15 +35,36 @@ public class GazeDwellIndicator : MonoBehaviour
         indicator._group.blocksRaycasts = false;
         indicator._group.interactable = false;
 
-        var track = UiFactory.CreateImage("Track", visual, V3Setup.RingSprite(46f, 4f), TrackColor);
-        UiFactory.Place(track.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * RingSize);
-        indicator._fill = UiFactory.CreateImage("Fill", visual, V3Setup.RingSprite(46f, 4f), ProgressColor);
-        UiFactory.Place(indicator._fill.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * RingSize);
-        indicator._fill.type = Image.Type.Filled;
-        indicator._fill.fillMethod = Image.FillMethod.Radial360;
-        indicator._fill.fillOrigin = (int)Image.Origin360.Top;
-        indicator._fill.fillClockwise = true;
+        Image Ring(string name, float radius, float half, Color color)
+        {
+            var image = UiFactory.CreateImage(name, visual, V3Setup.RingSprite(radius, half), color);
+            UiFactory.Place(image.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * RingSize);
+            return image;
+        }
+        Ring("Lip", 49.5f, 0.5f, new Color(1f, 1f, 1f, 0.9f));
+        Ring("Track", 46f, 3.5f, TrackColor);
+        indicator._fill = new[]
+        {
+            Ring("Spill", 46f, 5.5f, new Color(ProgressColor.r, ProgressColor.g, ProgressColor.b, 0.28f)),
+            V3.Liquid(Ring("Guide", 46f, 3f, ProgressColor), true, -1f, RingSize),
+            Ring("Core", 46f, 0.4f, new Color32(0xE9, 0xFF, 0xF2, 0xBF)),
+        };
+        foreach (var fill in indicator._fill)
+        {
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Radial360;
+            fill.fillOrigin = (int)Image.Origin360.Top;
+            fill.fillClockwise = true;
+        }
 
+        // sparks off the ring's head while the dwell runs (ring radius 46 of the 120-unit sprite)
+        V3Sparks.Attach(visual, () =>
+        {
+            if (indicator._owner == null || indicator._shown <= 0.01f || indicator._shown >= 1f)
+                return null;
+            float r = RingSize * 46f / 120f, a = (90f - indicator._shown * 360f) * Mathf.Deg2Rad;
+            return (new Vector2(RingSize / 2f + r * Mathf.Cos(a), RingSize / 2f - r * Mathf.Sin(a)), new Vector2(Mathf.Sin(a), Mathf.Cos(a)));
+        });
         indicator.Hide();
         _instance = indicator;
     }
@@ -80,8 +101,9 @@ public class GazeDwellIndicator : MonoBehaviour
         _group.gameObject.SetActive(true);
         _group.alpha = 1f;
         _group.transform.localScale = Vector3.one;
-        _fill.color = ProgressColor;
-        _fill.fillAmount = Mathf.Clamp01(progress);
+        _shown = Mathf.Clamp01(progress);
+        foreach (var fill in _fill)
+            fill.fillAmount = _shown;
     }
 
     private void PlayComplete()
@@ -91,8 +113,8 @@ public class GazeDwellIndicator : MonoBehaviour
         _completeElapsed = 0f;
         _group.gameObject.SetActive(true);
         _group.alpha = 1f;
-        _fill.color = SelectedColor;
-        _fill.fillAmount = 1f;
+        foreach (var fill in _fill)
+            fill.fillAmount = 1f;
     }
 
     private void Update()

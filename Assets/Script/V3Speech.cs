@@ -31,6 +31,9 @@ public static class V3Speech
         {
             // home
             { "請選擇要進行的測驗", "Please choose a test." },
+            { "你好！要來測一下視力嗎？請選擇雙眼或單眼檢測。", "Hello! Would you like to check your eyesight? Please choose both eyes or one eye." },
+            // walk-away card (V3Presence)
+            { "還在嗎？要繼續的話，請按繼續。", "Are you still there? To go on, please press Continue." },
             // head position (DetectDistance)
             { "請將頭部距離機器人大約四十公分，臉部與螢幕保持平行。調整到畫面變成綠色後，請保持不動",
               "Please keep your head about forty centimetres from Kebbi, with your face parallel to the screen. When the screen turns green, please hold still." },
@@ -45,7 +48,8 @@ public static class V3Speech
             { "眼睛校正開始，請保持頭部不動，依序看著紫色圓點", "Calibration is starting. Keep your head still and look at each violet dot in turn." },
             { "校正沒有成功，請按重新校正，再看一次圓點", "Calibration did not succeed. Please press Recalibrate and look at the dots again." },
             // practice
-            { "這個圓圈會跟著您的眼睛。請看著紫色的E不動，就能選取。", "This ring follows your eyes. Look at the violet E and hold still to select it." },
+            { "校正好像卡住了，可以重新對準，或回到首頁。", "Calibration seems stuck. You can line up again or go back home." },
+            { "這個圓圈會跟著您的眼睛。請看著標示的E不動，就能選取。", "This ring follows your eyes. Look at the marked E and hold still to select it." },
             { "做得很好！請看著開始測驗的按鈕", "Well done! Now look at the Start test button." },
             // countdown
             { "右眼測驗，即將開始", "Right eye test, starting soon." },

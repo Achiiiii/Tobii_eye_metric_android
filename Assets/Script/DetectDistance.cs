@@ -1,8 +1,5 @@
-using System.Collections;
-using System.Collections.Generic;
 using Tobii;
 using UnityEngine;
-using UnityEngine.UI;
 
 public class DetectDistance : MonoBehaviour
 {
@@ -32,11 +29,6 @@ public class DetectDistance : MonoBehaviour
     public GameObject headGO;
     public GameObject displayGO;
     public GameObject canvasTrackBox;
-    public float moverScale;
-    public AudioSource audioSource;
-    public AudioClip closerAudio;
-    public AudioClip farerAudio;
-    public GameObject pointer;
     public GazeCalibrationManager gazeCalibrationManager;
     public event System.Action HeadPositionConfirmed;
 
@@ -51,14 +43,6 @@ public class DetectDistance : MonoBehaviour
     public int EyeLevel { get; private set; }
     public bool PositionOk => Zone == DistanceZone.InRange && EyeLevel == 0;
 
-    private Color _colorMoverGood;
-    private Color _colorMoverBad;
-    private Color _colorEyeGood;
-    private Color _colorEyeBad;
-
-    private Rect _box;
-    private Image _mover;
-    private Image _colorPanel;
     private float _validateTime;
     private bool _locker = false;
     private bool _zoneKnown = false;
@@ -69,14 +53,6 @@ public class DetectDistance : MonoBehaviour
     private int _pendingEyeLevel;
     private float _eyeLevelSince;
 
-    void Start()
-    {
-        var box = canvasTrackBox.transform.Find("ImageBox");
-        _mover = box.Find("PanelMover").GetComponent<Image>();
-        _colorPanel = box.Find("ImagePanel").GetComponent<Image>();
-        _colorMoverGood = new Color32(0x3F, 0xA9, 0x6B, 255);
-        _colorMoverBad = new Color32(0xE0, 0x70, 0x48, 255);
-    }
     void Update()
     {
         if (!_locker)
@@ -85,7 +61,6 @@ public class DetectDistance : MonoBehaviour
         float headZ = headGO.transform.position.z;
         float displayZ = displayGO.transform.position.z;
 
-        moverScale = PositionMover(headZ, displayZ);
         DistanceMeters = Mathf.Abs(headZ - displayZ);
 
         var rawZone = DistanceMeters > MaxDistanceMeters ? DistanceZone.TooFar
@@ -94,7 +69,6 @@ public class DetectDistance : MonoBehaviour
         int rawEyeLevel = HeadFollow != null ? HeadFollow.EyeLevelMismatch : 0;
         UpdateZone(rawZone);
         UpdateEyeLevel(rawEyeLevel);
-        _colorPanel.color = PositionOk ? _colorMoverGood : _colorMoverBad;
 
         if (rawZone == DistanceZone.InRange && rawEyeLevel == 0 && EyeLevel == 0) _validateTime += Time.deltaTime;
         else _validateTime = 0;
@@ -203,23 +177,6 @@ public class DetectDistance : MonoBehaviour
                 break;
         }
         _nextSpeechTime = Time.time + MinSpeechGapSeconds;
-    }
-
-    private void AudioPlay(AudioClip clip)
-    {
-        audioSource.Stop();
-        audioSource.clip = clip;
-        audioSource.Play();
-    }
-    private float PositionMover(float z1, float z2)
-    {
-
-        var scale = 1 - Mathf.Abs(z1 - z2);
-
-        // Set the scale.
-        _mover.rectTransform.localScale = Vector3.one * Mathf.Lerp(0.5f, 1f, scale);
-
-        return scale;
     }
 
     private void PlayTTS(string text)

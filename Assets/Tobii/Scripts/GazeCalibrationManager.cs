@@ -150,13 +150,6 @@ namespace Tobii
         private GameObject[] hideTheseDuringCalibration;
 
 
-        /// <summary>
-        /// Get <see cref="TrackBoxGuide"/> instance. This is assigned
-        /// in Awake(), so call earliest in Start().
-        /// </summary>
-        public AudioSource audioSource;
-        public AudioClip questionAudio;
-
         [SerializeField] private GameObject pointer;
         [SerializeField] private TMPro.TMP_Text content;
         [SerializeField] private GameObject blackTestBtn;
@@ -308,6 +301,16 @@ namespace Tobii
             TrialInstructionsShown?.Invoke(side);
         }
 
+        /// <summary>
+        /// Runs the calibration dots again after a failure, without going back to the head position check.
+        /// </summary>
+        public void RetryCalibration()
+        {
+            if (_isCalibrating)
+                return;
+            StartCalibration();
+        }
+
         public void StartCalibration()
         {
             if (_isCalibrating)
@@ -446,10 +449,6 @@ namespace Tobii
             }
 
             yield return CountdownAndStartTest();
-            // blackTestBtn.SetActive(true);
-            // colorTestBtn.SetActive(true);
-            // content.text = "請問您今天想進行哪一種眼動測試呢？\n（凝視選項3秒）";
-            // AudioPlay(questionAudio);
         }
 
         private IEnumerator CountdownAndStartTest()
@@ -517,13 +516,6 @@ namespace Tobii
         {
             float angle = Mathf.Atan2(offset.y, offset.x) * Mathf.Rad2Deg;
             return Mathf.Repeat(135f - angle, 360f);
-        }
-
-        private void AudioPlay(AudioClip clip)
-        {
-            audioSource.Stop();
-            audioSource.clip = clip;
-            audioSource.Play();
         }
 
         /// <summary>

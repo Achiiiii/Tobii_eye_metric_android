@@ -4,8 +4,8 @@ using Tobii;
 using UnityEngine;
 using UnityEngine.UI;
 
-// App-level flow: test mode menu, recalibration, back-to-home, stage transitions, calibration hints,
-// gaze intro, the top-right HUD and the robot's system alert bar.
+// App-level flow: test mode menu, recalibration, back-to-home, stage transitions (with their speech and sounds),
+// the top-right HUD and the robot's system alert bar. The V3 pages draw every screen.
 public class EyeMetricFlow : MonoBehaviour
 {
     [SerializeField] private QA qa;
@@ -20,26 +20,11 @@ public class EyeMetricFlow : MonoBehaviour
     [SerializeField] private TMP_FontAsset font;
 
     private const float HeadConfirmedSeconds = 1.8f;
-    private const float CountdownFadeSeconds = 0.25f;
     private const float PerfLogSeconds = 5f;
 
-    // The Chinese SDF atlas has no digits, so counts inside Chinese sentences use Chinese numerals.
-    private static readonly string[] ChineseNumerals = { "", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十" };
-    private static readonly Color TextDark = new Color32(0x1F, 0x3A, 0x5F, 0xFF);
-    // Descriptions used to be dark grey on the outlined font material and were hard to read.
-    private static readonly Color DescriptionText = new Color32(0x1A, 0x1A, 0x1A, 0xFF);
-    private static readonly Color Teal = new Color32(0x12, 0xA1, 0x93, 0xFF);
-    // The numbered tag beside each calibration dot: amber so it cannot be mistaken for the
-    // blue stimulus it labels, nor for the red gaze dot.
-    private static readonly Color BadgeFill = new Color32(0xF5, 0xA6, 0x23, 0xFF);
-    private static readonly Color BadgeEdge = new Color32(0x8A, 0x55, 0x00, 0xFF);
-    private static readonly Color BadgeText = new Color32(0x2A, 0x1A, 0x00, 0xFF);
-    private static readonly Color SuccessGreen = new Color32(0x2E, 0x9E, 0x5A, 0xFF);
-    private static readonly Color CancelGrey = new Color32(0x90, 0xA4, 0xAE, 0xFF);
     private static readonly Color IconBackground = new Color32(0xED, 0xED, 0xED, 0xEB);
     private static readonly Color IconGlyph = new Color32(0x8A, 0x8A, 0x8A, 0xFF);
 
-    private Canvas _flowCanvas;
     private GameObject _modeMenu;
     private V3Home _home;
     private V3Flow _v3;
@@ -51,17 +36,6 @@ public class EyeMetricFlow : MonoBehaviour
     private GazeDebugOverlay _debugOverlay;
     private HeadFollow _headFollow;
     private DriftCorrector _driftCorrector;
-    private GameObject _banner;
-    private TextMeshProUGUI _bannerText;
-    private RectTransform _stimulusBadge;
-    private TextMeshProUGUI _stimulusBadgeText;
-    private GameObject _gazeIntro;
-    private GameObject _headConfirmed;
-    private RectTransform _headConfirmedBadge;
-    private CanvasGroup _testCountdown;
-    private TextMeshProUGUI _testCountdownTitle;
-    private TextMeshProUGUI _testCountdownNumber;
-    private AudioSource _sfx;
     private Coroutine _headConfirmedRoutine;
     private Coroutine _testCountdownRoutine;
     private volatile bool _robotServiceStarted;
@@ -76,32 +50,25 @@ public class EyeMetricFlow : MonoBehaviour
         // and made ~3 of every 4 logcat lines. Errors and exceptions keep theirs.
         Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
         Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
-        _sfx = gameObject.AddComponent<AudioSource>();
-        _sfx.playOnAwake = false;
 
-        // Flow overlay sits above the main Canvas (0) but below the gaze dot canvas (10); the HUD sits above everything.
-        _flowCanvas = UiFactory.CreateOverlayCanvas("FlowOverlay", 5, transform);
+        // The HUD sits above everything.
         var hudCanvas = UiFactory.CreateOverlayCanvas("HudOverlay", 20, transform);
 
         QuestionnaireText.Apply(qa, font);
-        BuildCalibrationHints(_flowCanvas.transform);
-        // Created before the head distance guide, which shows its eye-level notice.
         _headFollow = HeadFollow.Create(transform, gazeCalibrationManager, metricTest, resultPage);
         detectDistance.HeadFollow = _headFollow;
-        BuildHeadConfirmed(_flowCanvas.transform);
-        BuildGazeIntro(_flowCanvas.transform);
-        BuildTestCountdown(_flowCanvas.transform);
         BuildHome();
         _v3 = V3Flow.Create(transform, _modeMenu);
         V3Sounds.Install(transform);
+        KebbiMotion.Install(transform);
+        KebbiLight.Install(transform);
         V3Speech.Install();
         V3Questionnaire.Create(_v3, qa, GoHome);
         V3Position.Create(_v3, detectDistance, _headFollow, canvasTrackBox, metricTest, BackToQuestionnaire);
-        _v3Setup = V3Setup.Create(_v3, gazeCalibrationManager, metricTest, mainCanvas, Recalibrate);
+        _v3Setup = V3Setup.Create(_v3, gazeCalibrationManager, metricTest, mainCanvas, Recalibrate, GoHome);
+        V3Presence.Create(transform, _headFollow, _modeMenu, GoHome);
         V3Test.Create(_v3, metricTest, resultPage, GoHome);
-        // Above the gaze dot (10), below the HUD (20), so exit and recalibrate stay usable.
-        var guideCanvas = UiFactory.CreateOverlayCanvas("GuideOverlay", 15, transform);
-        PositionGuide.Create(guideCanvas.transform, font, _headFollow, metricTest);
+        PositionGuide.Create(transform, _headFollow, metricTest);
         _driftCorrector = DriftCorrector.Create(transform, gazePointer, metricTest, _headFollow, gazeCalibrationManager);
         OptionReveal.Create(transform, metricTest, _driftCorrector, _headFollow, gazePointer);
         // Focuses the camera on the user's face at each head distance check.
@@ -109,7 +76,6 @@ public class EyeMetricFlow : MonoBehaviour
         BuildHud(hudCanvas.transform);
         V3Overlays.RestyleHud(exitButton, _networkIcon, _recalibrateButton);
         V3Overlays.Create(transform, _headFollow);
-        BuildHomeButton(resultPage.transform);
 
         GazeVisual.Attach(gazePointer);
         GazeDwellIndicator.Attach(gazePointer.transform);
@@ -123,12 +89,8 @@ public class EyeMetricFlow : MonoBehaviour
         qa.Completed += OnQuestionnaireCompleted;
         detectDistance.HeadPositionConfirmed += OnHeadPositionConfirmed;
         gazeCalibrationManager.CalibrationStarted += OnCalibrationStarted;
-        gazeCalibrationManager.StimulusShown += OnStimulusShown;
-        gazeCalibrationManager.StimulusCleared += OnStimulusCleared;
-        gazeCalibrationManager.CalibrationEnded += HideCalibrationHints;
+        gazeCalibrationManager.CalibrationEnded += OnCalibrationEnded;
         gazeCalibrationManager.CalibrationFailed += OnCalibrationFailed;
-        gazeCalibrationManager.GazeIntroStarted += OnGazeIntroStarted;
-        gazeCalibrationManager.GazeIntroEnded += HideGazeIntro;
         gazeCalibrationManager.TestCountdownStarted += OnTestCountdownStarted;
         gazeCalibrationManager.TestCountdownEnded += OnTestCountdownEnded;
         Nuwa.onWikiServiceStart += OnRobotServiceStart;
@@ -139,12 +101,8 @@ public class EyeMetricFlow : MonoBehaviour
         qa.Completed -= OnQuestionnaireCompleted;
         detectDistance.HeadPositionConfirmed -= OnHeadPositionConfirmed;
         gazeCalibrationManager.CalibrationStarted -= OnCalibrationStarted;
-        gazeCalibrationManager.StimulusShown -= OnStimulusShown;
-        gazeCalibrationManager.StimulusCleared -= OnStimulusCleared;
-        gazeCalibrationManager.CalibrationEnded -= HideCalibrationHints;
+        gazeCalibrationManager.CalibrationEnded -= OnCalibrationEnded;
         gazeCalibrationManager.CalibrationFailed -= OnCalibrationFailed;
-        gazeCalibrationManager.GazeIntroStarted -= OnGazeIntroStarted;
-        gazeCalibrationManager.GazeIntroEnded -= HideGazeIntro;
         gazeCalibrationManager.TestCountdownStarted -= OnTestCountdownStarted;
         gazeCalibrationManager.TestCountdownEnded -= OnTestCountdownEnded;
         Nuwa.onWikiServiceStart -= OnRobotServiceStart;
@@ -155,6 +113,9 @@ public class EyeMetricFlow : MonoBehaviour
         PlayTTS("請選擇要進行的測驗");
         // Speech is voice-only in this app; the robot's own alert bar would cover the test UI.
         NuwaSystemUi.SetSystemAlertsEnabled(false);
+        // the chest and hand lights are the app's while it is in front: a slow violet breath on the home
+        KebbiLight.Take();
+        KebbiLight.Breathe(KebbiLight.Violet);
     }
 
     private void Update()
@@ -235,6 +196,9 @@ public class EyeMetricFlow : MonoBehaviour
     private void SelectMode(MetricTest.TestMode mode)
     {
         metricTest.Mode = mode;
+        // Kebbi points to the chosen side (the both-eyes key is on the person's left, the robot's right)
+        KebbiMotion.Play(mode == MetricTest.TestMode.Both ? "point_right" : "point_left");
+        KebbiLight.Flash(KebbiLight.Green);
         _modeMenu.SetActive(false);
         qa.BeginQuestionnaire();
     }
@@ -276,7 +240,7 @@ public class EyeMetricFlow : MonoBehaviour
 
     private void ArrangeHudForHome(bool home)
     {
-        MoveHudIcon(_networkIcon, ref _networkSlot, home, 800f - 14f);
+        MoveHudIcon(_networkIcon, ref _networkSlot, home, 832f - 12f);
     }
 
     private static void MoveHudIcon(RectTransform rect, ref HudSlot slot, bool home, float rightEdge)
@@ -291,7 +255,7 @@ public class EyeMetricFlow : MonoBehaviour
             rect.anchorMin = rect.anchorMax = Vector2.one;
             rect.pivot = new Vector2(1f, 0.5f);
             rect.sizeDelta = size;
-            rect.anchoredPosition = new Vector2(rightEdge - 1024f, -56f);
+            rect.anchoredPosition = new Vector2(rightEdge - 1024f, -44f);
         }
         else
         {
@@ -313,6 +277,9 @@ public class EyeMetricFlow : MonoBehaviour
         _recalibrateButton.SetActive(true);
         // From the head distance check on, keep the user centred for the camera.
         _headFollow.Engage();
+        // the questionnaire done: a cheer before the head position check
+        KebbiMotion.Play("cheer");
+        V3Sounds.Play(V3Sounds.Cue.Done);
     }
 
     private void Recalibrate()
@@ -331,26 +298,24 @@ public class EyeMetricFlow : MonoBehaviour
         if (_modeMenu.activeSelf)
             ExitApp();
         else
+        {
             _exitDialog.SetActive(true);
+            KebbiMotion.Play("think");
+        }
     }
 
     private void BuildExitDialog(Transform parent)
     {
-        _exitDialog = V3Overlays.ExitDialog(parent, () => _exitDialog.SetActive(false), GoHome);
-    }
-
-    private void CreateDialogButton(Transform parent, Vector2 position, string text, Color color, UnityEngine.Events.UnityAction onClick)
-    {
-        var button = UiFactory.CreateButton(text, parent, UiFactory.RoundedRect, color, onClick);
-        ((Image)button.targetGraphic).type = Image.Type.Sliced;
-        UiFactory.Place((RectTransform)button.transform, UiFactory.Center, UiFactory.Center, position, new Vector2(170f, 60f));
-        var label = UiFactory.CreateText("Label", button.transform, font, text, 28f, Color.white);
-        UiFactory.Stretch(label.rectTransform);
+        _exitDialog = V3Overlays.ExitDialog(parent, () => { _exitDialog.SetActive(false); KebbiMotion.Play("ok"); }, GoHome);
     }
 
     private void ExitApp()
     {
         NuwaSystemUi.SetSystemAlertsEnabled(true);
+        _headFollow.ReturnHome();
+        V3Sounds.Play(V3Sounds.Cue.Bye);
+        KebbiMotion.Stop();
+        KebbiLight.Release();
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false;
 #else
@@ -359,17 +324,6 @@ public class EyeMetricFlow : MonoBehaviour
     }
 
     // ==================== Back to home ====================
-
-    private void BuildHomeButton(Transform parent)
-    {
-        // Touch only: a gaze-dwell button here could be triggered while the user reads the result.
-        // Bottom-right corner sits outside the result art's panels.
-        var button = UiFactory.CreateButton("HomeButton", parent, UiFactory.RoundedRect, Teal, GoHome);
-        ((Image)button.targetGraphic).type = Image.Type.Sliced;
-        UiFactory.Place((RectTransform)button.transform, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-12f, 12f), new Vector2(150f, 56f));
-        var label = UiFactory.CreateText("Label", button.transform, font, "回到首頁", 26f, Color.white);
-        UiFactory.Stretch(label.rectTransform);
-    }
 
     // "上一步" on the head position page: back to the last question, answers kept.
     private void BackToQuestionnaire()
@@ -388,6 +342,8 @@ public class EyeMetricFlow : MonoBehaviour
         mainCanvas.SetActive(true);
         qa.RestartQuestionnaire();
         _modeMenu.SetActive(true);
+        KebbiMotion.Allowed = true;
+        KebbiLight.Breathe(KebbiLight.Violet);
         PlayTTS("請選擇要進行的測驗");
     }
 
@@ -407,56 +363,26 @@ public class EyeMetricFlow : MonoBehaviour
         metricTest.gameObject.SetActive(false);
         resultPage.SetActive(false);
         gazePointer.gameObject.SetActive(false);
-        HideCalibrationHints();
-        HideGazeIntro();
+        if (_recalibrateButton != null)
+            SetHudHidden(false);
     }
 
     // ==================== Head position confirmed ====================
 
-    private void BuildHeadConfirmed(Transform parent)
-    {
-        var panel = UiFactory.CreateImage("HeadConfirmed", parent, null, new Color32(0xEC, 0xF8, 0xF0, 0xFF), true);
-        UiFactory.Stretch(panel.rectTransform);
-
-        var badge = UiFactory.CreateImage("Badge", panel.transform, UiFactory.Circle, SuccessGreen);
-        UiFactory.Place(badge.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 70f), new Vector2(150f, 150f));
-        var check = UiFactory.CreateImage("Check", badge.transform, UiFactory.Check, Color.white);
-        UiFactory.Place(check.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, new Vector2(110f, 110f));
-        _headConfirmedBadge = badge.rectTransform;
-
-        var title = UiFactory.CreateText("Title", panel.transform, font, "頭部位置確認完成", 40f, SuccessGreen);
-        UiFactory.Place(title.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -40f), new Vector2(800f, 60f));
-        var subtitle = UiFactory.CreateText("Subtitle", panel.transform, font, "接下來請保持頭部不動", 28f, DescriptionText);
-        UiFactory.UsePlainMaterial(subtitle);
-        UiFactory.Place(subtitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -95f), new Vector2(800f, 44f));
-
-        _headConfirmed = panel.gameObject;
-        _headConfirmed.SetActive(false);
-    }
-
     private void OnHeadPositionConfirmed()
     {
+        KebbiMotion.Play("clap");
+        KebbiLight.Flash(KebbiLight.Green);
         StopHeadConfirmed();
         _headConfirmedRoutine = StartCoroutine(HeadConfirmedRoutine());
     }
 
+    // The V3 position page shows the confirmation in its status line; after a short pause the first trial begins.
     private IEnumerator HeadConfirmedRoutine()
     {
-        // The V3 position page shows the confirmation in its status line; the old full-screen panel stays hidden.
-        _headConfirmed.SetActive(false);
         V3Sounds.Play(V3Sounds.Cue.Done);
         PlayTTS("頭部位置確認完成");
-
-        for (float t = 0f; t < HeadConfirmedSeconds; t += Time.deltaTime)
-        {
-            float scale = t < 0.18f
-                ? Mathf.Lerp(0.5f, 1.12f, t / 0.18f)
-                : Mathf.Lerp(1.12f, 1f, Mathf.Clamp01((t - 0.18f) / 0.12f));
-            _headConfirmedBadge.localScale = Vector3.one * scale;
-            yield return null;
-        }
-
-        _headConfirmed.SetActive(false);
+        yield return new WaitForSeconds(HeadConfirmedSeconds);
         _headConfirmedRoutine = null;
         gazeCalibrationManager.BeginFirstTrial();
     }
@@ -468,28 +394,11 @@ public class EyeMetricFlow : MonoBehaviour
             StopCoroutine(_headConfirmedRoutine);
             _headConfirmedRoutine = null;
         }
-        _headConfirmed.SetActive(false);
     }
 
     // ==================== Test start countdown ====================
 
-    private void BuildTestCountdown(Transform parent)
-    {
-        var panel = UiFactory.CreateImage("TestCountdown", parent, null, new Color(0.12f, 0.23f, 0.37f, 0.94f), true);
-        UiFactory.Stretch(panel.rectTransform);
-        _testCountdown = panel.gameObject.AddComponent<CanvasGroup>();
-
-        _testCountdownTitle = UiFactory.CreateText("Title", panel.transform, font, "", 48f, Color.white);
-        UiFactory.Place(_testCountdownTitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 115f), new Vector2(800f, 70f));
-        var subtitle = UiFactory.CreateText("Subtitle", panel.transform, font, "即將開始，請注視畫面中央", 28f, new Color(1f, 1f, 1f, 0.85f));
-        UiFactory.Place(subtitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 58f), new Vector2(800f, 44f));
-        // The Chinese SDF atlas has no digits, so the countdown uses TMP's default font.
-        _testCountdownNumber = UiFactory.CreateText("Number", panel.transform, TMP_Settings.defaultFontAsset, "", 120f, Color.white);
-        UiFactory.Place(_testCountdownNumber.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -70f), new Vector2(300f, 160f));
-
-        panel.gameObject.SetActive(false);
-    }
-
+    // V3Setup draws the countdown; this speaks it and ticks each second.
     private void OnTestCountdownStarted(string side, float seconds)
     {
         StopTestCountdown();
@@ -499,27 +408,17 @@ public class EyeMetricFlow : MonoBehaviour
     private IEnumerator TestCountdownRoutine(string side, float seconds)
     {
         string title = side == "left" ? "左眼測驗" : side == "both" ? "雙眼測驗" : "右眼測驗";
-        _testCountdownTitle.text = title;
-        _testCountdown.alpha = 0f;
-        // V3Setup draws the countdown; this keeps the ticks and the speech
-        _testCountdown.gameObject.SetActive(false);
         PlayTTS(title + "，即將開始");
 
         int shownNumber = -1;
         for (float t = 0f; t < seconds; t += Time.deltaTime)
         {
-            float remaining = seconds - t;
-            int number = Mathf.CeilToInt(remaining);
+            int number = Mathf.CeilToInt(seconds - t);
             if (number != shownNumber)
             {
                 shownNumber = number;
-                _testCountdownNumber.text = number.ToString();
                 V3Sounds.Play(number <= 1 ? V3Sounds.Cue.CountLast : V3Sounds.Cue.Count);
             }
-
-            float intoSecond = number - remaining;
-            _testCountdownNumber.transform.localScale = Vector3.one * Mathf.Lerp(1.4f, 1f, Mathf.Clamp01(intoSecond / 0.25f));
-            _testCountdown.alpha = Mathf.Clamp01(t / CountdownFadeSeconds);
             yield return null;
         }
         _testCountdownRoutine = null;
@@ -530,18 +429,6 @@ public class EyeMetricFlow : MonoBehaviour
         StopTestCountdown();
     }
 
-    private IEnumerator FadeOutTestCountdown()
-    {
-        float start = _testCountdown.alpha;
-        for (float t = 0f; t < CountdownFadeSeconds; t += Time.deltaTime)
-        {
-            _testCountdown.alpha = Mathf.Lerp(start, 0f, t / CountdownFadeSeconds);
-            yield return null;
-        }
-        _testCountdown.gameObject.SetActive(false);
-        _testCountdownRoutine = null;
-    }
-
     private void StopTestCountdown()
     {
         if (_testCountdownRoutine != null)
@@ -549,38 +436,9 @@ public class EyeMetricFlow : MonoBehaviour
             StopCoroutine(_testCountdownRoutine);
             _testCountdownRoutine = null;
         }
-        _testCountdown.gameObject.SetActive(false);
     }
 
-    // ==================== Calibration hints ====================
-
-    private void BuildCalibrationHints(Transform parent)
-    {
-        var banner = UiFactory.CreateImage("CalibrationBanner", parent, UiFactory.RoundedRect, new Color(0f, 0f, 0f, 0.62f));
-        banner.type = Image.Type.Sliced;
-        // 600 wide keeps clear of the corner stimuli at 15% / 85% of the screen width.
-        UiFactory.Place(banner.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -16f), new Vector2(600f, 60f));
-        _bannerText = UiFactory.CreateText("Text", banner.transform, font, "", 26f, Color.white);
-        UiFactory.Stretch(_bannerText.rectTransform);
-        _banner = banner.gameObject;
-
-        // A blue circle read as one more calibration dot; a rounded amber tag differs from the
-        // stimuli in both shape and colour.
-        var badge = UiFactory.CreateImage("StimulusBadge", parent, UiFactory.RoundedRect, BadgeFill);
-        badge.type = Image.Type.Sliced;
-        badge.pixelsPerUnitMultiplier = 2f;
-        UiFactory.Place(badge.rectTransform, Vector2.zero, UiFactory.Center, Vector2.zero, new Vector2(54f, 42f));
-        var badgeEdge = UiFactory.CreateImage("Frame", badge.transform, UiFactory.RoundedFrame, BadgeEdge);
-        badgeEdge.type = Image.Type.Sliced;
-        badgeEdge.pixelsPerUnitMultiplier = 2f;
-        UiFactory.Stretch(badgeEdge.rectTransform);
-        _stimulusBadgeText = UiFactory.CreateText("Number", badge.transform, TMP_Settings.defaultFontAsset, "", 28f, BadgeText);
-        _stimulusBadgeText.fontStyle = FontStyles.Bold;
-        UiFactory.Stretch(_stimulusBadgeText.rectTransform);
-        _stimulusBadge = badge.rectTransform;
-
-        HideCalibrationHints();
-    }
+    // ==================== Calibration ====================
 
     // While the calibration dots run, the top-right keys (signal, recalibrate, exit) are hidden: nothing to look
     // at but the dot. They come back when it ends, fails or the session is reset.
@@ -600,99 +458,23 @@ public class EyeMetricFlow : MonoBehaviour
 
     private void OnCalibrationStarted()
     {
+        // from the calibration to the result the arms stay still and the lights steady: nothing on the robot may move
+        // or change while the eyes are measured
+        KebbiMotion.Allowed = false;
+        KebbiLight.Steady(KebbiLight.Violet, 0.5f);
         SetHudHidden(true);
-        _stimulusBadge.gameObject.SetActive(false);
-        ShowBanner("請保持頭部不動，眼睛依序注視藍色圓點");
         PlayTTS("眼睛校正開始，請保持頭部不動，依序看著紫色圓點");
     }
 
-    private void OnStimulusShown(int index, int count, Vector2 screenPosition)
+    private void OnCalibrationEnded()
     {
-        if (count == 1)
-        {
-            _stimulusBadge.gameObject.SetActive(false);
-            ShowBanner("請先注視畫面中央的藍色圓點");
-            return;
-        }
-
-        ShowBanner($"請注視第{ToChinese(index)}個藍色圓點（共{ToChinese(count)}個）");
-        // Put the number on the inner side of the stimulus so it never leaves the screen.
-        var towardCenter = new Vector2(Mathf.Sign(Screen.width * 0.5f - screenPosition.x), Mathf.Sign(Screen.height * 0.5f - screenPosition.y));
-        _stimulusBadge.anchoredPosition = screenPosition / _flowCanvas.scaleFactor + towardCenter * 64f;
-        _stimulusBadgeText.text = index.ToString();
-        _stimulusBadge.gameObject.SetActive(false);
-    }
-
-    private void OnStimulusCleared()
-    {
-        _stimulusBadge.gameObject.SetActive(false);
-        ShowBanner("很好，請保持頭部不動");
+        SetHudHidden(false);
     }
 
     private void OnCalibrationFailed()
     {
         SetHudHidden(false);
-        _stimulusBadge.gameObject.SetActive(false);
-        ShowBanner("校正失敗，請按右上角的按鈕重新校準");
         PlayTTS("校正沒有成功，請按重新校正，再看一次圓點");
-    }
-
-    private void ShowBanner(string text)
-    {
-        _bannerText.text = text;
-        // V3: the calibration page shows its own line at the top
-        _banner.SetActive(false);
-    }
-
-    private void HideCalibrationHints()
-    {
-        // also called when the calibration ends and when the session is reset
-        if (_recalibrateButton != null)
-            SetHudHidden(false);
-        _banner.SetActive(false);
-        _stimulusBadge.gameObject.SetActive(false);
-    }
-
-    // ==================== Gaze intro ====================
-
-    private void BuildGazeIntro(Transform parent)
-    {
-        var panel = UiFactory.CreateImage("GazeIntro", parent, null, new Color32(0xEA, 0xF4, 0xFA, 0xFF), true);
-        UiFactory.Stretch(panel.rectTransform);
-
-        var title = UiFactory.CreateText("Title", panel.transform, font, "這個紅點是您的視線位置", 40f, TextDark);
-        UiFactory.Place(title.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 150f), new Vector2(800f, 60f));
-        var subtitle = UiFactory.CreateText("Subtitle", panel.transform, font, "請試著看看四周，準備好後請注視下方的繼續按鈕", 26f, DescriptionText);
-        UiFactory.UsePlainMaterial(subtitle);
-        UiFactory.Place(subtitle.rectTransform, UiFactory.Center, UiFactory.Center, new Vector2(0f, 96f), new Vector2(900f, 44f));
-
-        // Centred on purpose: the test's direction buttons cover the screen edges, so the gaze
-        // resting here when the test starts cannot begin dwelling on one of them.
-        var button = UiFactory.CreateButton("ContinueButton", panel.transform, UiFactory.RoundedRect, Teal, gazeCalibrationManager.ConfirmGazeIntro);
-        ((Image)button.targetGraphic).type = Image.Type.Sliced;
-        UiFactory.Place((RectTransform)button.transform, UiFactory.Center, UiFactory.Center, new Vector2(0f, -40f), new Vector2(220f, 90f));
-        var label = UiFactory.CreateText("Label", button.transform, font, "繼續", 40f, Color.white);
-        UiFactory.Stretch(label.rectTransform);
-        button.gameObject.AddComponent<ButtonTrigger>();
-
-        _gazeIntro = panel.gameObject;
-        _gazeIntro.SetActive(false);
-    }
-
-    // V3Setup shows (and speaks) the gaze practice instead of the red-dot intro.
-    private void OnGazeIntroStarted()
-    {
-        _gazeIntro.SetActive(false);
-    }
-
-    private void HideGazeIntro()
-    {
-        _gazeIntro.SetActive(false);
-    }
-
-    private static string ToChinese(int value)
-    {
-        return value > 0 && value < ChineseNumerals.Length ? ChineseNumerals[value] : value.ToString();
     }
 
     private static void PlayTTS(string text)
