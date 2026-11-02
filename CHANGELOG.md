@@ -41,7 +41,8 @@ V3 介面的第二版（「燈箱上的精密儀器」），加上凱比的手�
   - **校正、練習、倒數與測驗期間不做任何動作**（`KebbiMotion.Allowed = false`）。
   - 首頁左上 app 名稱連點三下：即時顯示 8 個手臂馬達的角度並寫入 log（`[KebbiMotion] readout`），凱比不會主動動手，用來量測新的姿勢；再連點三下結束。
 - `KebbiLight`：胸前與雙手的燈。平常紫色呼吸燈；校正、測驗時固定紫色；完成時綠色閃兩下；校正失敗時柔和的紅色閃。離開 app 時交還系統燈光。
-- `KebbiSound`：24 個新音效（D 大調五聲音階合成，48 kHz，由 `Tools~/gen_sounds.py` 產生），科技感但可愛；凱比說話時音效自動降低。`V3Sounds.cs` 改為把 app 的提示對應到音效庫的名稱。
+- `KebbiSound`：24 個新音效（D 大調五聲音階合成，48 kHz，由 `Tools~/gen_sounds.py` 產生），科技感但可愛；凱比說話時音效自動降低。`V3Sounds.cs` 改為把 app 的提示對應到音效庫的名稱。`KebbiSound.Speaking` 提供「凱比正在說話」的狀態。
+- 凱比對話旁的紫色語音波形（問卷等頁、首頁打招呼）只在凱比說話時跳動，沒說話時收成靜止的短條（`V3Wave`）。
 
 ### 程式與素材
 - 新增 shader：`Metal`、`Sunburst`、`Blur`、`LensText`、`Tube`、`Liquid`、`Shadow`；新增字型 Archivo Condensed Black（wdth 75、wght 900 的靜態版）與 Barlow Condensed ExtraBold（皆 OFL）。

@@ -54,6 +54,9 @@ public class KebbiSound : MonoBehaviour
         source.PlayOneShot(clip, volume * Volume);
     }
 
+    // True while Kebbi is speaking (from the speech start to its end, or the length-based estimate).
+    public static bool Speaking => s_instance != null && Time.unscaledTime < s_instance._speakingUntil;
+
     public static AudioClip Clip(string name)
     {
         if (s_clips.TryGetValue(name, out var clip))

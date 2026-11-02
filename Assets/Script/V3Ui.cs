@@ -813,13 +813,16 @@ public class V3Slosh : MonoBehaviour
 public class V3Wave : MonoBehaviour
 {
     public RectTransform[] Bars;
+    // 1 while Kebbi speaks, easing to 0 (short still bars) when it stops
+    private float _level;
 
     private void Update()
     {
+        _level = Mathf.MoveTowards(_level, KebbiSound.Speaking ? 1f : 0f, Time.unscaledDeltaTime * 4f);
         for (int i = 0; i < Bars.Length; i++)
         {
             float k = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6.3f + i * 1.6f);
-            float h = Mathf.Lerp(4f, 18f, k);
+            float h = Mathf.Lerp(4f, Mathf.Lerp(4f, 18f, k), _level);
             Bars[i].sizeDelta = new Vector2(3f, h);
             Bars[i].anchoredPosition = new Vector2(Bars[i].anchoredPosition.x, -(12f - h / 2f));
         }
