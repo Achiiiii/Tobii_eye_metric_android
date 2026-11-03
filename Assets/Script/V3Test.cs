@@ -170,7 +170,7 @@ public class V3Test : MonoBehaviour
         var t = _resultView.transform;
         _resNote = V3.Note(t, 40f, 100f);
         _scores = V3.Rect("Scores", t, 0f, 0f, V3.W, V3.H);
-        _line = V3.KebbiLine(t, 40f, 432f, 22f, 600f);
+        _line = V3.KebbiLine(t, 40f, 432f, 24f, 600f);
         V3.Key(t, "回到首頁", "Home", "home", V3.Green, 742f, 470f, 240f, false, () => _goHome?.Invoke());
         _resultView.SetActive(false);
     }

@@ -41,7 +41,9 @@ public class V3Home : MonoBehaviour
     private GameObject _world;
     private Camera _cam;
     private Transform _holder, _eTransform;
-    private readonly RectTransform[] _eShadows = new RectTransform[2];
+    private readonly RectTransform[] _eShadows = new RectTransform[3];
+    // the light that comes through the frosted E onto the light box, just below it (inside its shadow)
+    private Image _eLight;
     private RenderTexture _rt;
     private RawImage _view;
 
@@ -103,6 +105,21 @@ public class V3Home : MonoBehaviour
     // leaving: the guide running round the outer bezel, the rings' lock click, the E's gap steered to the centre
     private Image _lockArc;
     private Transform _eMesh;
+    // the E in milky frosted glass (V3/Frost): the green of the light inside it, and how heavily it is frosted
+    private static readonly Color FrostLight = new Color32(0x7E, 0xF0, 0xBE, 0xFF);
+    private const float FrostAmount = 0.5f;
+    private Material _frostFace, _frostEdge;
+    // the callout from the E to the caption: a marker on the E's side facing the caption, a slanted leg and a level run
+    // to the caption's code line; the marker follows the E (its turn, size and lean)
+    private static readonly Vector3[] CalloutSides = { new Vector3(0.53f, 0.05f, 0f), new Vector3(-0.53f, 0.05f, 0f), new Vector3(0f, 0.05f, 0.53f), new Vector3(0f, 0.05f, -0.53f) };
+    private const float CalloutY = 379f, CalloutEnd = 781f;
+    private RectTransform _calloutMark, _calloutLeg, _calloutRun;
+    // the framing marks: an L at each corner of the E's square, a little outside it, turning and leaning with it
+    private static readonly Vector3[] BracketCorners = { new Vector3(-0.58f, 0.05f, 0.58f), new Vector3(0.58f, 0.05f, 0.58f), new Vector3(0.58f, 0.05f, -0.58f), new Vector3(-0.58f, 0.05f, -0.58f) };
+    private const float BracketArm = 20f;
+    private readonly RectTransform[] _brackets = new RectTransform[8];
+    private Vector2 _calloutAt;
+    private bool _calloutSet;
     private float _lockT0 = -100f, _gapSteer;
     private bool _sweepDone;
     private CanvasGroup _talk;
@@ -244,26 +261,37 @@ public class V3Home : MonoBehaviour
         _eTransform = new GameObject("Turn").transform;
         _eTransform.SetParent(_holder, false);
         _eTransform.gameObject.layer = WorldLayer;
-        // a machined block, different from the brushed bezels: the faces steel with a sunburst finish (brushed outward
-        // from the centre), the wide chamfers and walls polished steel - bright where they face the light
-        var face = new Material(LoadShader("Sunburst"));
-        face.SetColor("_Tint", new Color(0.64f, 0.67f, 0.71f, 1f));
-        face.SetFloat("_Streak", 0.35f);
-        var edge = V3Bezel.Steel(0f);
-        edge.SetFloat("_Marks", 0f);
-        edge.SetFloat("_Blur", 0.06f);
-        edge.SetFloat("_Aniso", 0.05f);
-        var e = AddMesh("E", _eTransform, BuildEMesh(), face);
-        e.sharedMaterials = new[] { face, edge };
+        // a block of milky frosted glass with polished edges (V3/Frost; the headline's blurred coverage, which it shows
+        // through, is set once the headline is typeset)
+        _frostFace = new Material(LoadShader("Frost"));
+        _frostEdge = new Material(LoadShader("Frost"));
+        _frostEdge.SetFloat("_Edge", 1f);
+        foreach (var m in new[] { _frostFace, _frostEdge })
+        {
+            m.SetTexture("_Glow", BlurredE(12f).texture);
+            m.SetColor("_Light", FrostLight);
+            m.SetFloat("_Frost", FrostAmount);
+            m.SetFloat("_HeadY", HeadY);
+            m.SetFloat("_HeadH", HeadBoxH);
+            m.SetVector("_Ink", new Vector4(0x3A / 255f, 0x3D / 255f, 0x43 / 255f, 1f));
+        }
+        var e = AddMesh("E", _eTransform, BuildEMesh(), _frostFace);
+        e.sharedMaterials = new[] { _frostFace, _frostEdge };
         _eMesh = e.transform;
         // a light rim round the E with a touch of the green, just behind it (hidden where the E is in front), as if lit
-        // from behind
+        // from behind, and a wide green glow spilling onto the light box
         var rimMat = new Material(LoadShader("Shadow")) { mainTexture = BlurredE(0.7f).texture };
-        rimMat.SetColor("_Color", new Color(0.66f, 0.95f, 0.78f, 0.9f));
+        rimMat.SetColor("_Color", new Color(0.74f, 0.98f, 0.86f, 0.7f));
         var rim = AddMesh("Rim", _eTransform, Quad(), rimMat);
         rim.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         rim.transform.localPosition = new Vector3(0f, 0f, 0.12f);
         rim.transform.localScale = Vector3.one * 1.24f * 1.06f;
+        var haloMat = new Material(LoadShader("Shadow")) { mainTexture = BlurredE(6f).texture };
+        haloMat.SetColor("_Color", V3.A(V3.Green, 0.16f));
+        var halo = AddMesh("Halo", _eTransform, Quad(), haloMat);
+        halo.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        halo.transform.localPosition = new Vector3(0f, 0f, 0.3f);
+        halo.transform.localScale = Vector3.one * 1.24f * 1.7f;
         e.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         e.receiveShadows = false;
         // the mesh lies flat (thickness along y): stand it up facing the camera
@@ -488,7 +516,8 @@ public class V3Home : MonoBehaviour
             _shadows.Add((ring, alpha));
         }
         int n = 0;
-        foreach (var (blur, alpha, down) in new (float, float, float)[] { (1.8f, 0.16f, 4f), (0.45f, 0.42f, 1.5f) })
+        // the frosted E sits close on the light box: a soft shadow and a tight, crisp one where it touches
+        foreach (var (blur, alpha, down) in new (float, float, float)[] { (1.6f, 0.1f, 5f), (0.3f, 0.26f, 1.2f) })
         {
             var e = UiFactory.CreateImage("EShadow", layer, BlurredE(blur), Color.white);
             e.raycastTarget = false;
@@ -496,6 +525,10 @@ public class V3Home : MonoBehaviour
             _shadows.Add((e, alpha));
             _eShadows[n++] = e.rectTransform;
         }
+        _eLight = UiFactory.CreateImage("ELight", layer, BlurredE(1.2f), Color.clear);
+        _eLight.raycastTarget = false;
+        UiFactory.Place(_eLight.rectTransform, new Vector2(0f, 1f), UiFactory.Center, new Vector2(CX + 1.5f, -(CY + 7f)), Vector2.zero);
+        _eShadows[n] = _eLight.rectTransform;
         SetShadows(0f);
     }
 
@@ -850,6 +883,9 @@ public class V3Home : MonoBehaviour
         _lens.SetTexture("_Tex3", _headTex[3]);
         _lens.SetVector("_Px", new Vector4(1f / w, 1f / h, 0f, 0f));
         _lens.SetColor("_Face", HeadInk);
+        // the frosted E shows the headline behind it from the most blurred level
+        foreach (var m in new[] { _frostFace, _frostEdge })
+            m.SetTexture("_Head", _headTex[3]);
     }
 
     // Each letter seen through the lens: soft away from the focus point. The focus racks slowly along the word,
@@ -981,6 +1017,78 @@ public class V3Home : MonoBehaviour
         caption.enableAutoSizing = true;
         caption.fontSizeMin = 12f;
         caption.fontSizeMax = 17f;
+
+        // the callout's lines (placed each frame by UpdateCallout) and its marker: an ink dot on a white disc
+        _calloutLeg = CalloutLine("CalloutLeg");
+        _calloutRun = CalloutLine("CalloutRun");
+        _calloutMark = UiFactory.CreateRect("CalloutMark", _chromeGroup.transform);
+        V3.At(_calloutMark, 0f, 0f, 0f, 0f);
+        At(UiFactory.CreateImage("Disc", _calloutMark, UiFactory.Circle, new Color(1f, 1f, 1f, 0.92f)), 0f, 0f, 13f, 13f);
+        At(UiFactory.CreateImage("Ring", _calloutMark, ArcSprite(6f, 0.6f, 0f, 360f), V3.A(V3.Ink, 0.35f)), 0f, 0f, 28f, 28f);
+        At(UiFactory.CreateImage("Dot", _calloutMark, UiFactory.Circle, V3.A(V3.Ink, 0.8f)), 0f, 0f, 5f, 5f);
+        for (int i = 0; i < _brackets.Length; i++)
+        {
+            _brackets[i] = CalloutLine("Bracket");
+            _brackets[i].GetComponent<Image>().color = V3.A(V3.Ink, 0.85f);
+        }
+    }
+
+    // a hairline from its left end, laid along its length by SetCalloutLine
+    private RectTransform CalloutLine(string name)
+    {
+        var rect = UiFactory.CreateImage(name, _chromeGroup.transform, UiFactory.White, V3.A(V3.Ink, 0.4f)).rectTransform;
+        rect.anchorMin = rect.anchorMax = new Vector2(0f, 1f);
+        rect.pivot = new Vector2(0f, 0.5f);
+        return rect;
+    }
+
+    private static void SetCalloutLine(RectTransform line, Vector2 a, Vector2 b, float width = 1.2f)
+    {
+        Vector2 d = b - a;
+        line.anchoredPosition = new Vector2(a.x, -a.y);
+        line.sizeDelta = new Vector2(d.magnitude, width);
+        line.localEulerAngles = new Vector3(0f, 0f, -Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg);
+    }
+
+    // The framing marks follow the E's corners. The marker sits on whichever side of the E faces the caption (eased
+    // over as the E turns); the leg leaves it at 45 degrees to the caption's code line and the run carries on level to
+    // just before the code.
+    private void UpdateCallout(float dt)
+    {
+        if (_calloutMark == null)
+            return;
+        Vector2 at = default;
+        float best = float.MinValue;
+        foreach (var side in CalloutSides)
+        {
+            var v = _cam.WorldToViewportPoint(_eMesh.TransformPoint(side));
+            if (v.x > best)
+            {
+                best = v.x;
+                at = new Vector2(v.x * V3.W, (1f - v.y) * V3.H);
+            }
+        }
+        _calloutAt = _calloutSet ? Vector2.Lerp(_calloutAt, at, 1f - Mathf.Exp(-dt / 0.06f)) : at;
+        _calloutSet = true;
+        var elbow = new Vector2(Mathf.Min(_calloutAt.x + Mathf.Abs(CalloutY - _calloutAt.y), CalloutEnd - 12f), CalloutY);
+        _calloutMark.anchoredPosition = new Vector2(_calloutAt.x, -_calloutAt.y);
+        SetCalloutLine(_calloutLeg, _calloutAt, elbow);
+        SetCalloutLine(_calloutRun, elbow, new Vector2(CalloutEnd, CalloutY));
+
+        // the framing marks: from each corner, a short arm along each of its two sides
+        var c = new Vector2[4];
+        for (int i = 0; i < 4; i++)
+        {
+            var v = _cam.WorldToViewportPoint(_eMesh.TransformPoint(BracketCorners[i]));
+            c[i] = new Vector2(v.x * V3.W, (1f - v.y) * V3.H);
+        }
+        for (int i = 0; i < 4; i++)
+        {
+            Vector2 next = c[(i + 1) % 4] - c[i], prev = c[(i + 3) % 4] - c[i];
+            float arm = Mathf.Min(BracketArm, next.magnitude * 0.3f);
+            SetCalloutLine(_brackets[2 * i], c[i] - next.normalized * 0.8f, c[i] + next.normalized * arm, 1.6f);
+            SetCalloutLine(_brackets[2 * i + 1], c[i] - prev.normalized * 0.8f, c[i] + prev.normalized * arm, 1.6f);
+        }
     }
 
     // UiFactory.RoundedRect sliced so its corners come out at the given radius
@@ -1097,6 +1205,7 @@ public class V3Home : MonoBehaviour
         _talk.alpha = Mathf.MoveTowards(_talk.alpha, now - _nodT0 < 3.2f ? 1f : 0f, dt / 0.3f);
 
         UpdateHeadline(dt, idle);
+        UpdateCallout(dt);
         // knob slides between the language cells
         float knobX = 3f + V3.Lang * 49f;
         _knob.anchoredPosition = new Vector2(Mathf.Lerp(_knob.anchoredPosition.x, knobX, 1f - Mathf.Exp(-dt / 0.06f)), _knob.anchoredPosition.y);
@@ -1142,6 +1251,8 @@ public class V3Home : MonoBehaviour
     {
         foreach (var (g, a) in _shadows)
             g.color = new Color(0.07f, 0.09f, 0.14f, a * k);
+        if (_eLight != null)
+            _eLight.color = new Color(0.86f, 1f, 0.94f, 0.55f * k);
     }
 
     // The headline's letters rising in, staggered (k 0-1 over the whole word)

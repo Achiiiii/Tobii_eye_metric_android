@@ -82,7 +82,7 @@ public class V3Questionnaire : MonoBehaviour
         _contentGroup = _content.gameObject.AddComponent<CanvasGroup>();
         _note = V3.Note(_content, 40f, 100f);
         _title = V3.Title(_content, 40f, 132f, 480f, 120f, 42f);
-        _line = V3.KebbiLine(_content, 40f, 300f, 19f, 360f);
+        _line = V3.KebbiLine(_content, 40f, 300f, 24f, 360f);
         _answers = V3.Rect("Answers", _content, 0f, 0f, V3.W, V3.H);
         _back = V3.Key(t, "上一題", "Back", "arrowL", Color.white, 40f, 470f, 210f, false, OnBack);
         _next = V3.Key(t, "繼續", "Continue", "arrowR", V3.Green, 772f, 470f, 210f, false, OnNext);

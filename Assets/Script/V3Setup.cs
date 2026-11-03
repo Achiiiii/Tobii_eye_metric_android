@@ -249,7 +249,7 @@ public class V3Setup : MonoBehaviour
         V3.Sprite("Ring", _lookRing, RingSprite(43f, 1f), V3.Violet, 0f, 0f, 150f, 150f);
         _lookTag = V3.Box("LookTag", t, V3.Violet, 0f, 0f, 64f, 26f).gameObject;
         V3.Text("Text", _lookTag.transform, V3.Zh, "看這裡", "Look", 15f, Color.white, 0f, 0f, 64f, 26f, TextAlignmentOptions.Center);
-        _pracLine = V3.KebbiLine(t, 40f, 400f, 22f, 600f);
+        _pracLine = V3.KebbiLine(t, 40f, 400f, 24f, 600f);
 
         _start = V3.Key(t, "開始測驗", "Start test", "arrowR", V3.Green, 742f, 470f, 240f);
         _start.Button.onClick.AddListener(() =>
