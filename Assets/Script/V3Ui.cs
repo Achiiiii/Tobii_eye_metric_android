@@ -509,7 +509,7 @@ public static class V3
     // A small mono note (page labels like "Q2 / 7  ·  眼科病史").
     public static TextMeshProUGUI Note(Transform parent, float x, float y, float w = 600f, string text = "")
     {
-        return Text("Note", parent, Mono, text, 12f, Ink, x, y, w, 16f, TextAlignmentOptions.TopLeft, 0.04f);
+        return Text("Note", parent, Mono, text, V3Type.Data, Ink, x, y, w, 16f, TextAlignmentOptions.TopLeft, 0.04f);
     }
 
     // A page title: Noto Sans TC, wrapping, shrinking to fit.
@@ -522,27 +522,6 @@ public static class V3
         t.fontSizeMax = size;
         t.lineSpacing = -14f;
         return t;
-    }
-
-    // ==================== liquid ====================
-
-    private static readonly Dictionary<string, Material> s_liquid = new Dictionary<string, Material>();
-
-    // The lit part of a progress guide as flowing liquid (V3/Liquid). Straight guides flow along their x; round ones
-    // (radial) along the arc of an image size px square, dir +1 / -1 the way it fills.
-    public static Image Liquid(Image image, bool radial = false, float dir = 1f, float size = 100f)
-    {
-        string key = radial + "/" + dir + "/" + size;
-        if (!s_liquid.TryGetValue(key, out var material) || material == null)
-        {
-            material = new Material(Resources.Load<Shader>("V3/Shaders/Liquid"));
-            material.SetFloat("_Radial", radial ? 1f : 0f);
-            material.SetFloat("_Dir", dir);
-            material.SetFloat("_Size", size);
-            s_liquid[key] = material;
-        }
-        image.material = material;
-        return image;
     }
 
     // ==================== material ====================
