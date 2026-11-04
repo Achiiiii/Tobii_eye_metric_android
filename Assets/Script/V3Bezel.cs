@@ -64,7 +64,7 @@ public static class V3Bezel
     public static Material Steel(float lathePerUnit)
     {
         var steel = new Material(Resources.Load<Shader>("V3/Shaders/Metal"));
-        steel.SetColor("_Tint", new Color32(0xE2, 0xE5, 0xEA, 0xFF));
+        steel.SetColor("_Tint", V3.Steel);
         steel.SetFloat("_Lathe", lathePerUnit);
         steel.SetFloat("_Marks", 0.5f);
         return steel;
@@ -98,7 +98,7 @@ public static class V3Bezel
         var light = new GameObject("Key").AddComponent<Light>();
         light.transform.SetParent(root.transform, false);
         light.type = LightType.Directional;
-        light.color = new Color32(0xFF, 0xFC, 0xF7, 0xFF);
+        light.color = V3.KeyLight;
         light.intensity = 1f;
         light.transform.rotation = Quaternion.LookRotation(-new Vector3(-0.3f, 0.85f, -0.45f));
         light.cullingMask = 1 << BakeLayer;

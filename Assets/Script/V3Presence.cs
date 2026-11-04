@@ -30,7 +30,7 @@ public class V3Presence : MonoBehaviour
 
     public static V3Presence Create(Transform parent, HeadFollow head, GameObject home, Action goHome)
     {
-        var canvas = UiFactory.CreateOverlayCanvas("V3Presence", 19, parent);
+        var canvas = UiFactory.CreateOverlayCanvas("V3Presence", V3Layer.Presence, parent);
         var presence = canvas.gameObject.AddComponent<V3Presence>();
         presence._head = head;
         presence._home = home;
@@ -42,18 +42,19 @@ public class V3Presence : MonoBehaviour
 
     private void BuildCard(Transform root)
     {
-        var dim = UiFactory.CreateImage("StillThere", root, UiFactory.White, new Color32(0xF2, 0xF5, 0xFA, 0xE0), true);
+        var dim = UiFactory.CreateImage("StillThere", root, UiFactory.White, V3.Veil, true);
         UiFactory.Stretch(dim.rectTransform);
         const float w = 520f, h = 270f;
         var card = V3.Rect("Card", dim.transform, (V3.W - w) / 2f, 165f, w, h);
         V3.Patch(card, 0f, 0f, w, h);
-        V3.Text("Title", card, V3.Zh, "還在嗎？", "Are you still there?", 30f, V3.Ink, 0f, 34f, w, 40f, TextAlignmentOptions.Top);
-        _countdown = V3.Text("Countdown", card, V3.Zh, "", 18f, V3.Text2, 0f, 84f, w, 30f, TextAlignmentOptions.Top);
+        V3.Text("Title", card, V3.Zh, "還在嗎？", "Are you still there?", V3Type.Title, V3.Ink, 0f, 34f, w, 40f, TextAlignmentOptions.Top);
+        _countdown = V3.Text("Countdown", card, V3.Zh, "", V3Type.BodyS, V3.Text2, 0f, 84f, w, 30f, TextAlignmentOptions.Top);
         // the time left as a light guide running down
         _wait = V3.Guide(card, 60f, 126f, w - 120f);
-        V3.Key(card, "回首頁", "Home", "home", new Color32(0xED, 0xED, 0xEA, 0xFF), 40f, 160f, 210f, false, () => { Hide(); _goHome?.Invoke(); });
+        V3.Key(card, "回首頁", "Home", "home", V3.KeySecondary, 40f, 160f, 210f, false, () => { Hide(); _goHome?.Invoke(); });
         V3.Key(card, "繼續", "Continue", "arrowR", V3.Green, 270f, 160f, 210f, false, () => { KebbiMotion.Play("ok"); Hide(); });
         _card = dim.gameObject;
+        V3CardIn.Attach(_card, dim, card);
         _card.SetActive(false);
     }
 

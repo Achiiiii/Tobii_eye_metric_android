@@ -26,7 +26,6 @@ public class V3Home : MonoBehaviour
     private const float Fov = 30f, CamDist = 12f;
     private const int WorldLayer = 31;
     private const float IdleSeconds = 2.5f;
-    private static readonly float[] VA = { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.7f, 0.8f, 1.0f, 1.3f, 1.5f, 2.0f };
     // world units per pixel at z = 0: frame height = 2 * 12 * tan(15 deg) over 600 px
     private static readonly float UPP = 2f * CamDist * Mathf.Tan(Fov * 0.5f * Mathf.Deg2Rad) / 600f;
 
@@ -50,10 +49,6 @@ public class V3Home : MonoBehaviour
     // dial layers (back, mid, front) and their parallax amounts (px per radian of lean)
     private readonly RectTransform[] _layers = new RectTransform[3];
     private static readonly float[] LayerShift = { 10f, 18f, 26f };
-    private Image[] _levelTicks = new Image[11];
-    private TextMeshProUGUI[] _levelLabels = new TextMeshProUGUI[11];
-    private Image _progGlow, _progBody, _progCore;
-    private RectTransform _progTip;
 
     // headline
     private RectTransform _headline;
@@ -69,7 +64,6 @@ public class V3Home : MonoBehaviour
     private float _focusX, _focusDir = 1f, _headLeft, _headRight;
     // EYE METRIC: centred across the top, as wide as 944 px allows but no taller than HeadMaxH
     private const float HeadY = 84f, HeadMaxW = 944f, HeadMaxH = 180f;
-    private static readonly Color HeadInk = new Color32(0x3A, 0x3D, 0x43, 0xFF);
 
     // chrome
     private TextMeshProUGUI _appName, _jointCheck;
@@ -97,16 +91,27 @@ public class V3Home : MonoBehaviour
     private readonly List<(Graphic g, float a)> _shadows = new List<(Graphic, float)>();
     private CanvasGroup _backdrop, _fgGroup, _modesGroup, _chromeGroup;
     private RectTransform _fg;
-    private readonly List<(Image img, float deg)> _degTicks = new List<(Image, float)>();
+    // the dial drawn round by angle (0 at the top, clockwise): every tick, number, marker and engraved letter of both
+    // rings, each growing in as a head passes it, and the full circles filling behind it; the loading draws it round
+    // with the percentage, leaving undraws it the other way
+    private readonly List<(Graphic g, float deg)> _dialParts = new List<(Graphic, float)>();
+    private readonly List<Image> _dialArcs = new List<Image>();
     private readonly RectTransform[] _modeRects = new RectTransform[2];
     private readonly MetricTest.TestMode[] _modeOf = { MetricTest.TestMode.Both, MetricTest.TestMode.Single };
     private readonly float[] _lift = new float[2];
-    private Image _dot, _iris;
+    private Image _iris;
+    // the loading: a small drop of the E's frosted glass with droplets flowing in and out of it while the percentage
+    // runs (V3/GlassDot); the E then grows out of it with a quarter turn
+    private const float LoadSeconds = 1.7f, DropQuad = 120f;
+    // the opening's pace (1 = as written): brisk the first time, quicker still coming back to the home
+    private const float FirstPace = 1.4f, ReturnPace = 2f;
+    private static bool s_opened;
+    private float _pace = FirstPace, _loadClock;
+    private Image _drop;
+    private Material _dropMat;
     // leaving: the guide running round the outer bezel, the rings' lock click, the E's gap steered to the centre
-    private Image _lockArc;
     private Transform _eMesh;
-    // the E in milky frosted glass (V3/Frost): the green of the light inside it, and how heavily it is frosted
-    private static readonly Color FrostLight = new Color32(0x7E, 0xF0, 0xBE, 0xFF);
+    // the E in milky frosted glass (V3/Frost; the light inside it is the green): how heavily it is frosted
     private const float FrostAmount = 0.5f;
     private Material _frostFace, _frostEdge;
     // the callout from the E to the caption: a marker on the E's side facing the caption, a slanted leg and a level run
@@ -120,8 +125,7 @@ public class V3Home : MonoBehaviour
     private readonly RectTransform[] _brackets = new RectTransform[8];
     private Vector2 _calloutAt;
     private bool _calloutSet;
-    private float _lockT0 = -100f, _gapSteer;
-    private bool _sweepDone;
+    private float _gapSteer;
     private CanvasGroup _talk;
     private static readonly Vector3 GapLocal = new Vector3(0.1f, 0f, -0.2f);   // the centre of one of the E's gaps
     private TextMeshProUGUI _pct;
@@ -249,7 +253,7 @@ public class V3Home : MonoBehaviour
         // one soft light from above, a little to the left and toward the viewer
         var key = AddChild<Light>("Key", _world.transform);
         key.type = LightType.Directional;
-        key.color = new Color32(0xFF, 0xFC, 0xF7, 0xFF);
+        key.color = V3.KeyLight;
         key.intensity = 1f;
         key.transform.rotation = Quaternion.LookRotation(-new Vector3(-0.3f, 0.85f, -0.45f));
         key.shadows = LightShadows.None;
@@ -269,7 +273,7 @@ public class V3Home : MonoBehaviour
         foreach (var m in new[] { _frostFace, _frostEdge })
         {
             m.SetTexture("_Glow", BlurredE(12f).texture);
-            m.SetColor("_Light", FrostLight);
+            m.SetColor("_Light", V3.Green);
             m.SetFloat("_Frost", FrostAmount);
             m.SetFloat("_HeadY", HeadY);
             m.SetFloat("_HeadH", HeadBoxH);
@@ -281,7 +285,7 @@ public class V3Home : MonoBehaviour
         // a light rim round the E with a touch of the green, just behind it (hidden where the E is in front), as if lit
         // from behind, and a wide green glow spilling onto the light box
         var rimMat = new Material(LoadShader("Shadow")) { mainTexture = BlurredE(0.7f).texture };
-        rimMat.SetColor("_Color", new Color(0.74f, 0.98f, 0.86f, 0.7f));
+        rimMat.SetColor("_Color", V3.A(V3.GreenPale, 0.7f));
         var rim = AddMesh("Rim", _eTransform, Quad(), rimMat);
         rim.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         rim.transform.localPosition = new Vector3(0f, 0f, 0.12f);
@@ -450,7 +454,7 @@ public class V3Home : MonoBehaviour
 
     private void BuildUi()
     {
-        _canvas = UiFactory.CreateOverlayCanvas("V3HomeCanvas", 6, transform);
+        _canvas = UiFactory.CreateOverlayCanvas("V3HomeCanvas", V3Layer.Home, transform);
         _root = (RectTransform)_canvas.transform;
         // the light box: an evenly lit white panel (a touch brighter at the top) in a brushed aluminium frame
         V3.LightBox(_root, true);
@@ -463,10 +467,6 @@ public class V3Home : MonoBehaviour
         _view.transform.SetParent(_root, false);
         UiFactory.Stretch(_view.rectTransform);
         _view.raycastTarget = false;
-        // over the 3D rings: the light that runs once round the outer bezel when a mode is chosen
-        _lockArc = Arc(Layer("Lock"), ArcSprite(R1, 1.2f, 0f, 360f), "Lock");
-        _lockArc.color = V3.Green;
-        _lockArc.enabled = false;
         BuildForeground();
         _chromeGroup = Group("Chrome");
         _modesGroup = Group("Modes");
@@ -546,6 +546,7 @@ public class V3Home : MonoBehaviour
                 radius[k, b] = (214f + k * 44f) * (1f + 0.07f * Mathf.Sin(3f * t + k * 0.9f) + 0.04f * Mathf.Sin(5f * t + k * 1.7f) + 0.02f * Mathf.Sin(9f * t + k));
             }
         var px = new Color32[w * h];
+        Color32 ink = V3.Ink;
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
@@ -557,7 +558,7 @@ public class V3Home : MonoBehaviour
                 if (rn > 180f && Mathf.Repeat(t * rn, 6f) < 2f)
                     for (int k = 0; k < 8; k++)
                         alpha = Mathf.Max(alpha, Mathf.Clamp01(1f - Mathf.Abs(rn - radius[k, b]) / 1.25f) * (0.32f - k * 0.022f));
-                px[y * w + x] = new Color32(0x14, 0x14, 0x14, (byte)(alpha * 255f));
+                px[y * w + x] = new Color32(ink.r, ink.g, ink.b, (byte)(alpha * 255f));
             }
         s_backdrop = new Texture2D(w, h, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
         s_backdrop.SetPixels32(px);
@@ -587,12 +588,16 @@ public class V3Home : MonoBehaviour
 
     // ==================== intro and transition overlays ====================
 
-    // The intro's dot and percentage, and the iris that opens onto the next page.
+    // The intro's glass drop and percentage, and the iris that opens onto the next page.
     private void BuildIntro()
     {
-        _dot = V3.Sprite("Dot", _root, UiFactory.Circle, V3.Ink, CX - 6f, CY - 6f, 12f, 12f);
-        _pct = V3.Text("Percent", _root, V3.Num, "0%", 18f, V3.Ink, 784f, 94f, 200f, 20f, TextAlignmentOptions.Right);
-        _iris = V3.Sprite("Iris", _root, UiFactory.Circle, V3.Cool, CX - 5f, CY - 5f, 10f, 10f);
+        _dropMat = new Material(LoadShader("GlassDot"));
+        _dropMat.SetFloat("_Q", DropQuad);
+        _drop = UiFactory.CreateImage("LoadingDrop", _root, UiFactory.White, Color.white);
+        _drop.material = _dropMat;
+        UiFactory.Place(_drop.rectTransform, new Vector2(0f, 1f), UiFactory.Center, new Vector2(CX, -CY), Vector2.one * DropQuad);
+        _pct = V3.Text("Percent", _root, V3.Num, "0%", V3Type.BodyS, V3.Ink, 784f, 94f, 200f, 20f, TextAlignmentOptions.Right);
+        _iris = V3.Sprite("Iris", _root, UiFactory.Circle, V3.LightTop, CX - 5f, CY - 5f, 10f, 10f);
         _iris.rectTransform.localScale = Vector3.zero;
         _iris.raycastTarget = true;
     }
@@ -623,65 +628,42 @@ public class V3Home : MonoBehaviour
         var back = _layers[0] = Layer("DialBack");
         BuildOuterScale(back);
 
-        // mid: degree ring (every 2 deg, labels every 30; the ticks invert what is under them, so they read light where
-        // they cross the headline), the engraving on the outer ring, the live gaze arc
+        // mid: degree ring (every 2 deg, longer every 10, longest and labelled every 30; the ticks invert what is under
+        // them, so they read light where they cross the headline) on a faint engraved band between two fine rules, the
+        // engraving on the outer ring, the live gaze arc
         var mid = _layers[1] = Layer("DialMid");
         var invert = new Material(LoadShader("UIInvert"));
+        float band = Mathf.Ceil(2f * (R1 + 10f) + 16f), rule = Mathf.Ceil(2f * (R1 + 4f) + 16f), rule2 = Mathf.Ceil(2f * (R1 + 17f) + 16f);
+        DialArc(At(UiFactory.CreateImage("Band", mid, ArcSprite(R1 + 10f, 6f, 0f, 360f), V3.A(V3.Ink, 0.05f)), 0f, 0f, band, band));
+        DialArc(At(UiFactory.CreateImage("Rule", mid, ArcSprite(R1 + 4f, 0.55f, 0f, 360f), V3.A(V3.Ink, 0.4f)), 0f, 0f, rule, rule));
+        DialArc(At(UiFactory.CreateImage("Rule", mid, ArcSprite(R1 + 17f, 0.45f, 0f, 360f), V3.A(V3.Ink, 0.22f)), 0f, 0f, rule2, rule2));
         for (int d = 0; d < 360; d += 2)
         {
-            float len = d % 30 == 0 ? 10f : 3f;
+            float len = d % 30 == 0 ? 12f : d % 10 == 0 ? 7f : 4f;
             float a = d - 90f;
             var p = Polar(R1 + 4f + len / 2f, a);
-            var tick = At(UiFactory.CreateImage("Tick", mid, UiFactory.White, new Color(1f, 1f, 1f, d % 30 == 0 ? 0.6f : 0.28f)), p.x, p.y, len, 1f, -a);
+            var tick = At(UiFactory.CreateImage("Tick", mid, UiFactory.White, new Color(1f, 1f, 1f, d % 30 == 0 ? 0.9f : d % 10 == 0 ? 0.62f : 0.42f)), p.x, p.y, len, d % 30 == 0 ? 1.4f : 1f, -a);
             tick.material = invert;
-            _degTicks.Add((tick, d));
+            _dialParts.Add((tick, d));
             if (d % 30 == 0)
             {
                 var lp = Polar(R1 + 28f, a);
-                var label = V3.Text("Deg", mid, V3.Mono, d.ToString("000"), 10f, V3.A(V3.Ink, 0.4f), 0f, 0f, 40f, 14f, TextAlignmentOptions.Center);
+                var label = V3.Text("Deg", mid, V3.Mono, d.ToString("000"), V3Type.Micro, V3.A(V3.Ink, 0.66f), 0f, 0f, 40f, 14f, TextAlignmentOptions.Center);
                 UiFactory.Place(label.rectTransform, UiFactory.Center, UiFactory.Center, lp, new Vector2(40f, 14f));
+                _dialParts.Add((label, d));
             }
         }
         BuildEngraving(mid);
 
-        // front: the level scale along the bottom (0.1 at 155 deg to 2.0 at 25 deg) - a shallow groove with a bright lower
-        // lip, the green light guide up to the current level ending in a small bright tip, the 11 ticks and values
-        var front = _layers[2] = Layer("DialFront");
-        float scale = Mathf.Ceil(2f * R2 + 16f), lip = Mathf.Ceil(2f * (R2 + 4.5f) + 16f);
-        At(UiFactory.CreateImage("Groove", front, ArcSprite(R2, 4f, 25f, 155f), new Color32(0x1C, 0x22, 0x2C, 0x2E)), 0f, 0f, scale, scale);
-        At(UiFactory.CreateImage("Lip", front, ArcSprite(R2 + 4.5f, 0.5f, 25f, 155f), new Color(1f, 1f, 1f, 0.9f)), 0f, 0f, lip, lip);
-        _progGlow = Arc(front, ArcSprite(R2, 4.5f, 0f, 360f), "GuideGlow");
-        _progGlow.color = V3.A(V3.Green, 0.28f);
-        _progBody = Arc(front, ArcSprite(R2, 3f, 0f, 360f), "Guide");
-        V3.Liquid(_progBody, true, 1f, Mathf.Ceil(2f * R2 + 16f));
-        _progBody.color = V3.Green;
-        _progCore = Arc(front, ArcSprite(R2, 0.45f, 0f, 360f), "GuideCore");
-        _progCore.color = new Color32(0xE9, 0xFF, 0xF2, 0x00);
-        _progTip = At(UiFactory.CreateImage("Tip", front, UiFactory.Circle, V3.A(V3.Green, 0.45f)), 0f, 0f, 9f, 9f).rectTransform;
-        // a few sparks off the guide's head, drifting back along the scale (the front layer's origin is the dial centre)
-        V3Sparks.Attach(front, () =>
-        {
-            var p = _progTip.anchoredPosition;
-            float a = Mathf.Atan2(p.y, p.x);
-            return (new Vector2(p.x, -p.y), new Vector2(-Mathf.Sin(a), -Mathf.Cos(a)));
-        }, 14f);
-        At(UiFactory.CreateImage("TipCore", _progTip, UiFactory.Circle, new Color32(0xF4, 0xFF, 0xF8, 0xFF)), 0f, 0f, 3.6f, 3.6f);
-        for (int i = 0; i < 11; i++)
-        {
-            float a = 155f - i * 13f;
-            var p = Polar(R2, a);
-            _levelTicks[i] = At(UiFactory.CreateImage("LevelTick", front, UiFactory.White, V3.Ink), p.x, p.y, 8f, 1f, -a);
-            var lp = Polar(R2 - 16f, a);
-            _levelLabels[i] = V3.Text("Level", front, V3.Mono, VA[i].ToString("0.0", System.Globalization.CultureInfo.InvariantCulture), 9f, V3.A(V3.Ink, 0.45f), 0f, 0f, 40f, 16f, TextAlignmentOptions.Center);
-            UiFactory.Place(_levelLabels[i].rectTransform, UiFactory.Center, UiFactory.Center, lp, new Vector2(40f, 16f));
-        }
+        // front: empty since the level scale went (the E covers that part of the dial); kept for the parallax
+        _layers[2] = Layer("DialFront");
     }
 
     private void BuildOuterScale(Transform parent)
     {
         var invert = new Material(LoadShader("UIInvert"));
         Image Ink(string name, Sprite sprite, float alpha) => UiFactory.CreateImage(name, parent, sprite, V3.A(V3.Ink, alpha));
-        At(Ink("Circle", ArcSprite(R3, 0.5f, 0f, 360f), 0.14f), 0f, 0f, Mathf.Ceil(2f * R3 + 16f), Mathf.Ceil(2f * R3 + 16f));
+        DialArc(At(Ink("Circle", ArcSprite(R3, 0.5f, 0f, 360f), 0.14f), 0f, 0f, Mathf.Ceil(2f * R3 + 16f), Mathf.Ceil(2f * R3 + 16f)));
         for (int d = 0; d < 360; d++)
         {
             if (Mathf.Min(d % 90, 90 - d % 90) < 8)
@@ -690,11 +672,12 @@ public class V3Home : MonoBehaviour
             var p = Polar(R3 + len / 2f, a);
             var tick = At(UiFactory.CreateImage("Tick", parent, UiFactory.White, new Color(1f, 1f, 1f, d % 10 == 0 ? 0.4f : 0.17f)), p.x, p.y, len, 1f, -a);
             tick.material = invert;
-            _degTicks.Add((tick, d));
+            _dialParts.Add((tick, d));
             if (d % 10 == 0 && d % 30 != 0)
             {
-                var label = V3.Text("Deg", parent, V3.Mono, d.ToString(), 7f, V3.A(V3.Ink, 0.25f), 0f, 0f, 30f, 10f, TextAlignmentOptions.Center);
+                var label = V3.Text("Deg", parent, V3.Mono, d.ToString(), V3Type.Dial, V3.A(V3.Ink, 0.25f), 0f, 0f, 30f, 10f, TextAlignmentOptions.Center);
                 UiFactory.Place(label.rectTransform, UiFactory.Center, UiFactory.Center, Polar(R3 + 17f, a), new Vector2(30f, 10f));
+                _dialParts.Add((label, d));
             }
         }
         var e = BlurredE(0.4f);
@@ -704,19 +687,45 @@ public class V3Home : MonoBehaviour
             for (float r = R1 + 16f; r < R3 + 10f; r += 5f)
             {
                 var q = Polar(r + 1f, a);
-                At(Ink("Lead", UiFactory.White, 0.3f), q.x, q.y, 2f, 1f, -a);
+                _dialParts.Add((At(Ink("Lead", UiFactory.White, 0.3f), q.x, q.y, 2f, 1f, -a), d));
             }
             var ep = Polar(R3 + 20f, a);
-            At(Ink("Dir", e, 0.55f), ep.x, ep.y, 13f * 1.24f, 13f * 1.24f, -a);
+            _dialParts.Add((At(Ink("Dir", e, 0.55f), ep.x, ep.y, 13f * 1.24f, 13f * 1.24f, -a), d));
             bool side = d % 180 == 0;
-            var label = V3.Text("DirName", parent, V3.Mono, name, 7f, V3.A(V3.Ink, 0.3f), 0f, 0f, 50f, 10f, side ? TextAlignmentOptions.Left : TextAlignmentOptions.Center, 0.17f);
+            var label = V3.Text("DirName", parent, V3.Mono, name, V3Type.Dial, V3.A(V3.Ink, 0.3f), 0f, 0f, 50f, 10f, side ? TextAlignmentOptions.Left : TextAlignmentOptions.Center, 0.17f);
             UiFactory.Place(label.rectTransform, UiFactory.Center, UiFactory.Center, ep + (side ? new Vector2(13f + 25f, 0f) : new Vector2(0f, -15f)), new Vector2(50f, 10f));
+            _dialParts.Add((label, d));
         }
+    }
+
+    // a full circle of the dial, filled round from the top as the dial is drawn
+    private void DialArc(Image arc)
+    {
+        arc.type = Image.Type.Filled;
+        arc.fillMethod = Image.FillMethod.Radial360;
+        arc.fillOrigin = (int)Image.Origin360.Top;
+        arc.fillClockwise = true;
+        _dialArcs.Add(arc);
+    }
+
+    // The dial drawn round to a fraction (0-1): the parts up to the head grow in (popping to size over 18 degrees),
+    // the circles fill to it.
+    private void DrawDial(float f)
+    {
+        float head = f * 378f;
+        foreach (var (g, deg) in _dialParts)
+        {
+            float k = Mathf.Clamp01((head - deg) / 18f);
+            g.enabled = k > 0f;
+            g.rectTransform.localScale = Vector3.one * (1f - (1f - k) * (1f - k));
+        }
+        foreach (var arc in _dialArcs)
+            arc.fillAmount = f;
     }
 
     // Fine lettering engraved on the outer ring's inner face, along the top: each character on the arc (r 188), a dark
     // cut with a bright lower lip.
-    private static void BuildEngraving(Transform parent)
+    private void BuildEngraving(Transform parent)
     {
         const string text = "VISUAL ACUITY 0.1 – 2.0 · TUMBLING E · Ø 40 CM · EM-31 · KEBBI";
         const float r = R1 - 16f, advance = 6.6f;
@@ -727,32 +736,16 @@ public class V3Home : MonoBehaviour
                 continue;
             float deg = 270f + (i - (text.Length - 1) / 2f) * step;
             var p = Polar(r, deg);
-            foreach (var (dy, colour) in new (float, Color)[] { (-0.7f, new Color(1f, 1f, 1f, 0.9f)), (0f, new Color32(0x14, 0x18, 0x20, 0x6B)) })
+            foreach (var (dy, colour) in new (float, Color)[] { (-0.7f, new Color(1f, 1f, 1f, 0.9f)), (0f, V3.A(V3.ShadowInk, 0.42f)) })
             {
-                var ch = V3.Text("Engrave", parent, V3.Mono, text[i].ToString(), 7.4f, colour, 0f, 0f, 12f, 12f, TextAlignmentOptions.Center);
+                var ch = V3.Text("Engrave", parent, V3.Mono, text[i].ToString(), V3Type.Dial, colour, 0f, 0f, 12f, 12f, TextAlignmentOptions.Center);
                 UiFactory.Place(ch.rectTransform, UiFactory.Center, UiFactory.Center, p + new Vector2(0f, dy), new Vector2(12f, 12f));
                 ch.rectTransform.localEulerAngles = new Vector3(0f, 0f, 270f - deg);
+                _dialParts.Add((ch, Mathf.Repeat(deg - 270f, 360f)));
             }
         }
     }
 
-    private static Image Arc(Transform parent, Sprite ring, string name)
-    {
-        var image = UiFactory.CreateImage(name, parent, ring, V3.Violet);
-        At(image, 0f, 0f, ring.rect.width, ring.rect.height);
-        image.type = Image.Type.Filled;
-        image.fillMethod = Image.FillMethod.Radial360;
-        image.fillOrigin = (int)Image.Origin360.Right;
-        image.fillClockwise = false;
-        return image;
-    }
-
-    // Puts a filled-ring arc of the given half-span (radians) centred on a canvas-style angle (radians).
-    private static void PlaceArc(Image arc, float angle, float half)
-    {
-        arc.fillAmount = 2f * half / (2f * Mathf.PI);
-        arc.rectTransform.localEulerAngles = new Vector3(0f, 0f, (-angle - half) * Mathf.Rad2Deg);
-    }
 
 
     // ==================== headline ====================
@@ -882,7 +875,7 @@ public class V3Home : MonoBehaviour
         _lens.SetTexture("_Tex2", _headTex[2]);
         _lens.SetTexture("_Tex3", _headTex[3]);
         _lens.SetVector("_Px", new Vector4(1f / w, 1f / h, 0f, 0f));
-        _lens.SetColor("_Face", HeadInk);
+        _lens.SetColor("_Face", V3.HeadInk);
         // the frosted E shows the headline behind it from the most blurred level
         foreach (var m in new[] { _frostFace, _frostEdge })
             m.SetTexture("_Head", _headTex[3]);
@@ -930,14 +923,14 @@ public class V3Home : MonoBehaviour
         float x = ModeX[index];
         var key = V3.Rect("Key" + index, _modesGroup.transform, x, ModeY, ModeW, ModeH);
         _modeRects[index] = key;
-        V3.Shadow(key, 0f, 0f, ModeW, ModeH, 18f, -10f, 10f, new Color(0.12f, 0.16f, 0.23f, 0.18f));
-        V3.Shadow(key, 0f, 0f, ModeW, ModeH, 3f, 0f, 2f, new Color(0.12f, 0.16f, 0.23f, 0.14f));
+        V3.Shadow(key, 0f, 0f, ModeW, ModeH, 18f, -10f, 10f, V3.A(V3.ShadowInk, 0.18f));
+        V3.Shadow(key, 0f, 0f, ModeW, ModeH, 3f, 0f, 2f, V3.A(V3.ShadowInk, 0.14f));
         var button = UiFactory.CreateButton("Mode" + mode, key, KeySprite(), Color.white, () => Choose(index));
         button.transition = Selectable.Transition.None;
         var rect = V3.At((RectTransform)button.transform, 0f, 0f, ModeW, ModeH);
         V3.Sprite("Eyes", rect, EyesSprite(oneEye, false), V3.Ink, 20f, 16f, 42f, 42f);
         V3.Sprite("Pupils", rect, EyesSprite(oneEye, true), V3.Violet, 20f, 16f, 42f, 42f);
-        _modeLabels[index] = V3.Text("Label", rect, V3.Zh, "", 26f, V3.Ink, 76f, 0f, 130f, ModeH, TextAlignmentOptions.Left);
+        _modeLabels[index] = V3.Text("Label", rect, V3.Zh, "", V3Type.Lead, V3.Ink, 76f, 0f, 130f, ModeH, TextAlignmentOptions.Left);
         V3.Sprite("Arrow", rect, V3.Icon("arrowR"), V3.Ink, ModeW - 38f, (ModeH - 18f) / 2f, 18f, 18f);
         Pill(V3.Sprite("Lamp", rect, UiFactory.RoundedRect, V3.Green, (ModeW - 18f) / 2f, 10f, 18f, 3f), 1.5f);
         rect.gameObject.AddComponent<V3PressTint>().Target = (Image)button.targetGraphic;
@@ -961,7 +954,7 @@ public class V3Home : MonoBehaviour
 
     private void BuildChrome()
     {
-        _appName = V3.Text("AppName", _chromeGroup.transform, V3.Zh, "", 16f, V3.Ink, 40f, 26f, 400f, 36f, TextAlignmentOptions.Left, 0.1f);
+        _appName = V3.Text("AppName", _chromeGroup.transform, V3.Zh, "", V3Type.Label, V3.Ink, 40f, 26f, 400f, 36f, TextAlignmentOptions.Left, 0.1f);
         // three quick taps on the app name: the arm motors' direction check (for setting up the gestures)
         float tapAt = -10f;
         int taps = 0;
@@ -978,7 +971,7 @@ public class V3Home : MonoBehaviour
         check.transition = Selectable.Transition.None;
         V3.At((RectTransform)check.transform, 40f, 26f, 180f, 36f);
         // while the check runs: which motor and which way, large, at the bottom centre
-        _jointCheck = V3.Text("JointCheckLabel", _root, V3.Zh, "", 30f, V3.Violet, 0f, 440f, V3.W, 140f, TextAlignmentOptions.Top);
+        _jointCheck = V3.Text("JointCheckLabel", _root, V3.Zh, "", V3Type.Title, V3.Violet, 0f, 440f, V3.W, 140f, TextAlignmentOptions.Top);
         _jointCheck.lineSpacing = -10f;
         // after the name: the eye icon, then Kebbi's violet lamp with its voice wave (shown while Kebbi greets)
         _appIcon = V3.Rect("Tail", _chromeGroup.transform, 0f, 26f, 100f, 36f);
@@ -1011,12 +1004,12 @@ public class V3Home : MonoBehaviour
         _langEn = LangLabel(lang, 52f, "EN");
 
         // a short caption at the right, under the RIGHT marker, balancing the headline
-        V3.Text("CaptionCode", _chromeGroup.transform, V3.Mono, "VISUAL ACUITY", 10f, V3.A(V3.Ink, 0.55f), 790f, 372f, 200f, 14f, TextAlignmentOptions.TopLeft, 0.08f);
-        var caption = V3.Text("Caption", _chromeGroup.transform, V3.Zh, "看 E 的開口方向，\n測驗你的視力", "Which way does\nthe E open?", 17f, V3.A(V3.Ink, 0.8f), 790f, 392f, 194f, 52f, TextAlignmentOptions.TopLeft, 0.04f);
+        V3.Text("CaptionCode", _chromeGroup.transform, V3.Mono, "VISUAL ACUITY", V3Type.Micro, V3.A(V3.Ink, 0.55f), 790f, 372f, 200f, 14f, TextAlignmentOptions.TopLeft, 0.08f);
+        var caption = V3.Text("Caption", _chromeGroup.transform, V3.Zh, "看 E 的開口方向，\n測驗你的視力", "Which way does\nthe E open?", V3Type.BodyS, V3.A(V3.Ink, 0.8f), 790f, 392f, 194f, 52f, TextAlignmentOptions.TopLeft, 0.04f);
         caption.lineSpacing = -10f;
         caption.enableAutoSizing = true;
-        caption.fontSizeMin = 12f;
-        caption.fontSizeMax = 17f;
+        caption.fontSizeMin = V3Type.Data;
+        caption.fontSizeMax = V3Type.BodyS;
 
         // the callout's lines (placed each frame by UpdateCallout) and its marker: an ink dot on a white disc
         _calloutLeg = CalloutLine("CalloutLeg");
@@ -1101,7 +1094,7 @@ public class V3Home : MonoBehaviour
 
     private static TextMeshProUGUI LangLabel(Transform parent, float x, string text)
     {
-        var label = V3.Text("Label", parent, V3.Zh, text, 14f, V3.Text2, x, 3f, 49f, 30f, TextAlignmentOptions.Center);
+        var label = V3.Text("Label", parent, V3.Zh, text, V3Type.Label, V3.Text2, x, 3f, 49f, 30f, TextAlignmentOptions.Center);
         label.raycastTarget = false;
         return label;
     }
@@ -1114,7 +1107,7 @@ public class V3Home : MonoBehaviour
         _modeLabels[1].text = V3.T("單眼檢測", "One eye");
         foreach (var label in _modeLabels)
         {
-            label.fontSize = V3.Lang == 1 ? 21f : 26f;
+            label.fontSize = V3.Lang == 1 ? V3Type.Body : V3Type.Lead;
             label.characterSpacing = V3.Lang == 1 ? 0f : 4f;
         }
         _langZh.color = V3.Lang == 0 ? Color.white : V3.Text2;
@@ -1139,15 +1132,6 @@ public class V3Home : MonoBehaviour
     {
         _level = n;
         _sizeTo = Mathf.Lerp(ESizeMax, ESizeMin, (n - 1) / 10f);   // a little smaller each level, never tiny
-        for (int i = 0; i < 11; i++)
-        {
-            bool on = i == n - 1;
-            _levelTicks[i].color = on ? V3.Ink : V3.A(V3.Ink, 0.55f);
-            _levelTicks[i].rectTransform.sizeDelta = new Vector2(8f, on ? 2.4f : 1f);
-            _levelLabels[i].color = on ? V3.Ink : V3.A(V3.Ink, 0.45f);
-            _levelLabels[i].fontSize = on ? 10.5f : 9f;
-        }
-        ShowGuide(n);
     }
 
     private static float EaseBack(float t)
@@ -1171,12 +1155,12 @@ public class V3Home : MonoBehaviour
         _gy += (_ty - _gy) * k;
 
         UpdateStage(now, dt, idle);
-        _rotT = Mathf.Min(1f, _rotT + dt / 0.6f);
+        _rotT = Mathf.Min(1f, _rotT + dt / 0.45f);
         _sizeNow += (_sizeTo - _sizeNow) * (1f - Mathf.Pow(0.85f, dt * 60f));
         float to = Rot[_dir];
         while (to - _rotFrom > Mathf.PI) to -= 2f * Mathf.PI;
         while (to - _rotFrom < -Mathf.PI) to += 2f * Mathf.PI;
-        // the intro grows the E from the dot with a quarter turn; leaving, it rushes toward the viewer
+        // the intro grows the E from the drop with a quarter turn; leaving, it rushes toward the viewer
         float spin = (1f - _introE) * -90f;
         // Kebbi's greeting: the E gives two small nods, fading out over 1.2 s
         float nk = (now - _nodT0) / 1.2f, nod = nk >= 0f && nk < 1f ? Mathf.Sin(nk * Mathf.PI * 4f) * 12f * (1f - nk) : 0f;
@@ -1218,30 +1202,30 @@ public class V3Home : MonoBehaviour
         V3Sounds.Play(V3Sounds.Cue.Intro, 0.8f);
         _stage = Stage.Loading;
         _stageT0 = Time.unscaledTime;
+        _pace = s_opened ? ReturnPace : FirstPace;
+        _loadClock = 0f;
+        s_opened = true;
         _selecting = false;
         _chosen = -1;
         _eZoom = 1f;
         _introE = 0f;
         _guided = false;
-        _dot.enabled = _pct.enabled = true;
+        _drop.enabled = _pct.enabled = true;
         foreach (var l in _layers)
             l.gameObject.SetActive(true);
         _headline.gameObject.SetActive(true);
         _pct.text = "0%";
         _iris.rectTransform.localScale = Vector3.zero;
         _gapSteer = 0f;
-        _sweepDone = false;
-        _lockArc.enabled = false;
         _ringRoot.localEulerAngles = Vector3.zero;
         foreach (var l in _layers)
-            Fade(l).alpha = 0f;
+            Fade(l).alpha = 1f;
         Fade(_headline).alpha = 1f;
         _backdrop.alpha = _fgGroup.alpha = _modesGroup.alpha = _chromeGroup.alpha = 0f;
         _modesGroup.blocksRaycasts = false;
         _ringRoot.gameObject.SetActive(false);
         SetShadows(0f);
-        foreach (var (img, _) in _degTicks)
-            img.enabled = false;
+        DrawDial(0f);
         SetHeadline(0f);
     }
 
@@ -1250,9 +1234,9 @@ public class V3Home : MonoBehaviour
     private void SetShadows(float k)
     {
         foreach (var (g, a) in _shadows)
-            g.color = new Color(0.07f, 0.09f, 0.14f, a * k);
+            g.color = V3.A(V3.ShadowInk, a * k);
         if (_eLight != null)
-            _eLight.color = new Color(0.86f, 1f, 0.94f, 0.55f * k);
+            _eLight.color = V3.A(V3.GreenPale, 0.55f * k);
     }
 
     // The headline's letters rising in, staggered (k 0-1 over the whole word)
@@ -1285,11 +1269,17 @@ public class V3Home : MonoBehaviour
         switch (_stage)
         {
             case Stage.Loading:
-                // a dot and 0-100 %
-                float p = t / 2.2f;
+                // the glass drop and 0-100 %, timed by the frames drawn (each at most 1/30 s), so the slow first frames
+                // after the app opens do not swallow it
+                _loadClock += Mathf.Min(dt, 1f / 30f) * (_pace == ReturnPace ? 2f : 1f);
+                t = _loadClock;
+                float p = Mathf.Clamp01(t / (LoadSeconds - 0.1f));
                 p = p < 0.5f ? 4f * p * p * p : 1f - Mathf.Pow(-2f * p + 2f, 3f) / 2f;
-                _pct.text = Mathf.RoundToInt(Mathf.Clamp01(p) * 100f) + "%";
-                if (t >= 2.3f)
+                _pct.text = Mathf.RoundToInt(p * 100f) + "%";
+                _dropMat.SetFloat("_Gather", p);
+                // the whole dial grows in behind a head running round with the percentage
+                DrawDial(p);
+                if (t >= LoadSeconds)
                 {
                     _stage = Stage.Grow;
                     _stageT0 = now;
@@ -1297,20 +1287,18 @@ public class V3Home : MonoBehaviour
                 }
                 break;
             case Stage.Grow:
-                // the dot becomes the E; the rings turn in; the ticks are drawn round; the headline rises; then the E
-                // points at a mode and the modes come up
+                t *= _pace;
+                // the drop becomes the E; the rings turn in inside the drawn dial; the headline rises; then the E points
+                // at a mode and the modes come up
                 _introE = EaseOut(t / 1.1f);
-                _dot.enabled = t < 0.08f;
+                _drop.enabled = t < 0.08f;
                 _backdrop.alpha = Mathf.Clamp01((t - 0.5f) / 1.2f);
                 float rings = EaseOut((t - 0.55f) / 1.2f);
                 _ringRoot.gameObject.SetActive(t > 0.55f);
                 _ringRoot.localScale = Vector3.one * Mathf.Lerp(0.82f, 1f, rings);
                 _ringRoot.localEulerAngles = new Vector3(0f, 0f, (1f - rings) * 50f);
                 SetShadows(Mathf.Clamp01(t / 1.1f) * rings);
-                foreach (var (img, deg) in _degTicks)
-                    img.enabled = t > 0.55f + deg / 360f * 0.9f;
-                foreach (var l in _layers)
-                    Fade(l).alpha = Mathf.Clamp01((t - 0.5f) / 0.6f);
+                DrawDial(1f);
                 SetHeadline(Mathf.Clamp01((t - 0.9f) / 0.9f));
                 _chromeGroup.alpha = _fgGroup.alpha = Mathf.Clamp01((t - 0.3f) / 0.6f);
                 if (t > 1.5f && !_guided)
@@ -1340,7 +1328,7 @@ public class V3Home : MonoBehaviour
                 PlaceModes();
                 break;
             case Stage.Leaving:
-                UpdateLeaving(now, t);
+                UpdateLeaving(now, t * 1.3f);
                 _lift[_chosenIndexForPress] = 3f;
                 PlaceModes();
                 break;
@@ -1349,30 +1337,14 @@ public class V3Home : MonoBehaviour
 
     private int _chosenIndexForPress => _chosen >= 0 ? _chosen : 0;
 
-    // The instrument confirms the choice - the green guide runs up the scale to 2.0, a light runs once round the outer
-    // bezel and the rings lock with a small click - then the view pushes through the E's opening into the light box and
-    // the flow page takes over.
+    // The instrument confirms the choice - the dial undraws itself the way the loading drew it, anticlockwise back to
+    // the top - then the view pushes through the E's opening into the light box and the flow page takes over.
     private void UpdateLeaving(float now, float t)
     {
-        float up = Mathf.Clamp01((t - 0.3f) / 0.35f);
-        if (up > 0f && !_sweepDone)
-        {
-            ShowGuide(_level + (11 - _level) * EaseOut(up));
-            _sweepDone = up >= 1f;
-        }
-        float run = Mathf.Clamp01((t - 0.55f) / 0.4f);
-        float sweep = run < 0.5f ? 4f * run * run * run : 1f - Mathf.Pow(-2f * run + 2f, 3f) / 2f;
-        _lockArc.enabled = run > 0f && t < 1.1f;
-        _lockArc.color = V3.A(V3.Green, 1f - Mathf.Clamp01((t - 0.9f) / 0.2f));
-        float length = Mathf.Max(0.001f, sweep * 2f * Mathf.PI);
-        PlaceArc(_lockArc, -Mathf.PI / 2f + length / 2f, length / 2f);
-        if (run >= 1f && _lockT0 < _stageT0)
-            _lockT0 = now;
-        float click = (now - _lockT0) / 0.4f;
-        float lockRot = click >= 0f && click < 1f ? 3f * Mathf.Sin(click * Mathf.PI) * (1f - click * 0.5f) : 0f;
-        _ringRoot.localEulerAngles = new Vector3(0f, 0f, lockRot);
+        float run = Mathf.Clamp01((t - 0.1f) / 0.5f);
+        DrawDial(1f - (run < 0.5f ? 4f * run * run * run : 1f - Mathf.Pow(-2f * run + 2f, 3f) / 2f));
 
-        float k = Mathf.Clamp01((t - 1.05f) / 0.75f);
+        float k = Mathf.Clamp01((t - 0.65f) / 0.75f);
         _eZoom = 1f + k * k * k * 26f;
         float c = Mathf.Min(1f, k / 0.45f);
         _gapSteer = c < 0.5f ? 4f * c * c * c : 1f - Mathf.Pow(-2f * c + 2f, 3f) / 2f;
@@ -1395,15 +1367,6 @@ public class V3Home : MonoBehaviour
     {
         var group = c.GetComponent<CanvasGroup>();
         return group != null ? group : c.gameObject.AddComponent<CanvasGroup>();
-    }
-
-    // the green light guide from 0.1 (155 deg) up to a level (fractional while it sweeps)
-    private void ShowGuide(float level)
-    {
-        float from = 155f * Mathf.Deg2Rad, to = (155f - (level - 1f) * 13f) * Mathf.Deg2Rad;
-        foreach (var guide in new[] { _progGlow, _progBody, _progCore })
-            PlaceArc(guide, (from + to) / 2f, (from - to) / 2f);
-        _progTip.anchoredPosition = Polar(R2, to * Mathf.Rad2Deg);
     }
 
     // The E leads the eye: it points at one mode, then the other, runs two test
@@ -1462,8 +1425,7 @@ public class V3Home : MonoBehaviour
         int w = (int)ModeW, h = (int)ModeH;
         var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
         var px = new Color[w * h];
-        Color centre = Color.white, edge = new Color32(0xED, 0xF2, 0xF9, 0xFF), dot = new Color32(0x78, 0x8C, 0xAA, 0xFF);
-        Color groove = new Color32(0x96, 0xA5, 0xBE, 0xFF), shade = new Color32(0xB9, 0xC8, 0xDE, 0xFF);
+        Color centre = Color.white, edge = V3.MetalRim, dot = V3.MetalDot, groove = V3.MetalGroove, shade = V3.MetalShade;
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {

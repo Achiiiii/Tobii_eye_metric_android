@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading;
 using UnityEngine;
 
 // KebbiKit sound library: short cues in one voice - a small friendly robot (round blips, little chirps, a glassy bell),
@@ -21,7 +22,9 @@ public class KebbiSound : MonoBehaviour
 
     private readonly AudioSource[] _sources = new AudioSource[Voices];
     private int _next;
-    private volatile bool _ttsEnded;
+    // speeches started and ended: a new line often stops the one before it, whose end then arrives after the new
+    // line has begun - it is only over when every started speech has ended
+    private int _started, _ended;
     private float _speakingUntil = -1f, _duck = 1f;
 
     public static void Install(Transform parent)
@@ -71,23 +74,20 @@ public class KebbiSound : MonoBehaviour
     // ==================== ducking ====================
 
     // Runs on the main thread (Nuwa.startTTS). The end arrives from the robot service on its own thread, so it only
-    // sets a flag; a length-based estimate ends the duck too, in case an end never comes (stopTTS).
+    // counts; a length-based estimate ends the duck too, in case an end never comes (stopTTS).
     private void OnSpeechStart()
     {
         string text = Nuwa.LastTTS ?? "";
         _speakingUntil = Time.unscaledTime + 1.5f + text.Length * 0.2f;
-        _ttsEnded = false;
+        _started = Mathf.Max(_started, Volatile.Read(ref _ended)) + 1;
     }
 
-    private void OnSpeechEnd(bool error) => _ttsEnded = true;
+    private void OnSpeechEnd(bool error) => Interlocked.Increment(ref _ended);
 
     private void Update()
     {
-        if (_ttsEnded)
-        {
-            _ttsEnded = false;
+        if (_started > 0 && Volatile.Read(ref _ended) >= _started)
             _speakingUntil = -1f;
-        }
         bool speaking = Time.unscaledTime < _speakingUntil;
         _duck = Mathf.MoveTowards(_duck, speaking ? DuckVolume : 1f, Time.unscaledDeltaTime * 4f);
         AudioListener.volume = _duck;

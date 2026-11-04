@@ -81,8 +81,8 @@ public class V3Questionnaire : MonoBehaviour
         _content = V3.Full("Content", t);
         _contentGroup = _content.gameObject.AddComponent<CanvasGroup>();
         _note = V3.Note(_content, 40f, 100f);
-        _title = V3.Title(_content, 40f, 132f, 480f, 120f, 42f);
-        _line = V3.KebbiLine(_content, 40f, 300f, 24f, 360f);
+        _title = V3.Title(_content, 40f, 132f, 480f, 120f, V3Type.Display);
+        _line = V3.KebbiLine(_content, 40f, 300f, V3Type.Key, 360f);
         _answers = V3.Rect("Answers", _content, 0f, 0f, V3.W, V3.H);
         _back = V3.Key(t, "上一題", "Back", "arrowL", Color.white, 40f, 470f, 210f, false, OnBack);
         _next = V3.Key(t, "繼續", "Continue", "arrowR", V3.Green, 772f, 470f, 210f, false, OnNext);
@@ -116,10 +116,10 @@ public class V3Questionnaire : MonoBehaviour
         _note.text = $"Q{index + 1} / 7  ·  {V3.T(q.Cat, q.CatEn)}" + (yesNo ? "" : "  ·  " + how);
         // English wraps by itself; Chinese keeps its set line break
         _title.text = V3.Lang == 1 ? q.WordsEn.Replace('\n', ' ') : q.Words;
-        _title.rectTransform.sizeDelta = new Vector2(yesNo ? 500f : 370f, 120f);
+        _title.rectTransform.sizeDelta = new Vector2(yesNo ? 500f : 350f, 120f);
         // English wraps on its own at a comfortable line height; Chinese keeps its two set lines, closer together
         _title.lineSpacing = V3.Lang == 1 ? 0f : -14f;
-        _title.fontSizeMax = V3.Lang == 1 ? 36f : 42f;
+        _title.fontSizeMax = V3.Lang == 1 ? V3Type.Display * 0.9f : V3Type.Display;
         _back.Label.text = index == 0 ? V3.T("回首頁", "Home") : V3.T("上一題", "Back");
         _next.Label.text = index == 6 ? V3.T("完成", "Done") : V3.T("繼續", "Continue");
         _next.Root.gameObject.SetActive(!yesNo);
@@ -134,13 +134,13 @@ public class V3Questionnaire : MonoBehaviour
         }
         else
         {
-            // two columns from x 430 between y 120 and 446
+            // two columns from x 404 between y 120 and 446
             string[] options = index == 3 ? _qa.displayQ4Options : index == 5 ? _qa.displayQ6Options : _qa.displayQ7Options;
             int rows = (options.Length + 1) / 2;
-            const float gap = 14f, w = 262f;
+            const float gap = 14f, w = 276f;
             float h = Mathf.Min(88f, (326f - (rows - 1) * gap) / rows);
             for (int o = 0; o < options.Length; o++)
-                AddCell(o, V3.T(options[o], o < q.OptsEn.Length ? q.OptsEn[o] : options[o]), 430f + (o % 2) * (w + 18f), 120f + (o / 2) * (h + gap), w, h, index == 6, false);
+                AddCell(o, V3.T(BreakZh(options[o]), o < q.OptsEn.Length ? q.OptsEn[o] : options[o]), 404f + (o % 2) * (w + 16f), 120f + (o / 2) * (h + gap), w, h, index == 6, false);
         }
 
         FitOptionLabels();
@@ -165,7 +165,7 @@ public class V3Questionnaire : MonoBehaviour
         c.Bg.type = Image.Type.Sliced;
         c.Rest = rect.anchoredPosition;
         // pressed in: a dark inner edge along the top
-        c.Inset = V3.Box("Inset", rect, new Color(10 / 255f, 60 / 255f, 30 / 255f, 0.3f), 1f, 1f, w - 2f, 3f);
+        c.Inset = V3.Box("Inset", rect, V3.A(V3.ShadowInk, 0.3f), 1f, 1f, w - 2f, 3f);
         c.Inset.enabled = false;
         // chosen: a green rim just outside the window, following its rounded corners
         var rim = V3.Sprite("Rim", rect, V3.RimSprite, V3.Green, -4f, -4f, w + 8f, h + 8f);
@@ -173,7 +173,7 @@ public class V3Questionnaire : MonoBehaviour
         c.Lines = new[] { rim };
         if (yesNo)
         {
-            V3.Text("Label", rect, V3.Zh, label, 48f, V3.Ink, 0f, 0f, w, h, TextAlignmentOptions.Center);
+            V3.Text("Label", rect, V3.Zh, label, V3Type.Answer, V3.Ink, 0f, 0f, w, h, TextAlignmentOptions.Center);
             c.Mark = V3.Sprite("Badge", rect, UiFactory.Circle, V3.Green, w - 44f, 14f, 30f, 30f);
             V3.Sprite("Check", c.Mark.transform, V3.Icon("check"), V3.Ink, 6f, 6f, 18f, 18f);
         }
@@ -182,40 +182,62 @@ public class V3Questionnaire : MonoBehaviour
             float by = (h - 26f) / 2f;
             if (radio)
             {
-                V3.Sprite("Ring", rect, V3.RingSprite, V3.A(V3.Ink, 0.4f), 20f, by, 26f, 26f);
-                c.Box = V3.Sprite("Fill", rect, UiFactory.Circle, V3.Green, 20f, by, 26f, 26f);
-                c.Mark = V3.Sprite("Check", rect, V3.Icon("check"), V3.Ink, 24f, by + 4f, 18f, 18f);
+                V3.Sprite("Ring", rect, V3.RingSprite, V3.A(V3.Ink, 0.4f), 16f, by, 26f, 26f);
+                c.Box = V3.Sprite("Fill", rect, UiFactory.Circle, V3.Green, 16f, by, 26f, 26f);
+                c.Mark = V3.Sprite("Check", rect, V3.Icon("check"), V3.Ink, 20f, by + 4f, 18f, 18f);
             }
             else
             {
-                V3.Hairline(rect, V3.A(V3.Ink, 0.4f), 20f, by, 26f, 26f, 1.5f);
-                c.Box = V3.Box("Fill", rect, V3.Green, 20f, by, 26f, 26f);
-                c.Mark = V3.Sprite("Check", rect, V3.Icon("check"), V3.Ink, 24f, by + 4f, 18f, 18f);
+                V3.Hairline(rect, V3.A(V3.Ink, 0.4f), 16f, by, 26f, 26f, 1.5f);
+                c.Box = V3.Box("Fill", rect, V3.Green, 16f, by, 26f, 26f);
+                c.Mark = V3.Sprite("Check", rect, V3.Icon("check"), V3.Ink, 20f, by + 4f, 18f, 18f);
             }
-            c.Label = V3.Text("Label", rect, V3.Zh, label, 20f, V3.Ink, 58f, 0f, w - 68f, h, TextAlignmentOptions.Left);
+            c.Label = V3.Text("Label", rect, V3.Zh, label, OptionSize, V3.Ink, 52f, 0f, w - 60f, h, TextAlignmentOptions.Left);
             c.Label.enableWordWrapping = true;
             c.Label.lineSpacing = -12f;
         }
         _cells.Add(c);
     }
 
-    // One size for every option: as large as lets the longest wrap into two lines (at least 15).
+    // A long Chinese option breaks after its slash or before its bracket, not wherever the line runs out
+    private static string BreakZh(string label)
+    {
+        if (label.Length <= 8)
+            return label;
+        int slash = label.IndexOfAny(new[] { '/', '／' });
+        if (slash > 0)
+            return label.Substring(0, slash + 1) + "\n" + label.Substring(slash + 1);
+        int bracket = label.IndexOfAny(new[] { '(', '（' });
+        return bracket > 0 ? label.Substring(0, bracket) + "\n" + label.Substring(bracket) : label;
+    }
+
+    // One size for every option: the largest (from 26 down to 18) at which each fits its window in at most two lines.
+    private const float OptionSize = V3Type.Lead;
+
     private void FitOptionLabels()
     {
-        float size = 20f;
-        foreach (var c in _cells)
+        float size = OptionSize;
+        for (; size > 18f; size--)
         {
-            if (c.Label == null)
-                continue;
-            c.Label.fontSize = 20f;
-            c.Label.ForceMeshUpdate();
-            float room = c.Label.rectTransform.sizeDelta.y;
-            if (c.Label.preferredHeight > room)
-                size = Mathf.Min(size, Mathf.Max(15f, 20f * room / c.Label.preferredHeight));
+            bool fits = true;
+            foreach (var c in _cells)
+            {
+                if (c.Label == null)
+                    continue;
+                c.Label.fontSize = size;
+                c.Label.ForceMeshUpdate();
+                if (c.Label.textInfo.lineCount > 2 || c.Label.preferredHeight > c.Label.rectTransform.sizeDelta.y)
+                {
+                    fits = false;
+                    break;
+                }
+            }
+            if (fits)
+                break;
         }
         foreach (var c in _cells)
             if (c.Label != null)
-                c.Label.fontSize = Mathf.Floor(size);
+                c.Label.fontSize = size;
     }
 
     private void Paint(int index)
@@ -296,14 +318,15 @@ public class V3Questionnaire : MonoBehaviour
             _goHome?.Invoke();
     }
 
-    // the next question rises in (.45 s, ease out)
+    // the next question comes into focus and rises in (.3 s, ease out)
     private IEnumerator SlideIn()
     {
-        for (float t = 0f; t < 0.45f; t += Time.unscaledDeltaTime)
+        V3Focus.Pulse(V3Motion.Quick);
+        for (float t = 0f; t < V3Motion.Base; t += V3Motion.Step)
         {
-            float k = 1f - Mathf.Pow(1f - t / 0.45f, 3f);
+            float k = V3Motion.EaseOut(t / V3Motion.Base);
             _contentGroup.alpha = k;
-            _content.anchoredPosition = new Vector2(0f, -22f * (1f - k));
+            _content.anchoredPosition = new Vector2(0f, -14f * (1f - k));
             yield return null;
         }
         _contentGroup.alpha = 1f;

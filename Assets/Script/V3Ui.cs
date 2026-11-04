@@ -13,17 +13,47 @@ public static class V3
 {
     public const float W = 1024f, H = 600f;
 
+    // ==================== colour ====================
+    // Every colour the interface uses. Colour is light: green is the light of progress and what is done or chosen,
+    // violet is Kebbi and the gaze, red only a failure; everything else is ink, the light box's whites and greys and
+    // the metal's blue-greys.
+
+    // ink and text
     public static readonly Color Ink = new Color32(0x14, 0x14, 0x14, 0xFF);
-    public static readonly Color Page = new Color32(0xF7, 0xF7, 0xF5, 0xFF);
-    // The flow pages sit on a cool light grey with a fine grain; the test and
-    // its lead-in keep the home's Page colour. Shadows are a cool blue-grey.
-    public static readonly Color Cool = new Color32(0xF3, 0xF4, 0xF6, 0xFF);
-    public static readonly Color ShadowInk = new Color32(0x18, 0x20, 0x30, 0xFF);
-    // the one green (progress, done, action): the violet's saturation and brightness, the hue a cool technical green
-    public static readonly Color Green = new Color32(0x56, 0xCF, 0x9F, 0xFF);
+    public static readonly Color HeadInk = new Color32(0x3A, 0x3D, 0x43, 0xFF);      // the home's headline
+    public static readonly Color Text2 = new Color32(0x5A, 0x5F, 0x63, 0xFF);        // secondary lines
+    // light: green as a light source (liquid in the tubes, light guides, lamps); GreenLit for small solid marks lit by
+    // it (arcs, checks, small lights), as the liquid shows it; GreenPale for its hottest, palest part (sparks, glows)
+    public static readonly Color Green = new Color32(0x5F, 0xE3, 0xAE, 0xFF);
+    public static readonly Color GreenLit = new Color(Green.r * 0.84f, Green.g * 0.84f, Green.b * 0.84f, 1f);
+    public static readonly Color GreenPale = new Color32(0xDB, 0xFF, 0xF0, 0xFF);
     public static readonly Color Violet = new Color32(0x6E, 0x56, 0xCF, 0xFF);
-    public static readonly Color Text2 = new Color32(0x5A, 0x5F, 0x63, 0xFF);
     public static readonly Color Red = new Color32(0xE5, 0x48, 0x4D, 0xFF);
+    // the light box: its lit face (top to bottom), the flat white behind the test, the veil a card lays over a page,
+    // the aluminium frame and its fine white inner line
+    public static readonly Color LightTop = new Color32(0xFA, 0xFB, 0xFD, 0xFF);
+    public static readonly Color LightBottom = new Color32(0xEC, 0xEF, 0xF3, 0xFF);
+    public static readonly Color LightFlat = new Color32(0xF5, 0xF7, 0xFA, 0xFF);
+    public static readonly Color Veil = new Color32(0xF2, 0xF5, 0xFA, 0xFF);
+    public static readonly Color Frame = new Color32(0xC9, 0xCE, 0xD6, 0xFF);
+    public static readonly Color FrameLine = new Color32(0xFF, 0xFF, 0xFF, 0xE6);
+    // windows and keys: the backlit face and its edge, a secondary key, a face pressed in
+    public static readonly Color WindowFace = new Color32(0xFB, 0xFC, 0xFE, 0xFF);
+    public static readonly Color WindowEdge = new Color32(0xD3, 0xD8, 0xE0, 0xFF);
+    public static readonly Color KeySecondary = new Color32(0xED, 0xED, 0xEA, 0xFF);
+    public static readonly Color Pressed = new Color32(0xF2, 0xF2, 0xEF, 0xFF);
+    // grooves cut in the light box (with an alpha: a track, a light that is off)
+    public static readonly Color Groove = new Color32(0x1C, 0x22, 0x2C, 0xFF);
+    // metal: brushed steel, the machined groove and its shade, the key's centre dot and lit rim, a silver disc
+    public static readonly Color Steel = new Color32(0xE2, 0xE5, 0xEA, 0xFF);
+    public static readonly Color MetalGroove = new Color32(0x96, 0xA5, 0xBE, 0xFF);
+    public static readonly Color MetalShade = new Color32(0xB9, 0xC8, 0xDE, 0xFF);
+    public static readonly Color MetalDot = new Color32(0x78, 0x8C, 0xAA, 0xFF);
+    public static readonly Color MetalRim = new Color32(0xED, 0xF2, 0xF9, 0xFF);
+    public static readonly Color Silver = new Color32(0xB4, 0xBA, 0xC3, 0xFF);
+    // every shadow (with an alpha), and the warm white of the studio's key light
+    public static readonly Color ShadowInk = new Color32(0x18, 0x20, 0x30, 0xFF);
+    public static readonly Color KeyLight = new Color32(0xFF, 0xFC, 0xF7, 0xFF);
 
     public static Color A(Color c, float alpha) => new Color(c.r, c.g, c.b, alpha);
 
@@ -187,11 +217,11 @@ public static class V3
         k.Chip = k.Glyph;
         var tube = Tube(face, 16f, h - 15f, w - 32f, 9f);
         float lx = 20f + g + 14f;
-        k.Label = Text("Label", face, Zh, zh, en, secondary ? 20f : 24f, Ink, lx, 0f, w - lx - 14f, h - 4f, TextAlignmentOptions.Left);
+        k.Label = Text("Label", face, Zh, zh, en, secondary ? V3Type.Body : V3Type.Key, Ink, lx, 0f, w - lx - 14f, h - 4f, TextAlignmentOptions.Left);
         // a long label (English) shrinks rather than running past the frame
         k.Label.enableAutoSizing = true;
-        k.Label.fontSizeMin = 14f;
-        k.Label.fontSizeMax = secondary ? 20f : 24f;
+        k.Label.fontSizeMin = V3Type.Label;
+        k.Label.fontSizeMax = secondary ? V3Type.Body : V3Type.Key;
         k.Button.gameObject.AddComponent<V3PressTint>().Target = (Image)k.Button.targetGraphic;
         k.Button.gameObject.AddComponent<V3KeyDwell>().Init(tube, face, new Vector2(16f, h - 15f), w - 32f);
         return k;
@@ -249,13 +279,18 @@ public static class V3
     {
         var bg = UiFactory.CreateImage("LightBox", parent, LightBoxSprite, Color.white, raycast);
         UiFactory.Stretch(bg.rectTransform);
-        var frame = new Color32(0xC9, 0xCE, 0xD6, 0xFF);
-        Box("FrameT", bg.transform, frame, 0f, 0f, W, 9f);
-        Box("FrameB", bg.transform, frame, 0f, H - 9f, W, 9f);
-        Box("FrameL", bg.transform, frame, 0f, 0f, 9f, H);
-        Box("FrameR", bg.transform, frame, W - 9f, 0f, 9f, H);
-        Hairline(bg.transform, new Color32(0xFF, 0xFF, 0xFF, 0xE6), 9f, 9f, W - 18f, H - 18f);
+        LightBoxFrame(bg.transform);
         return bg;
+    }
+
+    // The light box's 9 px aluminium frame round the screen's edge, with a fine white line inside it.
+    public static void LightBoxFrame(Transform parent)
+    {
+        Box("FrameT", parent, Frame, 0f, 0f, W, 9f);
+        Box("FrameB", parent, Frame, 0f, H - 9f, W, 9f);
+        Box("FrameL", parent, Frame, 0f, 0f, 9f, H);
+        Box("FrameR", parent, Frame, W - 9f, 0f, 9f, H);
+        Hairline(parent, FrameLine, 9f, 9f, W - 18f, H - 18f);
     }
 
     // A backlit window in the light box (cards, answers) with its contact shadow.
@@ -283,7 +318,7 @@ public static class V3
         {
             if (s_lightBox != null)
                 return s_lightBox;
-            Color top = new Color32(0xFA, 0xFB, 0xFD, 0xFF), bottom = new Color32(0xEC, 0xEF, 0xF3, 0xFF);
+            Color top = LightTop, bottom = LightBottom;
             return s_lightBox = Raster(64, p => Color.Lerp(bottom, top, p.y / 64f));
         }
     }
@@ -324,8 +359,7 @@ public static class V3
             const float r = 10f;
             var tex = new Texture2D(s, s, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
             var px = new Color[s * s];
-            Color face = new Color32(0xFB, 0xFC, 0xFE, 0xFF), edge = new Color32(0xD3, 0xD8, 0xE0, 0xFF);
-            Color groove = new Color32(0x96, 0xA5, 0xBE, 0xFF), shade = new Color32(0xB9, 0xC8, 0xDE, 0xFF);
+            Color face = WindowFace, edge = WindowEdge, groove = MetalGroove, shade = MetalShade;
             for (int y = 0; y < s; y++)
                 for (int x = 0; x < s; x++)
                 {
@@ -376,14 +410,21 @@ public static class V3
         g.Tube.Fill = g.F;
     }
 
+
     // A glass tube w x h with green liquid in it (V3/Tube, its own material); set how full through the V3Slosh.
     public static V3Slosh Tube(Transform parent, float x, float y, float w, float h)
     {
+        // the liquid's light on the light box: a soft green glow under the tube, as long as the liquid
+        var glow = Shadow(parent, x, y, 0f, h, 8f, -2f, 4f, A(Green, 0f));
         var image = Sprite("Tube", parent, UiFactory.White, Green, x, y, w, h);
         var material = new Material(Resources.Load<Shader>("V3/Shaders/Tube"));
         material.SetVector("_Size", new Vector4(w, h, 0f, 0f));
         image.material = material;
-        return image.gameObject.AddComponent<V3Slosh>().Init(material);
+        var slosh = image.gameObject.AddComponent<V3Slosh>().Init(material);
+        slosh.Glow = glow.rectTransform;
+        slosh.GlowImage = glow;
+        slosh.Width = w;
+        return slosh;
     }
 
     // A metal scale: a guide groove with ticks, the right zone lit violet (from - to, 0-1), a black needle pointer
@@ -454,7 +495,7 @@ public static class V3
                 float x = (pxi + 0.5f) / k - R, y = R - (py + 0.5f) / k;   // y down from the centre
                 float s1 = Mathf.Abs(Mathf.Sqrt((x - 1f) * (x - 1f) + (y - 2.5f) * (y - 2.5f)) - r) - w / 2f;
                 float s2 = Mathf.Abs(Mathf.Sqrt((x - 1f) * (x - 1f) + (y - 5f) * (y - 5f)) - r) - w / 2f;
-                px[py * size + pxi] = new Color(30 / 255f, 40 / 255f, 60 / 255f, Mathf.Clamp01(0.4f * Falloff(s1, 1.6f) + 0.2f * Falloff(s2, 5f)));
+                px[py * size + pxi] = A(ShadowInk, Mathf.Clamp01(0.4f * Falloff(s1, 1.6f) + 0.2f * Falloff(s2, 5f)));
             }
         tex.SetPixels(px);
         tex.Apply(false, true);
@@ -758,7 +799,7 @@ public class V3Sparks : MonoBehaviour
             float k = _age[i] / _life[i], size = _size[i] * (1f - 0.55f * k);
             _dots[i].anchoredPosition = new Vector2(_pos[i].x, -_pos[i].y);
             _dots[i].sizeDelta = new Vector2(size, size);
-            var c = _hot[i] ? Color.Lerp(new Color(0.92f, 1f, 0.95f), V3.Green, k) : V3.Green;
+            var c = _hot[i] ? Color.Lerp(V3.GreenPale, V3.Green, k) : V3.Green;
             c.a = Mathf.Pow(1f - k, 1.4f);
             _images[i].color = c;
         }
@@ -783,14 +824,20 @@ public class V3Sparks : MonoBehaviour
     }
 }
 
-// A glass tube's liquid (V3/Tube): how full it is, and its meniscus tilting while the level moves and swinging a few
-// times as it settles.
+// A glass tube's liquid (V3/Tube): how full it is, its meniscus tilting while the level moves and swinging a few
+// times as it settles, bobbing when it rises; a light sweeping through to the front each time it rises (again every
+// 0.9 s while it keeps rising), a flash once it is full, and its light on the light box under it (Glow).
 public class V3Slosh : MonoBehaviour
 {
+    private const float SweepSeconds = V3Motion.Base, FlashSeconds = V3Motion.Slow;
     private Material _material;
-    private float _shown, _amp;
+    private float _shown, _amp, _bob, _sweepT0 = -10f, _flashT0 = -10f, _risingSince = -10f;
 
     public float Fill { get; set; }
+    // the tube's glow on the light box (set by V3.Tube), stretched to the liquid
+    public RectTransform Glow { get; set; }
+    public Image GlowImage { get; set; }
+    public float Width { get; set; }
 
     public V3Slosh Init(Material material)
     {
@@ -800,12 +847,33 @@ public class V3Slosh : MonoBehaviour
 
     private void LateUpdate()
     {
-        float dt = Mathf.Max(1e-4f, Time.unscaledDeltaTime);
-        float speed = Mathf.Abs(Fill - _shown) / dt;
+        float now = Time.unscaledTime, dt = Mathf.Max(1e-4f, Time.unscaledDeltaTime);
+        float step = Fill - _shown, speed = Mathf.Abs(step) / dt;
+        if (step > 0.0005f)
+        {
+            if (now - _risingSince > 0.3f || now - _sweepT0 > 0.9f)
+                _sweepT0 = now;
+            _risingSince = now;
+            _bob = Mathf.Max(_bob, Mathf.Clamp01(step * 20f));
+            if (Fill >= 0.999f && _shown < 0.999f)
+                _flashT0 = now;
+        }
         _shown = Fill;
         _amp = Mathf.Lerp(_amp, Mathf.Clamp01(speed * 2.5f), 1f - Mathf.Exp(-dt * (speed > 0.01f ? 8f : 2.2f)));
+        _bob *= Mathf.Exp(-dt * 6f);
+        float sweep = (now - _sweepT0) / SweepSeconds, flash = (now - _flashT0) / FlashSeconds;
         _material.SetFloat("_Fill", _shown);
-        _material.SetFloat("_Slosh", _amp * Mathf.Sin(Time.unscaledTime * 13f));
+        _material.SetFloat("_Slosh", _amp * Mathf.Sin(now * 13f));
+        _material.SetFloat("_Bob", _bob * 1.6f * Mathf.Sin(now * 17f));
+        _material.SetFloat("_Sweep", sweep >= 0f && sweep < 1f ? (1f - Mathf.Pow(1f - sweep, 2f)) * _shown : -1f);
+        _material.SetFloat("_Flash", flash >= 0f && flash < 1f ? Mathf.Sin(flash * Mathf.PI) : 0f);
+        if (Glow != null)
+        {
+            Glow.sizeDelta = new Vector2(Mathf.Max(0f, Width * _shown) + 16f, Glow.sizeDelta.y);
+            var c = GlowImage.color;
+            c.a = _shown > 0.002f ? 0.16f + 0.2f * (flash >= 0f && flash < 1f ? Mathf.Sin(flash * Mathf.PI) : 0f) : 0f;
+            GlowImage.color = c;
+        }
     }
 }
 
@@ -829,11 +897,12 @@ public class V3Wave : MonoBehaviour
     }
 }
 
-// A flow page's entrance: the page rises 22 px into place (.75 s, ease out) while its pieces fade in one after
-// another, 45 ms apart. Pieces that already have their own CanvasGroup (keys) fade with the page.
+// A flow page's entrance: the page comes into focus (V3Focus) and rises 16 px into place (.45 s, ease out) while its
+// pieces fade in one after another, 30 ms apart. Pieces that already have their own CanvasGroup (keys) fade with the
+// page.
 public class V3PageIn : MonoBehaviour
 {
-    private float _t0;
+    private float _t;
     private bool _done, _built;
     private CanvasGroup _group;
     private readonly List<CanvasGroup> _pieces = new List<CanvasGroup>();
@@ -855,29 +924,32 @@ public class V3PageIn : MonoBehaviour
             if (_mine.Contains(g))
                 _pieces.Add(g);
         }
-        _t0 = Time.unscaledTime;
+        _t = 0f;
         _done = false;
         Apply(0f);
-        // a soft page sound - not while the pages are being built at start-up
+        // a soft page sound and the focus - not while the pages are being built at start-up
         if (_built)
+        {
             V3Sounds.Play(V3Sounds.Cue.Page, 0.6f);
+            V3Focus.Pulse();
+        }
         _built = true;
     }
 
     private void Update()
     {
         if (!_done)
-            Apply(Time.unscaledTime - _t0);
+            Apply(_t += V3Motion.Step);
     }
 
     private void Apply(float t)
     {
-        float k = 1f - Mathf.Pow(1f - Mathf.Clamp01(t / 0.75f), 4f);
-        ((RectTransform)transform).anchoredPosition = new Vector2(0f, -22f * (1f - k));
-        _group.alpha = Mathf.Clamp01(t / 0.3f);
+        float k = 1f - Mathf.Pow(1f - Mathf.Clamp01(t / V3Motion.Slow), 4f);
+        ((RectTransform)transform).anchoredPosition = new Vector2(0f, -16f * (1f - k));
+        _group.alpha = Mathf.Clamp01(t / V3Motion.Quick);
         for (int i = 0; i < _pieces.Count; i++)
-            _pieces[i].alpha = Mathf.Clamp01((t - i * 0.045f) / 0.35f);
-        _done = t > 0.75f + _pieces.Count * 0.045f;
+            _pieces[i].alpha = Mathf.Clamp01((t - i * V3Motion.Stagger) / V3Motion.Quick);
+        _done = t > V3Motion.Slow + _pieces.Count * V3Motion.Stagger;
     }
 }
 
@@ -943,17 +1015,83 @@ public class V3Follow : MonoBehaviour
     }
 }
 
-// Pressed state for V3 keys: a light grey face while held.
+// Pressed state for V3 keys: the glass face sinks a little and greys while held, springing back past its size when
+// let go, and a ring of green light spreads from where it was touched.
 public class V3PressTint : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerExitHandler
 {
+    private const float Sink = 0.035f;
     public Image Target;
     private Color _up;
-    private bool _down;
+    private bool _down, _centred;
+    private float _depth, _speed, _rippleT = 1f;
+    private RectTransform _ripple;
+    private Image _rippleImage;
 
-    public void OnPointerDown(PointerEventData eventData) => Set(true);
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        Set(true);
+        Ripple(eventData);
+    }
+
     public void OnPointerUp(PointerEventData eventData) => Set(false);
     public void OnPointerExit(PointerEventData eventData) => Set(false);
-    private void OnDisable() => Set(false);
+
+    private void OnDisable()
+    {
+        Set(false);
+        _depth = _speed = 0f;
+        _rippleT = 1f;
+        transform.localScale = Vector3.one;
+        if (_rippleImage != null)
+            _rippleImage.enabled = false;
+    }
+
+    private void Ripple(PointerEventData e)
+    {
+        var rect = (RectTransform)transform;
+        // only on keys, not the small round buttons
+        if (rect.rect.width < 60f)
+            return;
+        if (_ripple == null)
+        {
+            if (GetComponent<RectMask2D>() == null)
+                gameObject.AddComponent<RectMask2D>();
+            _rippleImage = UiFactory.CreateImage("Ripple", rect, UiFactory.Circle, V3.A(V3.Green, 0f));
+            _ripple = _rippleImage.rectTransform;
+            _ripple.SetAsFirstSibling();
+        }
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(rect, e.position, e.pressEventCamera, out var local);
+        _ripple.anchorMin = _ripple.anchorMax = rect.pivot;
+        _ripple.pivot = UiFactory.Center;
+        _ripple.anchoredPosition = local;
+        _rippleImage.enabled = true;
+        _rippleT = 0f;
+    }
+
+    private void Update()
+    {
+        var rect = (RectTransform)transform;
+        if (!_centred)
+        {
+            // sink about the middle of the face
+            Vector2 size = rect.rect.size, shift = UiFactory.Center - rect.pivot;
+            rect.pivot = UiFactory.Center;
+            rect.anchoredPosition += new Vector2(shift.x * size.x, shift.y * size.y);
+            _centred = true;
+        }
+        float dt = Mathf.Min(0.05f, Time.unscaledDeltaTime);
+        _speed += ((_down ? 1f : 0f) - _depth) * 900f * dt - _speed * 32f * dt;
+        _depth += _speed * dt;
+        rect.localScale = Vector3.one * (1f - Sink * _depth);
+        if (_rippleT < 1f)
+        {
+            _rippleT = Mathf.Min(1f, _rippleT + dt / V3Motion.Slow);
+            float k = 1f - Mathf.Pow(1f - _rippleT, 3f);
+            _ripple.sizeDelta = Vector2.one * Mathf.Lerp(16f, 2.4f * rect.rect.width, k);
+            _rippleImage.color = V3.A(V3.Green, 0.3f * (1f - _rippleT));
+            _rippleImage.enabled = _rippleT < 1f;
+        }
+    }
 
     private void Set(bool down)
     {
@@ -965,6 +1103,323 @@ public class V3PressTint : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
             V3Sounds.Play(V3Sounds.Cue.Press);
         }
         _down = down;
-        Target.color = down ? new Color32(0xF2, 0xF2, 0xEF, 0xFF) : _up;
+        Target.color = down ? V3.Pressed : _up;
+    }
+}
+
+// The focus layer: everything under it (the flow pages and the scene) seen out of focus under a light veil, on its own
+// canvas between the pages and the overlays (V3/FocusBlur). A page change runs it from soft to sharp (Pulse), as an
+// eye focusing on the new page; a card holds it soft behind it while it is up (Hold / Release).
+public class V3Focus : MonoBehaviour
+{
+    private static V3Focus s_instance;
+    private Image _image;
+    private Material _material;
+    private readonly HashSet<object> _holds = new HashSet<object>();
+    private float _pulse, _pulseSeconds = V3Motion.Slow, _hold;
+
+    private static V3Focus Get()
+    {
+        if (s_instance != null)
+            return s_instance;
+        var canvas = UiFactory.CreateOverlayCanvas("V3Focus", V3Layer.Focus, null);
+        DontDestroyOnLoad(canvas.gameObject);
+        canvas.GetComponent<GraphicRaycaster>().enabled = false;
+        s_instance = canvas.gameObject.AddComponent<V3Focus>();
+        s_instance._material = new Material(Resources.Load<Shader>("V3/Shaders/FocusBlur"));
+        s_instance._image = UiFactory.CreateImage("Focus", canvas.transform, UiFactory.White, Color.white);
+        s_instance._image.material = s_instance._material;
+        s_instance._image.raycastTarget = false;
+        UiFactory.Stretch(s_instance._image.rectTransform);
+        s_instance._image.enabled = false;
+        return s_instance;
+    }
+
+    public static void Pulse(float seconds = V3Motion.Slow)
+    {
+        var f = Get();
+        f._pulse = 1f;
+        f._pulseSeconds = seconds;
+    }
+
+    public static void Hold(object who) => Get()._holds.Add(who);
+
+    public static void Release(object who)
+    {
+        if (s_instance != null)
+            s_instance._holds.Remove(who);
+    }
+
+    private void LateUpdate()
+    {
+        // paced by frames, so a page that takes a frame or two to come up still focuses in front of the eyes
+        float dt = V3Motion.Step;
+        _pulse = Mathf.Max(0f, _pulse - dt / _pulseSeconds);
+        float pulse = _pulse * _pulse;
+        _hold = Mathf.MoveTowards(_hold, _holds.Count > 0 ? 1f : 0f, dt / V3Motion.Quick);
+        float hold = 1f - (1f - _hold) * (1f - _hold);
+        float radius = Mathf.Max(pulse * 18f, hold * 10f), veil = Mathf.Max(pulse * 0.45f, hold * 0.3f);
+        _image.enabled = radius > 0.05f;
+        if (_image.enabled)
+        {
+            _material.SetFloat("_Radius", radius);
+            _material.SetColor("_Veil", V3.A(V3.Veil, veil));
+        }
+    }
+}
+
+// A card's entrance (put on the root that is shown and hidden): the veil fades in to a lighter tint than before, so
+// the page shows through it out of focus (V3Focus holds while the card is up), and the card rises into focus from a
+// little smaller. ownCanvas: a card on the pages' own canvas gets one above the focus layer.
+public class V3CardIn : MonoBehaviour
+{
+    private const float VeilAlpha = 0.55f;
+    private Image _veil;
+    private RectTransform _card;
+    private CanvasGroup _cardGroup;
+    private float _t;
+
+    public static void Attach(GameObject root, Image veil, RectTransform card, bool ownCanvas = false)
+    {
+        var c = root.AddComponent<V3CardIn>();
+        c._veil = veil;
+        c._card = card;
+        c._cardGroup = card.GetComponent<CanvasGroup>();
+        if (c._cardGroup == null)
+            c._cardGroup = card.gameObject.AddComponent<CanvasGroup>();
+        // turn about the card's middle
+        Vector2 size = card.rect.size, shift = UiFactory.Center - card.pivot;
+        card.pivot = UiFactory.Center;
+        card.anchoredPosition += new Vector2(shift.x * size.x, shift.y * size.y);
+        if (ownCanvas)
+        {
+            var canvas = root.GetComponent<Canvas>();
+            if (canvas == null)
+                canvas = root.AddComponent<Canvas>();
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = V3Layer.CardOnPages;
+            if (root.GetComponent<GraphicRaycaster>() == null)
+                root.AddComponent<GraphicRaycaster>();
+        }
+    }
+
+    private void OnEnable()
+    {
+        _t = 0f;
+        V3Focus.Hold(this);
+        Apply(0f);
+    }
+
+    private void OnDisable() => V3Focus.Release(this);
+
+    private void Update() => Apply(_t += V3Motion.Step);
+
+    private void Apply(float t)
+    {
+        if (_card == null)
+            return;
+        _card.localScale = Vector3.one * Mathf.LerpUnclamped(0.94f, 1f, V3Motion.Back(t / V3Motion.Quick));
+        _cardGroup.alpha = Mathf.Clamp01(t / V3Motion.Instant);
+        if (_veil != null)
+        {
+            var c = _veil.color;
+            c.a = VeilAlpha * Mathf.Clamp01(t / V3Motion.Instant);
+            _veil.color = c;
+        }
+    }
+}
+
+// A light on the light box that follows the gaze, slowly, as a lamp's reflection moves on glass when the head moves:
+// the page answers the eyes - or, on the touch pages (no gaze then), the last touch, drifting slowly when left alone.
+// Off while gaze is being measured (V3Flow.SheenAllowed false: the calibration dots, the countdown, the test).
+public class V3Sheen : MonoBehaviour
+{
+    public FollowGazePoint2D Pointer;
+    public RectTransform Light;
+    public Image LightImage;
+    private Vector2 _at = new Vector2(V3.W * 0.5f, V3.H * 0.35f), _touch = new Vector2(V3.W * 0.5f, V3.H * 0.35f);
+    private float _touchAt = -100f, _alpha;
+
+    private void LateUpdate()
+    {
+        float now = Time.unscaledTime;
+        bool on = V3Flow.SheenAllowed;
+        if (Input.touchCount > 0 || Input.GetMouseButton(0))
+        {
+            Vector2 s = Input.touchCount > 0 ? Input.GetTouch(0).position : (Vector2)Input.mousePosition;
+            _touch = new Vector2(s.x * V3.W / Screen.width, (Screen.height - s.y) * V3.W / Screen.width);
+            _touchAt = now;
+        }
+        Vector2 target;
+        if (Pointer != null && Pointer.isActiveAndEnabled)
+        {
+            var s = Pointer.DisplayedScreenPosition;
+            target = new Vector2(s.x * V3.W / Screen.width, (Screen.height - s.y) * V3.W / Screen.width);
+        }
+        else if (now - _touchAt < 4f)
+            target = _touch;
+        else
+            target = new Vector2(V3.W * (0.5f + 0.3f * Mathf.Sin(now * 0.21f)), V3.H * (0.4f + 0.2f * Mathf.Sin(now * 0.33f + 1f)));
+        if (on)
+            _at = Vector2.Lerp(_at, target, 1f - Mathf.Exp(-Time.unscaledDeltaTime * 2.5f));
+        _alpha = Mathf.MoveTowards(_alpha, on ? 1f : 0f, Time.unscaledDeltaTime / 0.4f);
+        Light.anchoredPosition = new Vector2(_at.x, -_at.y);
+        var c = LightImage.color;
+        c.a = 0.55f * _alpha;
+        LightImage.color = c;
+    }
+}
+
+// Type sizes (px at 1024 x 600): one step for each kind of text. Fonts by role: V3.Zh (bold, the voice of the
+// interface), V3.ZhMedium (secondary lines), V3.Mono (small data, notes), V3.Num (big values), V3.Headline (the
+// home's word). English titles run a step smaller where Chinese and English share a box (x 0.9).
+public static class V3Type
+{
+    public const float Dial = 7f;       // the dial's engraving and degree numbers
+    public const float Micro = 10f;     // mono labels on scales
+    public const float Data = 12f;      // mono data: level, notes
+    public const float Label = 16f;     // app name, chips, small labels
+    public const float BodyS = 18f;     // secondary lines, tips, the percentage
+    public const float Body = 20f;      // status lines, secondary keys
+    public const float Key = 24f;       // keys, Kebbi's line, card labels
+    public const float Lead = 26f;      // answers, the home's modes
+    public const float Title = 30f;     // card titles, the practice line
+    public const float Display = 40f;   // page titles
+    public const float Answer = 48f;    // yes / no answers
+    public const float Big = 124f;      // the result's values
+    public const float Huge = 170f;     // the countdown
+}
+
+// Motion: four durations and the easings every transition is built from. Shared pieces (page entrance, focus, cards,
+// presses, rings, tubes) use these; the home's opening is its own choreography on top of them. Clocks advance by the
+// frames drawn, each at most MaxStep, so a slow frame does not swallow a transition.
+public static class V3Motion
+{
+    public const float Instant = 0.12f;  // a tint, a fade of a small piece
+    public const float Quick = 0.2f;     // a press, a pop, a card rising
+    public const float Base = 0.3f;      // a question changing, a sweep
+    public const float Slow = 0.45f;     // a page coming in, a ripple, a flash
+    public const float Stagger = 0.03f;  // between pieces coming in one after another
+    public const float MaxStep = 1f / 30f;
+
+    public static float Step => Mathf.Min(Time.unscaledDeltaTime, MaxStep);
+    public static float EaseOut(float x) => 1f - Mathf.Pow(1f - Mathf.Clamp01(x), 3f);
+    // overshoots a little and settles (as a press springing back)
+    public static float Back(float x)
+    {
+        x = Mathf.Clamp01(x);
+        return 1f + 2.2f * Mathf.Pow(x - 1f, 3f) + 1.2f * Mathf.Pow(x - 1f, 2f);
+    }
+}
+
+// The canvases' drawing order (overlay sorting order): what lies over what.
+public static class V3Layer
+{
+    public const int Scene = 0;          // the scene's own canvas (test symbol and answers)
+    public const int Pages = 3;          // the flow pages
+    public const int Focus = 4;          // the focus layer (V3Focus) over the pages
+    public const int Home = 6;           // the home
+    public const int CardOnPages = 17;   // a card belonging to a page, lifted over the focus layer
+    public const int Overlay = 18;       // pause card, exit dialog
+    public const int Presence = 19;      // "still there?"
+    public const int Hud = 20;           // the top-right keys
+}
+
+// A round progress ring as a glass tube of green liquid (V3/RingTube): the selection and calibration rings. Set Fill
+// (0-1); Steady (0-1) and Lean (-1..1, y up) let it answer the gaze; Lock() closes it - a ring of light running in to
+// the centre and a flash there. A light sweeps through the liquid each time it starts rising (again every 0.9 s while it
+// keeps rising).
+public class V3LiquidRing : MonoBehaviour
+{
+    private Material _material;
+    private float _shown, _steady = 1f, _sweepT0 = -10f, _risingSince = -10f, _lock = -1f;
+    private Vector2 _lean;
+
+    public float Fill { get; set; }
+    public float Steady { get; set; } = 1f;
+    public Vector2 Lean { get; set; }
+
+    // size: the ring's box (in the parent's units); radius and half thickness in the 120-unit ring sprites' terms
+    public static V3LiquidRing Create(Transform parent, float size, float radius, float half, Color track)
+    {
+        var image = UiFactory.CreateImage("LiquidRing", parent, UiFactory.White, V3.Green);
+        image.raycastTarget = false;
+        UiFactory.Place(image.rectTransform, UiFactory.Center, UiFactory.Center, Vector2.zero, Vector2.one * size);
+        var material = new Material(Resources.Load<Shader>("V3/Shaders/RingTube"));
+        material.SetFloat("_Q", size);
+        material.SetFloat("_R", radius * size / 120f);
+        material.SetFloat("_T", half * size / 120f);
+        material.SetColor("_Track", track);
+        image.material = material;
+        var ring = image.gameObject.AddComponent<V3LiquidRing>();
+        ring._material = material;
+        return ring;
+    }
+
+    public void Lock() => _lock = 0f;
+
+    public void Unlock() => _lock = -1f;
+
+    private void LateUpdate()
+    {
+        float now = Time.unscaledTime, dt = V3Motion.Step;
+        if (Fill - _shown > 0.0005f)
+        {
+            if (now - _risingSince > 0.3f || now - _sweepT0 > 0.9f)
+                _sweepT0 = now;
+            _risingSince = now;
+        }
+        _shown = Fill;
+        float k = 1f - Mathf.Exp(-dt * 8f);
+        _steady = Mathf.Lerp(_steady, Steady, k);
+        _lean = Vector2.Lerp(_lean, Vector2.ClampMagnitude(Lean, 1f), k);
+        if (_lock >= 0f)
+        {
+            _lock += dt / V3Motion.Slow;
+            if (_lock >= 1f)
+                _lock = -1f;
+        }
+        float sweep = (now - _sweepT0) / V3Motion.Base;
+        _material.SetFloat("_Fill", _shown);
+        _material.SetFloat("_Steady", _steady);
+        _material.SetVector("_Lean", new Vector4(_lean.x, _lean.y, 0f, 0f));
+        _material.SetFloat("_Sweep", sweep >= 0f && sweep < 1f ? V3Motion.EaseOut(sweep) : -1f);
+        _material.SetFloat("_Lock", Mathf.Max(0f, _lock));
+    }
+}
+
+// How still the eyes are: the gaze's spread over the last third of a second (Steady 1 = still, 0 = wandering, by
+// Spread screen px), and where it is drifting from its mean (Lean, -1..1, y up).
+public class V3GazeSteadiness
+{
+    private const float Window = 0.35f;
+    private readonly Queue<(float t, Vector2 p)> _samples = new Queue<(float, Vector2)>();
+    public float Spread = 18f;
+    public float Steady { get; private set; } = 1f;
+    public Vector2 Lean { get; private set; }
+
+    public void Add(Vector2 screen)
+    {
+        float now = Time.unscaledTime;
+        _samples.Enqueue((now, screen));
+        while (_samples.Count > 2 && _samples.Peek().t < now - Window)
+            _samples.Dequeue();
+        Vector2 mean = Vector2.zero;
+        foreach (var s in _samples)
+            mean += s.p;
+        mean /= _samples.Count;
+        float var = 0f;
+        foreach (var s in _samples)
+            var += (s.p - mean).sqrMagnitude;
+        float spread = Spread * Screen.width / V3.W;
+        Steady = 1f - Mathf.Clamp01(Mathf.Sqrt(var / _samples.Count) / spread);
+        Lean = Vector2.ClampMagnitude((screen - mean) / spread, 1f);
+    }
+
+    public void Clear()
+    {
+        _samples.Clear();
+        Steady = 1f;
+        Lean = Vector2.zero;
     }
 }

@@ -5,10 +5,13 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// V3 test and result pages. The test stays MetricTest's own: same symbol, sizes, rules
-// and gaze-dwell buttons. Only the look changes: the light box, a status row (eye, level, 11 small lights), the four
-// answer E's bare (same size as the symbol, the ophthalmologist's design) placed 80 px in from the edges, and
-// pressed like keys while looked at.
+// V3 test and result pages. The test stays MetricTest's own: same symbol, sizes, rules, timing
+// and gaze-dwell buttons. Only the look changes: the light box (a flat light-box white behind the symbol, the frame
+// round the edge), a status row (eye, level, 11 small lights, the head lamp), the four answer E's bare (same size as
+// the symbol, the ophthalmologist's design) placed 80 px in from the edges and pressed like keys while looked at, a
+// faint framing of the symbol (as the home E's), a neutral ring of light where an answer is taken, and the status row
+// lighting up when the level changes. Nothing is drawn over the symbol: there is no gap between trials to show a
+// level change in the middle, so it plays in the status row.
 // The result is redrawn from MetricTest's ResultShown (values, message) as backlit windows, one per value.
 public class V3Test : MonoBehaviour
 {
@@ -26,6 +29,24 @@ public class V3Test : MonoBehaviour
     private GameObject _testView;
     private TextMeshProUGUI _tag, _level;
     private Image[] _bar = new Image[11], _barRing = new Image[11];
+    // the symbol's framing marks (an L at each corner), snapping in a little as each trial begins
+    private readonly RectTransform[] _frame = new RectTransform[8];
+    private float _frameSnap = 1f;
+    // where an answer is taken: a violet ring spreading and fading (the same for every answer, right or wrong)
+    private RectTransform _taken;
+    private Image _takenImage;
+    private float _takenT = 1f;
+    // a level change: the level pops and flashes, a light runs along the small lights to the new one
+    private int _shownLevel = -1;
+    private float _levelT = 1f;
+    private Image _levelSweep;
+    // the head lamp: green while in place, violet (as on the pause card) when drifting toward the pause, grey without a
+    // face
+    private Image _headLamp, _headHalo;
+    private HeadFollow _head;
+    // the light box behind the symbol: the camera's clear colour while testing (the scene canvas draws over it)
+    private Color _clearWas;
+    private bool _clearSet;
     private RectTransform[] _options;
     private ButtonTrigger[] _optionTriggers;
     private Vector2[] _optionRest;
@@ -82,12 +103,40 @@ public class V3Test : MonoBehaviour
         var t = _testView.transform;
         // the eye, the level, then eleven small lights (done green, the current one ringed, the rest dark)
         _tag = V3.Note(t, 40f, 34f, 120f);
-        _level = V3.Text("Level", t, V3.Mono, "", 12f, V3.Ink, 128f, 26f, 110f, 30f, TextAlignmentOptions.Left, 0.12f);
+        _level = V3.Text("Level", t, V3.Mono, "", V3Type.Data, V3.Ink, 128f, 26f, 110f, 30f, TextAlignmentOptions.Left, 0.12f);
         for (int i = 0; i < 11; i++)
         {
             _barRing[i] = Rounded(V3.Sprite("Ring", t, UiFactory.RoundedRect, V3.Green, 236f + i * 26f - 1.5f, 36.5f, 25f, 9f), 4.5f);
             _bar[i] = Rounded(V3.Sprite("Light", t, UiFactory.RoundedRect, V3.A(V3.Ink, 0.3f), 236f + i * 26f, 38f, 22f, 6f), 3f);
         }
+        // the level pops about its left middle
+        _level.rectTransform.pivot = new Vector2(0f, 0.5f);
+        _level.rectTransform.anchoredPosition += new Vector2(0f, -15f);
+        _levelSweep = Rounded(V3.Sprite("Sweep", t, UiFactory.RoundedRect, V3.A(V3.GreenLit, 0f), 236f, 37f, 22f, 8f), 4f);
+        // the head lamp after the lights
+        _headHalo = V3.Sprite("HeadHalo", t, UiFactory.Circle, V3.A(V3.GreenLit, 0.25f), 540f, 32f, 18f, 18f);
+        _headLamp = V3.Sprite("HeadLamp", t, UiFactory.Circle, V3.GreenLit, 544f, 36f, 10f, 10f);
+        V3.Text("HeadLabel", t, V3.Mono, "位置", "POSITION", V3Type.Micro, V3.A(V3.Ink, 0.55f), 564f, 34f, 90f, 14f, TextAlignmentOptions.Left, 0.12f);
+        // the light box's aluminium frame round the edge (the symbol and answers sit well inside it)
+        V3.LightBoxFrame(t);
+        for (int i = 0; i < _frame.Length; i++)
+        {
+            var arm = V3.Box("Frame", t, V3.A(V3.Ink, 0.4f), 0f, 0f, 1f, 1.6f).rectTransform;
+            arm.pivot = new Vector2(0f, 0.5f);
+            _frame[i] = arm;
+        }
+        _takenImage = V3.Sprite("Taken", t, V3Setup.RingSprite(50f, 2.2f), V3.A(V3.Violet, 0f), 0f, 0f, 10f, 10f);
+        _taken = _takenImage.rectTransform;
+        _taken.pivot = UiFactory.Center;
+        _head = FindObjectOfType<HeadFollow>();
+        _test.SymbolShown += () => _frameSnap = 0f;
+        _test.SideChosen += side =>
+        {
+            if (!OptionAt.TryGetValue(side, out var at))
+                return;
+            _taken.anchoredPosition = new Vector2(at.x, -at.y);
+            _takenT = 0f;
+        };
         _testView.SetActive(false);
     }
 
@@ -95,11 +144,24 @@ public class V3Test : MonoBehaviour
     {
         bool flow = _flow.FlowVisible;
         bool testing = flow && _test.gameObject.activeInHierarchy;
+        V3Flow.SheenOffTest = testing;
         if (_testView.activeSelf != testing)
         {
             _testView.SetActive(testing);
             if (testing)
+            {
                 _laidOut = false;
+                _shownLevel = -1;
+            }
+        }
+        // the light box white behind the symbol while testing; the camera's own colour back after
+        var cam = Camera.main;
+        if (cam != null && testing != _clearSet)
+        {
+            if (testing)
+                _clearWas = cam.backgroundColor;
+            cam.backgroundColor = testing ? V3.LightFlat : _clearWas;
+            _clearSet = testing;
         }
         if (testing)
         {
@@ -125,9 +187,14 @@ public class V3Test : MonoBehaviour
         _level.text = V3.T($"第 <size=22>{level}</size> 級", $"LEVEL <size=22>{level}</size>");
         for (int i = 0; i < 11; i++)
         {
-            _bar[i].color = i + 1 < level ? V3.Green : i + 1 == level ? Color.white : new Color32(0x1C, 0x22, 0x2C, 0x4D);
+            _bar[i].color = i + 1 < level ? V3.GreenLit : i + 1 == level ? Color.white : V3.A(V3.Groove, 0.3f);
             _barRing[i].enabled = i + 1 == level;
         }
+        float dt = V3Motion.Step;
+        UpdateLevelChange(level, dt);
+        UpdateFrame(dt);
+        UpdateTaken(dt);
+        UpdateHeadLamp();
 
         if (!_laidOut)
             LayOutOptions();
@@ -142,6 +209,99 @@ public class V3Test : MonoBehaviour
             bool gazed = _optionTriggers[i] != null && _optionTriggers[i].Gazed && _optionTriggers[i].GetComponent<Button>().IsInteractable();
             V3KeyPress.Ease(_options[i], _optionRest[i], gazed ? 0.62f : 0f);
         }
+    }
+
+    // The level pops (a little larger, green) and a light runs along the small lights from the old level to the new.
+    private void UpdateLevelChange(int level, float dt)
+    {
+        if (_shownLevel < 0)
+            _shownLevel = level;
+        if (level != _shownLevel)
+        {
+            _levelT = 0f;
+            _sweepFrom = _shownLevel;
+            _shownLevel = level;
+        }
+        _levelT = Mathf.Min(1f, _levelT + dt / V3Motion.Slow);
+        float pop = Mathf.Sin(_levelT * Mathf.PI);
+        _level.rectTransform.localScale = Vector3.one * (1f + 0.25f * pop);
+        _level.color = Color.Lerp(V3.Ink, V3.GreenLit, pop);
+        float run = 1f - Mathf.Pow(1f - Mathf.Clamp01(_levelT / 0.7f), 3f);
+        float x = 236f + (Mathf.Lerp(_sweepFrom, level, run) - 1f) * 26f;
+        _levelSweep.rectTransform.anchoredPosition = new Vector2(x, -37f);
+        _levelSweep.color = V3.A(V3.GreenLit, 0.9f * (1f - _levelT));
+    }
+
+    private int _sweepFrom = 1;
+    private float _symbolPx = 80f;
+
+    // The framing marks round the symbol (on the scene canvas, measured on the screen): an L at each corner, a margin
+    // out from it that never reaches the answer E's; a small snap inward as each trial begins.
+    private void UpdateFrame(float dt)
+    {
+        _frameSnap = Mathf.Min(1f, _frameSnap + dt / V3Motion.Quick);
+        var corners = new Vector3[4];
+        _test.blackRT.GetWorldCorners(corners);
+        float k = V3.W / Screen.width;
+        Vector2 min = new Vector2(float.MaxValue, float.MaxValue), max = new Vector2(float.MinValue, float.MinValue);
+        foreach (var c in corners)
+        {
+            var at = new Vector2(c.x * k, (Screen.height - c.y) * k);
+            min = Vector2.Min(min, at);
+            max = Vector2.Max(max, at);
+        }
+        float size = _symbolPx = max.x - min.x;
+        bool shown = _test.blackRT.gameObject.activeInHierarchy && size > 1f;
+        // the room between the symbol and the answer E's above and below it (they are the symbol's size)
+        float room = (OptionAt["down"].y - OptionAt["up"].y) / 2f - size;
+        float margin = Mathf.Min(0.3f * size + 12f, room * 0.45f);
+        float arm = Mathf.Clamp(size * 0.22f, 10f, 22f);
+        bool on = shown && margin >= 6f;
+        float grow = 1f + 0.08f * (1f - (1f - Mathf.Pow(1f - _frameSnap, 3f)));
+        Vector2 mid = (min + max) / 2f, half = (max - min) / 2f + Vector2.one * margin;
+        half *= grow;
+        var pts = new[] { mid + new Vector2(-half.x, -half.y), mid + new Vector2(half.x, -half.y), mid + new Vector2(half.x, half.y), mid + new Vector2(-half.x, half.y) };
+        for (int i = 0; i < 4; i++)
+        {
+            Vector2 next = pts[(i + 1) % 4] - pts[i], prev = pts[(i + 3) % 4] - pts[i];
+            Arm(_frame[2 * i], pts[i], next.normalized, arm, on);
+            Arm(_frame[2 * i + 1], pts[i], prev.normalized, arm, on);
+        }
+    }
+
+    private static void Arm(RectTransform arm, Vector2 from, Vector2 dir, float length, bool on)
+    {
+        arm.gameObject.SetActive(on);
+        if (!on)
+            return;
+        arm.anchoredPosition = new Vector2(from.x - dir.x * 0.8f, -(from.y - dir.y * 0.8f));
+        arm.sizeDelta = new Vector2(length, 1.6f);
+        arm.localEulerAngles = new Vector3(0f, 0f, -Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg);
+    }
+
+    // the taken ring: from the E's size outward, fading
+    private void UpdateTaken(float dt)
+    {
+        _takenT = Mathf.Min(1f, _takenT + dt / V3Motion.Slow);
+        float k = 1f - Mathf.Pow(1f - _takenT, 3f);
+        _taken.sizeDelta = Vector2.one * Mathf.Lerp(_symbolPx * 1.1f, _symbolPx * 1.9f, k);
+        _takenImage.color = V3.A(V3.Violet, 0.55f * (1f - _takenT));
+    }
+
+    // In place: lateral within half the pause's limit (10 deg) and distance within half of its 5 cm; violet beyond, grey
+    // without a face.
+    private void UpdateHeadLamp()
+    {
+        Color c;
+        if (_head == null || !_head.HasFace)
+            c = V3.A(V3.Ink, 0.3f);
+        else
+        {
+            float off = Mathf.Max(Mathf.Abs(_head.LateralOffsetDeg) / 10f, Mathf.Abs(_head.DistanceOffset * 100f) / 5f);
+            c = off < 0.5f ? V3.GreenLit : V3.Violet;
+        }
+        _headLamp.color = c;
+        _headHalo.color = V3.A(c, 0.25f + 0.1f * Mathf.Sin(Time.unscaledTime * 3f));
     }
 
     // Puts each answer E at its V3 position (screen space), whatever the scene's hit areas are.
@@ -170,7 +330,7 @@ public class V3Test : MonoBehaviour
         var t = _resultView.transform;
         _resNote = V3.Note(t, 40f, 100f);
         _scores = V3.Rect("Scores", t, 0f, 0f, V3.W, V3.H);
-        _line = V3.KebbiLine(t, 40f, 432f, 24f, 600f);
+        _line = V3.KebbiLine(t, 40f, 432f, V3Type.Key, 600f);
         V3.Key(t, "回到首頁", "Home", "home", V3.Green, 742f, 470f, 240f, false, () => _goHome?.Invoke());
         _resultView.SetActive(false);
     }
@@ -202,10 +362,10 @@ public class V3Test : MonoBehaviour
     {
         const float y = 136f, w = 300f, h = 270f;
         V3.Patch(_scores, x, y, w, h);
-        V3.Text("Label", _scores, V3.Zh, label, 24f, V3.Ink, x + 26f, y + 20f, 160f, 32f, TextAlignmentOptions.TopLeft);
-        V3.Text("Level", _scores, V3.Mono, V3.T($"第 {level} 級", $"LEVEL {level}"), 12f, V3.Ink, x + w - 26f - 140f, y + 30f, 140f, 16f, TextAlignmentOptions.TopRight, 0.12f);
+        V3.Text("Label", _scores, V3.Zh, label, V3Type.Key, V3.Ink, x + 26f, y + 20f, 160f, 32f, TextAlignmentOptions.TopLeft);
+        V3.Text("Level", _scores, V3.Mono, V3.T($"第 {level} 級", $"LEVEL {level}"), V3Type.Data, V3.Ink, x + w - 26f - 140f, y + 30f, 140f, 16f, TextAlignmentOptions.TopRight, 0.12f);
         float value = MetricTest.GetEyeMetric(level);
-        V3.Text("Value", _scores, V3.Num, value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture), 124f, V3.Ink, x + 22f, y + 50f, w - 44f, 150f, TextAlignmentOptions.TopLeft, -0.02f);
+        V3.Text("Value", _scores, V3.Num, value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture), V3Type.Big, V3.Ink, x + 22f, y + 50f, w - 44f, 150f, TextAlignmentOptions.TopLeft, -0.02f);
         V3.SetGuide(V3.Guide(_scores, x + 26f, y + 214f, w - 52f, true), (level - 1) / 10f);
     }
 

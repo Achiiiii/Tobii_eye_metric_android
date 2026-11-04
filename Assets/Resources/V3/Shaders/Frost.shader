@@ -2,7 +2,8 @@
 // right: the faces show what is behind them on the home - the light box, the headline and the two bezels - blurred
 // under an opal white with a fine sandblasted grain, with light scattered inside the frosted part
 // (brighter toward the top) and a faint green light along the middle of each stroke. The edges (_Edge = 1) are
-// polished: the backdrop seen through thick glass, the studio's reflections at grazing angles and a fine highlight.
+// polished: the backdrop seen through thick glass, darkened to a grey-green that outlines the letter, the studio's
+// reflections at grazing angles and a fine highlight.
 // Nothing is grabbed from the screen: the backdrop is rebuilt here from the headline's own pre-blurred coverage texture
 // (V3Home's blur level 3) and the bezels' known circles, which keeps it cheap on Kebbi.
 Shader "V3/Frost"
@@ -107,9 +108,9 @@ Shader "V3/Frost"
                     // milky ground glass all over, thinner toward the top left and densest toward the bottom right:
                     // the home behind diffused (one blur, its radius following the frost) under an opal white, with
                     // the fine grain of the sandblasting
-                    float f = lerp(0.5, 1.0, smoothstep(0.0, 1.0, saturate(((1.0 - ue.y) * 0.65 + ue.x * 0.35 - 0.1) / 0.75)));
+                    float f = lerp(0.62, 1.0, smoothstep(0.0, 1.0, saturate(((1.0 - ue.y) * 0.65 + ue.x * 0.35 - 0.1) / 0.75)));
                     col = Backdrop(px, lerp(2.0, 16.0 + 48.0 * _Frost, f));
-                    col = lerp(col, milk, f * (0.5 + 0.2 * _Frost));
+                    col = lerp(col, milk, f * (0.64 + 0.2 * _Frost));
                     col *= 1.0 + 0.08 * (V3Noise3(i.obj * 320.0) - 0.5) * f;
                     // the body: light scattered inside the block, brighter toward the lit top of the letter and
                     // falling off below, stronger the more frosted the glass is
@@ -124,13 +125,12 @@ Shader "V3/Frost"
                 }
                 else
                 {
-                    // the polished edges: clear glass, the home behind bent a little and darkened by the thickness, a
-                    // breath of the green light, the studio at grazing angles and a fine bright line where the bevels
-                    // face the key light
-                    col = Backdrop(px + float2(n.x, -n.y) * 8.0, 3.0) * 0.9;
-                    col = lerp(col, L, 0.08);
-                    col *= lerp(0.84, 1.04, ndl);
-                    col = lerp(col, V3StudioSharp(reflect(-v, n), 0.03), saturate(fr * 0.8 + 0.06));
+                    // the polished edges: thick glass seen from the side - the home behind bent a little and darkened
+                    // to a grey-green by the thickness, which draws the letter's outline - the studio at grazing
+                    // angles and a fine bright line where the bevels face the key light
+                    col = Backdrop(px + float2(n.x, -n.y) * 8.0, 3.0) * float3(0.66, 0.74, 0.72);
+                    col *= lerp(0.8, 1.0, ndl);
+                    col = lerp(col, V3StudioSharp(reflect(-v, n), 0.03), saturate(fr * 0.5 + 0.04));
                     col += _LightColor0.rgb * pow(saturate(dot(n, h)), 120.0) * 0.9;
                 }
                 return fixed4(col, 1.0);

@@ -52,7 +52,7 @@ public class EyeMetricFlow : MonoBehaviour
         Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
 
         // The HUD sits above everything.
-        var hudCanvas = UiFactory.CreateOverlayCanvas("HudOverlay", 20, transform);
+        var hudCanvas = UiFactory.CreateOverlayCanvas("HudOverlay", V3Layer.Hud, transform);
 
         QuestionnaireText.Apply(qa, font);
         _headFollow = HeadFollow.Create(transform, gazeCalibrationManager, metricTest, resultPage);

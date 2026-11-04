@@ -45,7 +45,11 @@ public class V3Setup : MonoBehaviour
     private float _dotSince;
     private Action _recalibrate, _goHome;
     private RectTransform _target;
-    private Image _targetArc, _targetCore;
+    private Image _targetCore;
+    private V3LiquidRing _targetRing;
+    private FollowGazePoint2D _gaze;
+    private readonly V3GazeSteadiness _targetSteadiness = new V3GazeSteadiness();
+    private float _targetProgress, _targetPopT = 1f;
     private Image _targetHalo;
     private bool _targetOn;
     private float _targetScale;
@@ -90,7 +94,7 @@ public class V3Setup : MonoBehaviour
         if (mainCanvas.transform.childCount > 0 && mainCanvas.transform.GetChild(0).TryGetComponent<Image>(out var pageArt))
         {
             pageArt.sprite = null;
-            pageArt.color = V3.Page;
+            pageArt.color = V3.LightFlat;
         }
         cal.TrialInstructionsShown += page.OnInstructions;
         cal.CalibrationStarted += page.OnCalibrationStarted;
@@ -130,15 +134,15 @@ public class V3Setup : MonoBehaviour
         _coverPage = V3.Full("Cover", root).gameObject;
         var t = _coverPage.transform;
         _coverNote = V3.Note(t, 40f, 70f);
-        _coverTitle = V3.Title(t, 40f, 106f, 560f, 60f, 40f);
-        _coverLine = V3.KebbiLine(t, 40f, 190f, 24f, 460f);
+        _coverTitle = V3.Title(t, 40f, 106f, 560f, 60f, V3Type.Display);
+        _coverLine = V3.KebbiLine(t, 40f, 190f, V3Type.Key, 460f);
         string[] tipsZh = { "手輕輕遮住，不要壓到眼睛", "遮住的眼睛也不用閉起來", "測驗中請一直遮著" };
         string[] tipsEn = { "Cover gently, don't press the eye", "No need to close the covered eye", "Keep it covered during the test" };
         for (int i = 0; i < 3; i++)
         {
             float y = 300f + i * 32f;
             V3.Box("Bullet", t, V3.A(V3.Ink, 0.5f), 40f, y + 9f, 5f, 5f);
-            V3.Text("Tip", t, V3.ZhMedium, tipsZh[i], tipsEn[i], 18f, V3.Text2, 54f, y, 460f, 23f);
+            V3.Text("Tip", t, V3.ZhMedium, tipsZh[i], tipsEn[i], V3Type.BodyS, V3.Text2, 54f, y, 460f, 23f);
         }
         V3.MetalRing(t, 780f, 250f, 120f, 9f);
         _eyeL = V3.Sprite("EyeL", t, V3.Icon("eye"), V3.Ink, 684f, 186f, 92f, 92f);
@@ -146,9 +150,9 @@ public class V3Setup : MonoBehaviour
         _palmL = V3.Sprite("PalmL", t, PalmSprite(), V3.Violet, 703f, 205f, 54f, 54f);
         _palmR = V3.Sprite("PalmR", t, PalmSprite(), V3.Violet, 803f, 205f, 54f, 54f);
         _coverChipL = V3.Box("ChipL", t, V3.Violet, 704f, 288f, 52f, 26f);
-        _coverLabelL = V3.Text("Label", _coverChipL.transform, V3.Zh, "", 16f, Color.white, 0f, 0f, 52f, 26f, TextAlignmentOptions.Center);
+        _coverLabelL = V3.Text("Label", _coverChipL.transform, V3.Zh, "", V3Type.Label, Color.white, 0f, 0f, 52f, 26f, TextAlignmentOptions.Center);
         _coverChipR = V3.Box("ChipR", t, V3.Green, 804f, 288f, 52f, 26f);
-        _coverLabelR = V3.Text("Label", _coverChipR.transform, V3.Zh, "", 16f, V3.Ink, 0f, 0f, 52f, 26f, TextAlignmentOptions.Center);
+        _coverLabelR = V3.Text("Label", _coverChipR.transform, V3.Zh, "", V3Type.Label, V3.Ink, 0f, 0f, 52f, 26f, TextAlignmentOptions.Center);
         V3.Key(t, "繼續", "Continue", "arrowR", V3.Green, 772f, 470f, 210f, false, () => { if (_view == View.Cover) Show(View.CalIntro); });
     }
 
@@ -160,11 +164,11 @@ public class V3Setup : MonoBehaviour
         _calPage = V3.Full("Calibration", root).gameObject;
         var t = _calPage.transform;
         _calNote = V3.Note(t, 40f, 70f);
-        _calTitle = V3.Title(t, 40f, 106f, 560f, 110f, 40f);
-        _calSub = V3.Text("Sub", t, V3.Zh, "", 24f, V3.Text2, 40f, 180f, 560f, 80f);
+        _calTitle = V3.Title(t, 40f, 106f, 560f, 110f, V3Type.Display);
+        _calSub = V3.Text("Sub", t, V3.Zh, "", V3Type.Key, V3.Text2, 40f, 180f, 560f, 80f);
         _calSub.enableWordWrapping = true;
         _calSub.lineSpacing = -4f;
-        _calLine = V3.KebbiLine(t, 40f, 240f, 24f, 460f);
+        _calLine = V3.KebbiLine(t, 40f, 240f, V3Type.Key, 460f);
         // the screen in miniature: 272 x 160 (1024 x 600)
         const float sx = 644f, sy = 170f, sw = 272f, sh = 160f;
         V3.Patch(t, sx, sy, sw, sh);
@@ -177,15 +181,15 @@ public class V3Setup : MonoBehaviour
         {
             V3.Sprite("Edge", _calMap.transform, UiFactory.Circle, V3.A(V3.Ink, 0.35f), dots[i].x - 8f, dots[i].y - 8f, 16f, 16f);
             V3.Sprite("Dot", _calMap.transform, UiFactory.Circle, Color.white, dots[i].x - 6f, dots[i].y - 6f, 12f, 12f);
-            V3.Text("N", _calMap.transform, V3.Mono, (i + 1).ToString(), 11f, V3.Text2, dots[i].x + 11f, dots[i].y - 16f, 20f, 14f);
+            V3.Text("N", _calMap.transform, V3.Mono, (i + 1).ToString(), V3Type.Data, V3.Text2, dots[i].x + 11f, dots[i].y - 16f, 20f, 14f);
         }
         _calDot = V3.Sprite("Failed", t, UiFactory.Circle, V3.Red, sx + sw / 2f - 12f, sy + sh / 2f - 12f, 24f, 24f);
         // starting by itself: a backlit window the size of a key - the words, the seconds left, a thick liquid guide
         _calAutoKey = V3.Rect("AutoStart", t, 742f, 470f, 240f, 72f).gameObject;
         var auto = _calAutoKey.transform;
         V3.Patch(auto, 0f, 0f, 240f, 72f);
-        V3.Text("Label", auto, V3.Zh, "自動開始", "Auto start", 22f, V3.Ink, 22f, 0f, 150f, 58f, TextAlignmentOptions.Left);
-        _calAuto = V3.Text("Seconds", auto, V3.Num, "3", 40f, V3.Ink, 150f, 4f, 68f, 54f, TextAlignmentOptions.Right);
+        V3.Text("Label", auto, V3.Zh, "自動開始", "Auto start", V3Type.Key, V3.Ink, 22f, 0f, 150f, 58f, TextAlignmentOptions.Left);
+        _calAuto = V3.Text("Seconds", auto, V3.Num, "3", V3Type.Display, V3.Ink, 150f, 4f, 68f, 54f, TextAlignmentOptions.Right);
         _calHold = V3.Guide(auto, 16f, 52f, 208f);
         // only the dots again: the head position was already confirmed
         _retry = V3.Key(t, "重新校正", "Recalibrate", "target", V3.Green, 742f, 470f, 240f, false, () => { if (_view == View.CalFailed) _cal.RetryCalibration(); });
@@ -194,28 +198,17 @@ public class V3Setup : MonoBehaviour
     private void BuildRun(Transform root)
     {
         _runPage = V3.Full("CalibrationRun", root).gameObject;
-        _runText = V3.Text("Text", _runPage.transform, V3.Zh, "", 24f, V3.Ink, 0f, 34f, V3.W, 44f, TextAlignmentOptions.Center);
-        // target (120 x 120): pulsing halo, white disc with a violet track, green progress arc, violet core, white pip
+        _runText = V3.Text("Text", _runPage.transform, V3.Zh, "", V3Type.Key, V3.Ink, 0f, 34f, V3.W, 44f, TextAlignmentOptions.Center);
+        // target (120 x 120): pulsing halo, white disc, the liquid ring filling as it is looked at (as the selection
+        // ring: calmer the stiller the eyes, catching the light toward the gaze, locking when the dot is taken), violet
+        // core, white pip; it sinks a little as it fills and springs back
         _target = V3.Rect("Target", _runPage.transform, 0f, 0f, 120f, 120f);
         _target.pivot = UiFactory.Center;
         _targetHalo = V3.Sprite("Halo", _target, RingSprite(40f, 1f), V3.A(V3.Violet, 0.22f), 0f, 0f, 120f, 120f);
         V3.Sprite("Disc", _target, UiFactory.Circle, Color.white, 31f, 31f, 58f, 58f);
-        V3.Sprite("Track", _target, RingSprite(26f, 3f), V3.A(V3.Violet, 0.22f), 0f, 0f, 120f, 120f);
-        _targetArc = V3.Liquid(V3.Sprite("Arc", _target, RingSprite(26f, 3f), V3.Green, 0f, 0f, 120f, 120f), true, -1f, 120f);
-        _targetArc.type = Image.Type.Filled;
-        _targetArc.fillMethod = Image.FillMethod.Radial360;
-        _targetArc.fillOrigin = (int)Image.Origin360.Top;
-        _targetArc.fillClockwise = true;
+        _targetRing = V3LiquidRing.Create(_target, 120f, 26f, 4.2f, V3.A(V3.Violet, 0.22f));
+        _gaze = FindObjectOfType<FollowGazePoint2D>(true);
         _targetCore = V3.Sprite("Core", _target, UiFactory.Circle, V3.Violet, 49f, 49f, 22f, 22f);
-        // sparks off the progress ring's head while the dot is being looked at (ring radius 26 in the 120 px target)
-        V3Sparks.Attach(_target, () =>
-        {
-            float f = _targetArc.fillAmount;
-            if (!_targetOn || f <= 0.01f || f >= 1f)
-                return null;
-            float a = (90f - f * 360f) * Mathf.Deg2Rad;
-            return (new Vector2(60f + 26f * Mathf.Cos(a), 60f - 26f * Mathf.Sin(a)), new Vector2(Mathf.Sin(a), Mathf.Cos(a)));
-        });
         V3.Sprite("Pip", _target, UiFactory.Circle, Color.white, 56.5f, 56.5f, 7f, 7f);
         _target.gameObject.SetActive(false);
     }
@@ -227,7 +220,7 @@ public class V3Setup : MonoBehaviour
         _pracPage = V3.Full("Practice", root).gameObject;
         var t = _pracPage.transform;
         _pracSub = V3.Note(t, 40f, 70f);
-        _pracText = V3.Title(t, 40f, 100f, 940f, 44f, 30f);
+        _pracText = V3.Title(t, 40f, 100f, 940f, 44f, V3Type.Title);
         for (int i = 0; i < TileX.Length; i++)
         {
             int index = i;
@@ -248,8 +241,8 @@ public class V3Setup : MonoBehaviour
         _lookRing.pivot = UiFactory.Center;
         V3.Sprite("Ring", _lookRing, RingSprite(43f, 1f), V3.Violet, 0f, 0f, 150f, 150f);
         _lookTag = V3.Box("LookTag", t, V3.Violet, 0f, 0f, 64f, 26f).gameObject;
-        V3.Text("Text", _lookTag.transform, V3.Zh, "看這裡", "Look", 15f, Color.white, 0f, 0f, 64f, 26f, TextAlignmentOptions.Center);
-        _pracLine = V3.KebbiLine(t, 40f, 400f, 24f, 600f);
+        V3.Text("Text", _lookTag.transform, V3.Zh, "看這裡", "Look", V3Type.Label, Color.white, 0f, 0f, 64f, 26f, TextAlignmentOptions.Center);
+        _pracLine = V3.KebbiLine(t, 40f, 400f, V3Type.Key, 600f);
 
         _start = V3.Key(t, "開始測驗", "Start test", "arrowR", V3.Green, 742f, 470f, 240f);
         _start.Button.onClick.AddListener(() =>
@@ -268,17 +261,18 @@ public class V3Setup : MonoBehaviour
     // if the dot is taken after all.
     private void BuildStuck()
     {
-        var dim = UiFactory.CreateImage("Stuck", _runPage.transform, UiFactory.White, new Color32(0xF2, 0xF5, 0xFA, 0xE0), true);
+        var dim = UiFactory.CreateImage("Stuck", _runPage.transform, UiFactory.White, V3.Veil, true);
         UiFactory.Stretch(dim.rectTransform);
         const float w = 520f, h = 290f;
         var card = V3.Rect("Card", dim.transform, (V3.W - w) / 2f, 150f, w, h);
         V3.Patch(card, 0f, 0f, w, h);
-        V3.Text("Title", card, V3.Zh, "校正好像卡住了", "Calibration seems stuck", 30f, V3.Ink, 0f, 36f, w, 40f, TextAlignmentOptions.Top);
-        var sub = V3.Text("Sub", card, V3.Zh, "頭可能移開了，可以重新對準位置，\n或回到首頁", "Your head may have moved.\nLine up again, or go home.", 18f, V3.Text2, 0f, 86f, w, 56f, TextAlignmentOptions.Top);
+        V3.Text("Title", card, V3.Zh, "校正好像卡住了", "Calibration seems stuck", V3Type.Title, V3.Ink, 0f, 36f, w, 40f, TextAlignmentOptions.Top);
+        var sub = V3.Text("Sub", card, V3.Zh, "頭可能移開了，可以重新對準位置，\n或回到首頁", "Your head may have moved.\nLine up again, or go home.", V3Type.BodyS, V3.Text2, 0f, 86f, w, 56f, TextAlignmentOptions.Top);
         sub.lineSpacing = -6f;
         V3.Key(card, "回首頁", "Home", "home", Color.white, 36f, 180f, 210f, false, () => { _stuck.SetActive(false); _goHome?.Invoke(); });
         V3.Key(card, "重新對準", "Line up", "target", V3.Green, 274f, 180f, 210f, false, () => { _stuck.SetActive(false); _recalibrate?.Invoke(); });
         _stuck = dim.gameObject;
+        V3CardIn.Attach(_stuck, dim, card, true);
         _stuck.SetActive(false);
     }
 
@@ -287,12 +281,12 @@ public class V3Setup : MonoBehaviour
         _cdPage = V3.Full("Countdown", root).gameObject;
         var t = _cdPage.transform;
         _cdTag = V3.Note(t, 40f, 40f);
-        _cdNumber = V3.Text("Number", t, V3.Zh, "3", 170f, V3.Ink, 362f, 110f, 300f, 260f, TextAlignmentOptions.Center);
+        _cdNumber = V3.Text("Number", t, V3.Zh, "3", V3Type.Huge, V3.Ink, 362f, 110f, 300f, 260f, TextAlignmentOptions.Center);
         // a glass tube under it, filling over the three seconds
         _cdGuide = V3.Guide(t, 512f - 130f, 390f, 260f);
-        V3.Text("Title", t, V3.Zh, "即將開始，請注視畫面中央", "Starting soon - look at the centre", 24f, V3.Ink, 0f, 466f, V3.W, 34f, TextAlignmentOptions.Top);
+        V3.Text("Title", t, V3.Zh, "即將開始，請注視畫面中央", "Starting soon - look at the centre", V3Type.Key, V3.Ink, 0f, 466f, V3.W, 34f, TextAlignmentOptions.Top);
         _cdCover = V3.Rect("Cover", t, 0f, 508f, V3.W, 34f).gameObject;
-        _cdCoverText = V3.Text("Text", _cdCover.transform, V3.Zh, "", 20f, V3.Violet, 0f, 0f, V3.W, 34f, TextAlignmentOptions.Top);
+        _cdCoverText = V3.Text("Text", _cdCover.transform, V3.Zh, "", V3Type.Body, V3.Violet, 0f, 0f, V3.W, 34f, TextAlignmentOptions.Top);
     }
 
     // ==================== events ====================
@@ -378,6 +372,7 @@ public class V3Setup : MonoBehaviour
         }
         _view = view;
         _viewSince = Time.unscaledTime;
+        V3Flow.SheenOffSetup = view == View.CalRun || view == View.Countdown;
         bool single = _test.Mode == MetricTest.TestMode.Single;
         _coverPage.SetActive(view == View.Cover);
         _calPage.SetActive(view == View.CalIntro || view == View.CalFailed);
@@ -420,7 +415,7 @@ public class V3Setup : MonoBehaviour
             V3.SetGuide(_calHold, 0f);
             string which = !single ? V3.T("雙眼", "both eyes") : _side == "left" ? V3.T("第 2 眼，共 2 眼", "eye 2 of 2") : V3.T("第 1 眼，共 2 眼", "eye 1 of 2");
             _calNote.text = V3.T("眼睛校正", "Calibration") + "  ·  " + (failed ? V3.T("需要重來", "try again") : which);
-            _calTitle.fontSizeMax = failed ? 44f : 40f;
+            _calTitle.fontSizeMax = V3Type.Display;
             _calTitle.text = failed ? V3.T("校正沒有成功", "Calibration did not succeed") : V3.T("接下來頭不要動，\n用眼睛依序看圓點。", "Keep your head still,\nlook at each dot.");
             _calSub.text = failed ? V3.T("這次沒有成功，\n沒問題，再試一次。", "Not this time.\nLet's try again.") : "";
             _calLine.Root.anchoredPosition = new Vector2(40f, -(failed ? 300f : 240f));
@@ -484,10 +479,30 @@ public class V3Setup : MonoBehaviour
         // in: pop from .6 with a little overshoot; out: shrink to .4 and fade
         float goal = _targetOn ? 1f : 0.4f;
         _targetScale = Mathf.MoveTowards(_targetScale, goal, dt * (_targetOn ? 2.2f : 2f));
-        _target.localScale = Vector3.one * _targetScale;
         var point = StimulusPoint.Current;
         float progress = point != null ? point.Progress : 1f;
-        _targetArc.fillAmount = _targetOn ? progress : 1f;
+        if (_targetOn && progress >= 1f && _targetProgress < 1f)
+        {
+            _targetPopT = 0f;
+            _targetRing.Lock();
+        }
+        if (_targetOn && progress <= 0f)
+        {
+            _targetRing.Unlock();
+            _targetSteadiness.Clear();
+        }
+        _targetProgress = _targetOn ? progress : 1f;
+        _targetRing.Fill = _targetProgress;
+        // the eyes' steadiness and where they drift from the dot, while there is gaze
+        if (_gaze != null && _gaze.isActiveAndEnabled && _targetOn)
+        {
+            _targetSteadiness.Add(_gaze.DisplayedScreenPosition);
+            _targetRing.Steady = _targetSteadiness.Steady;
+            _targetRing.Lean = _targetSteadiness.Lean;
+        }
+        _targetPopT = Mathf.Min(1f, _targetPopT + dt / V3Motion.Quick);
+        float press = _targetOn && _targetProgress < 1f ? 1f - 0.06f * _targetProgress : 1f + 0.1f * Mathf.Sin(_targetPopT * Mathf.PI);
+        _target.localScale = Vector3.one * (_targetScale * press);
         _targetCore.color = progress >= 1f || !_targetOn ? V3.Green : V3.Violet;
         float halo = Mathf.Repeat(Time.unscaledTime / 1.4f, 1f);
         _targetHalo.rectTransform.localScale = Vector3.one * Mathf.Lerp(0.7f, 1.05f, 1f - Mathf.Pow(1f - halo, 3f));

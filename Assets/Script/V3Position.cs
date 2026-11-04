@@ -70,7 +70,7 @@ public class V3Position : MonoBehaviour
 
         // the instruction (normal) / raise tip (eyes too high)
         _who = V3.Rect("Who", t, 0f, 0f, V3.W, V3.H).gameObject;
-        var title = V3.Title(_who.transform, ScaleX, 112f, 500f, 90f, 28f);
+        var title = V3.Title(_who.transform, ScaleX, 112f, 500f, 90f, V3Type.Title);
         title.gameObject.AddComponent<V3Loc>().Set("請把頭對準框框，\n臉離螢幕約 40 公分。", "Put your head in the frame,\nabout 40 cm from the screen.", 3f, 0f);
         _raise = BuildRaise(t);
 
@@ -82,11 +82,11 @@ public class V3Position : MonoBehaviour
 
         // status line and the hold guide
         _statDot = V3.Sprite("Dot", t, UiFactory.Circle, V3.Ink, ScaleX, 412f, 12f, 12f);
-        _statText = V3.Text("Status", t, V3.Zh, "", 20f, V3.Ink, ScaleX + 22f, 402f, 470f, 28f, TextAlignmentOptions.TopLeft);
-        _statSub = V3.Text("Sub", t, V3.ZhMedium, "", 15f, V3.Text2, ScaleX + 22f, 432f, 470f, 20f, TextAlignmentOptions.TopLeft);
+        _statText = V3.Text("Status", t, V3.Zh, "", V3Type.Body, V3.Ink, ScaleX + 22f, 402f, 470f, 28f, TextAlignmentOptions.TopLeft);
+        _statSub = V3.Text("Sub", t, V3.ZhMedium, "", V3Type.Label, V3.Text2, ScaleX + 22f, 432f, 470f, 20f, TextAlignmentOptions.TopLeft);
         _statSub.enableAutoSizing = true;
-        _statSub.fontSizeMin = 12f;
-        _statSub.fontSizeMax = 15f;
+        _statSub.fontSizeMin = V3Type.Data;
+        _statSub.fontSizeMax = V3Type.Label;
         _hold = V3.Guide(t, ScaleX, 462f, ScaleW);
     }
 
@@ -96,7 +96,7 @@ public class V3Position : MonoBehaviour
     // A 300 px round mirror: the camera picture (4:3, cropped by the circle) under the face target.
     private void BuildMirror(Transform parent, float x, float y)
     {
-        var disc = V3.Sprite("Mirror", parent, UiFactory.Circle, new Color32(0xB4, 0xBA, 0xC3, 0xFF), x, y, 300f, 300f);
+        var disc = V3.Sprite("Mirror", parent, UiFactory.Circle, V3.Silver, x, y, 300f, 300f);
         disc.gameObject.AddComponent<Mask>().showMaskGraphic = true;
         var frame = disc.transform;
         _silhouette = V3.Sprite("Head", frame, HeadSprite(), V3.A(V3.Ink, 0.45f), 75f, 70f, 150f, 150f);
@@ -117,8 +117,8 @@ public class V3Position : MonoBehaviour
     {
         var r = V3.Rect("Raise", p, ScaleX, 100f, 500f, 100f);
         V3.Sprite("Arrow", r, V3.Icon("arrowU"), V3.Violet, 0f, 8f, 36f, 36f);
-        V3.Text("Title", r, V3.Zh, "把凱比墊高", "Raise Kebbi", 28f, V3.Violet, 48f, 4f, 440f, 38f);
-        var sub = V3.Text("Sub", r, V3.ZhMedium, "放在書本或盒子上，\n讓鏡頭和您的眼睛一樣高", "Set it on books or a box so the\ncamera is level with your eyes", 18f, V3.Text2, 48f, 46f, 440f, 50f);
+        V3.Text("Title", r, V3.Zh, "把凱比墊高", "Raise Kebbi", V3Type.Title, V3.Violet, 48f, 4f, 440f, 38f);
+        var sub = V3.Text("Sub", r, V3.ZhMedium, "放在書本或盒子上，\n讓鏡頭和您的眼睛一樣高", "Set it on books or a box so the\ncamera is level with your eyes", V3Type.BodyS, V3.Text2, 48f, 46f, 440f, 50f);
         sub.lineSpacing = -6f;
         r.gameObject.SetActive(false);
         return r.gameObject;

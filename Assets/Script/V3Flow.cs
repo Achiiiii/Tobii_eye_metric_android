@@ -28,12 +28,16 @@ public class V3Flow : MonoBehaviour
         var flow = go.AddComponent<V3Flow>();
         flow._home = home;
         // Above the scene's main canvas (0), below the flow overlay (5), the home (6) and the gaze dot (10).
-        flow.Canvas = UiFactory.CreateOverlayCanvas("V3Pages", 3, go.transform);
+        flow.Canvas = UiFactory.CreateOverlayCanvas("V3Pages", V3Layer.Pages, go.transform);
         flow.Build();
         return flow;
     }
 
     public bool FlowVisible => _home == null || !_home.activeSelf;
+
+    // the light box's sheen (V3Sheen) is off while gaze is measured: the calibration dots and countdown, the test
+    public static bool SheenOffSetup, SheenOffTest;
+    public static bool SheenAllowed => !SheenOffSetup && !SheenOffTest;
 
     // Keeps a scene object (and its logic) but stops drawing it and taking touches; the V3 page draws instead.
     public static void Conceal(GameObject target)
@@ -57,14 +61,34 @@ public class V3Flow : MonoBehaviour
     {
         var root = Canvas.transform;
         _background = V3.LightBox(root, true).gameObject;
+        // a soft light on the light box that follows the eyes (or the touch)
+        var sheen = V3.Sprite("Sheen", _background.transform, SheenSprite(), new Color(1f, 1f, 1f, 0f), 0f, 0f, 560f, 560f);
+        sheen.raycastTarget = false;
+        sheen.rectTransform.pivot = UiFactory.Center;
+        var follow = _background.AddComponent<V3Sheen>();
+        follow.Pointer = FindObjectOfType<FollowGazePoint2D>(true);
+        follow.Light = sheen.rectTransform;
+        follow.LightImage = sheen;
 
         _chrome = V3.Full("Chrome", root).gameObject;
-        var name = V3.Text("AppName", _chrome.transform, V3.Zh, "眼動視力檢測", "Eye-Tracking Vision Test", 16f, V3.Ink, 40f, 26f, 400f, 36f, TextAlignmentOptions.Left, 0.1f);
+        var name = V3.Text("AppName", _chrome.transform, V3.Zh, "眼動視力檢測", "Eye-Tracking Vision Test", V3Type.Label, V3.Ink, 40f, 26f, 400f, 36f, TextAlignmentOptions.Left, 0.1f);
         var eye = V3.Picture("EyeIcon", _chrome.transform, "V3/eye", 0f, 34f, 20f, 20f);
         name.gameObject.AddComponent<V3Follow>().Init(name, eye.rectTransform, 8f);
         BuildRuler(_chrome.transform);
 
         Pages = V3.Full("Pages", root);
+    }
+
+    private static Sprite s_sheen;
+
+    // a round soft light, brightest in the middle
+    private static Sprite SheenSprite()
+    {
+        return s_sheen != null ? s_sheen : (s_sheen = V3.Raster(128, p =>
+        {
+            float r = Mathf.Clamp01(Vector2.Distance(p, new Vector2(64f, 64f)) / 64f);
+            return new Color(1f, 1f, 1f, Mathf.Pow(1f - r, 2.2f));
+        }));
     }
 
     // The progress ruler under the chrome row (y 66): a green light guide in a groove with ticks.
