@@ -7,7 +7,9 @@
 // trembling when they wander - and _Lean (-1..1, y up) where the gaze is drifting, where the glass catches the light.
 // Events (V3LiquidRing drives them): _Sweep, a light running through the liquid to its front (0-1, < 0 none); _Lock,
 // the arc closing - a ring of light running in to the centre and a flash there (0-1, 0 none). _R and _T are the tube's
-// radius and half thickness, _Q the quad's side, in the quad's px.
+// radius and half thickness, _Q the quad's side, in the quad's px. _Span (0-1) and _Start (radians, clockwise from the
+// top) make it an open arc with round ends (the result's readout). _Glow: the liquid's light round it - a tight bright
+// halo and a wider faint one, fading out before the quad's edge.
 Shader "V3/RingTube"
 {
     Properties
@@ -22,6 +24,10 @@ Shader "V3/RingTube"
         _Sweep ("Sweep", Float) = -1
         _Lock ("Lock", Range(0, 1)) = 0
         _Track ("Track", Color) = (0.11, 0.13, 0.17, 0.18)
+        _Span ("Part of the circle the tube covers", Range(0, 1)) = 1
+        _Start ("Where it starts (radians clockwise from the top)", Float) = 0
+        _Px ("Edge softness (px; 0: by the quad)", Float) = 0
+        _Glow ("Glow", Range(0, 1)) = 0
     }
     SubShader
     {
@@ -39,7 +45,7 @@ Shader "V3/RingTube"
             #include "UnityCG.cginc"
 
             sampler2D _MainTex;
-            float _Q, _R, _T, _Fill, _Steady, _Sweep, _Lock;
+            float _Q, _R, _T, _Fill, _Steady, _Sweep, _Lock, _Span, _Start, _Px, _Glow;
             float4 _Lean, _Track;
 
             struct appdata { float4 vertex : POSITION; float4 color : COLOR; float2 uv : TEXCOORD0; };
@@ -66,11 +72,21 @@ Shader "V3/RingTube"
             {
                 float2 p = (i.uv - 0.5) * _Q;                       // from the centre, y up
                 float r = length(p), t = _Time.y;
-                float u = frac(atan2(p.x, p.y) / 6.28318 + 1.0);      // 0 at the top, clockwise
-                float px = _Q / 150.0;                                // about one screen pixel here
+                float u = frac((atan2(p.x, p.y) - _Start) / 6.28318 + 1.0);   // 0 at the start, clockwise
+                float px = _Px > 0.0 ? _Px : _Q / 150.0;              // about one screen pixel here
                 float across = (r - _R) / _T;                         // -1 inside .. 1 outside the tube
                 float tube = saturate((_T - abs(r - _R)) / px + 0.5);
-                float4 col = float4(1.0, 1.0, 1.0, saturate((_T + 2.2 * px - abs(r - _R)) / px + 0.5));
+                float outline = saturate((_T + 2.2 * px - abs(r - _R)) / px + 0.5);
+                if (_Span < 0.999)
+                {
+                    // an open arc: only its span, with round ends
+                    float e1 = _Start + _Span * 6.28318;
+                    float2 q0 = float2(sin(_Start), cos(_Start)) * _R, q1 = float2(sin(e1), cos(e1)) * _R;
+                    float d0 = min(length(p - q0), length(p - q1)), inside = step(u, _Span);
+                    tube = max(tube * inside, saturate((_T - d0) / px + 0.5));
+                    outline = max(outline * inside, saturate((_T + 2.2 * px - d0) / px + 0.5));
+                }
+                float4 col = float4(1.0, 1.0, 1.0, outline);
                 // the glass: the track tinted through it, a fine highlight along the outer top
                 col = Over(col, _Track.rgb, tube * _Track.a);
                 float2 n = r > 0.0 ? p / r : float2(0.0, 1.0);
@@ -79,8 +95,8 @@ Shader "V3/RingTube"
                 // the liquid, to the front (which trembles when the eyes wander), with round ends
                 float wobble = (1.0 - _Steady) * 0.012 * sin(t * 37.0) * sin(t * 23.0 + 1.3);
                 float fill = saturate(_Fill + wobble * step(0.002, _Fill));
-                float a0 = fill * 6.28318;
-                float2 front = float2(sin(a0), cos(a0)) * _R, start = float2(0.0, _R);
+                float a0 = _Start + fill * 6.28318;
+                float2 front = float2(sin(a0), cos(a0)) * _R, start = float2(sin(_Start), cos(_Start)) * _R;
                 float cap = min(length(p - front), length(p - start));
                 float along = u <= fill ? 1.0 : 0.0;
                 float body = max(along * tube, saturate((_T - cap) / px + 0.5)) * step(0.004, fill);
@@ -93,7 +109,7 @@ Shader "V3/RingTube"
                 for (int b = 0; b < 4; b++)
                 {
                     float bu = frac(Hash(b * 5.3) + t * (0.05 + 0.03 * Hash(b * 2.1))) * fill;
-                    float ba = bu * 6.28318;
+                    float ba = _Start + bu * 6.28318;
                     float2 bp = float2(sin(ba), cos(ba)) * (_R + (Hash(b * 9.7) - 0.5) * _T);
                     float bd = length(p - bp);
                     lc = lerp(lc, float3(1.0, 1.0, 1.0), 0.6 * saturate(1.0 - abs(bd - 0.9 * px) / (0.55 * px)));
@@ -121,6 +137,12 @@ Shader "V3/RingTube"
                     float flash = exp(-r * r / pow(7.0 * px, 2.0)) * sin(_Lock * 3.14159);
                     col = Over(col, lerp(i.color.rgb, float3(1.0, 1.0, 1.0), 0.5), saturate(ring * 0.9 + flash * 0.85));
                 }
+                // the liquid's light round it, under everything else
+                float off = max(min(along > 0.5 ? abs(r - _R) - _T : 1e5, cap - _T), 0.0) / px;
+                float glow = _Glow * step(0.004, fill) * (0.5 * exp(-off * off / 9.0) + 0.18 * exp(-off * off / 81.0));
+                glow *= saturate((_Q * 0.5 - max(abs(p.x), abs(p.y))) / (4.0 * px)) * i.color.a;
+                float ga = col.a + glow * (1.0 - col.a);
+                col = float4((col.rgb * col.a + i.color.rgb * glow * (1.0 - col.a)) / max(ga, 1e-4), ga);
                 return fixed4(col.rgb, col.a * tex2D(_MainTex, i.uv).a);
             }
             ENDCG

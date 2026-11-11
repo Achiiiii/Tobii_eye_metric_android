@@ -99,6 +99,18 @@ public class V3Home : MonoBehaviour
     private readonly RectTransform[] _modeRects = new RectTransform[2];
     private readonly MetricTest.TestMode[] _modeOf = { MetricTest.TestMode.Both, MetricTest.TestMode.Single };
     private readonly float[] _lift = new float[2];
+    // The mode keys ask to be pressed: the one the E points at lights its lamp into a bar of light along its top (with
+    // the green's glow), rises and its arrow taps forward - the two in turn, quietly. With someone sitting there who has not chosen, both do it
+    // together more strongly now and then (Nudge), and Kebbi asks once.
+    private const float NudgeAfterSeconds = 8f, NudgeEverySeconds = 12f, NudgeSeconds = 0.9f, LampH = 4f;
+    private readonly Image[] _modeLamp = new Image[2], _modeGlow = new Image[2];
+    private readonly RectTransform[] _modeArrow = new RectTransform[2];
+    private readonly float[] _cue = new float[2], _cueSince = new float[2];
+    private float _nudgeT0 = -100f;
+    private bool _nudgeSpoken;
+
+    // How long someone has been sitting in front of the home (seconds; under 0: nobody) - V3Presence keeps it.
+    public static float SomeoneFor = -1f;
     private Image _iris;
     // the loading: a small drop of the E's frosted glass with droplets flowing in and out of it while the percentage
     // runs (V3/GlassDot); the E then grows out of it with a quarter turn
@@ -163,7 +175,8 @@ public class V3Home : MonoBehaviour
                 light.cullingMask &= ~(1 << WorldLayer);
         if (_headTex == null)
             RenderHeadline();
-        _rt = new RenderTexture(Screen.width, Screen.height, 24, RenderTextureFormat.ARGB32) { antiAliasing = 4, name = "V3HomeE" };
+        // linear, so the antialiased edges are averaged as light (an sRGB target averages them darker)
+        _rt = new RenderTexture(Screen.width, Screen.height, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear) { antiAliasing = 4, name = "V3HomeE" };
         _cam.targetTexture = _rt;
         _view.texture = _rt;
         ApplyProjection();
@@ -283,7 +296,7 @@ public class V3Home : MonoBehaviour
         e.sharedMaterials = new[] { _frostFace, _frostEdge };
         _eMesh = e.transform;
         // a light rim round the E with a touch of the green, just behind it (hidden where the E is in front), as if lit
-        // from behind, and a wide green glow spilling onto the light box
+        // from behind, and a wide soft haze round it on the light box (a faint grey with a trace of the green)
         var rimMat = new Material(LoadShader("Shadow")) { mainTexture = BlurredE(0.7f).texture };
         rimMat.SetColor("_Color", V3.A(V3.GreenPale, 0.7f));
         var rim = AddMesh("Rim", _eTransform, Quad(), rimMat);
@@ -291,7 +304,7 @@ public class V3Home : MonoBehaviour
         rim.transform.localPosition = new Vector3(0f, 0f, 0.12f);
         rim.transform.localScale = Vector3.one * 1.24f * 1.06f;
         var haloMat = new Material(LoadShader("Shadow")) { mainTexture = BlurredE(6f).texture };
-        haloMat.SetColor("_Color", V3.A(V3.Green, 0.16f));
+        haloMat.SetColor("_Color", V3.A((V3.Green.linear * 0.16f).gamma, 0.16f));
         var halo = AddMesh("Halo", _eTransform, Quad(), haloMat);
         halo.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         halo.transform.localPosition = new Vector3(0f, 0f, 0.3f);
@@ -467,6 +480,8 @@ public class V3Home : MonoBehaviour
         _view.transform.SetParent(_root, false);
         UiFactory.Stretch(_view.rectTransform);
         _view.raycastTarget = false;
+        // the view is premultiplied (its edges and glows were drawn over a clear background): laid on as such
+        _view.material = new Material(LoadShader("Premul"));
         BuildForeground();
         _chromeGroup = Group("Chrome");
         _modesGroup = Group("Modes");
@@ -931,8 +946,15 @@ public class V3Home : MonoBehaviour
         V3.Sprite("Eyes", rect, EyesSprite(oneEye, false), V3.Ink, 20f, 16f, 42f, 42f);
         V3.Sprite("Pupils", rect, EyesSprite(oneEye, true), V3.Violet, 20f, 16f, 42f, 42f);
         _modeLabels[index] = V3.Text("Label", rect, V3.Zh, "", V3Type.Lead, V3.Ink, 76f, 0f, 130f, ModeH, TextAlignmentOptions.Left);
-        V3.Sprite("Arrow", rect, V3.Icon("arrowR"), V3.Ink, ModeW - 38f, (ModeH - 18f) / 2f, 18f, 18f);
-        Pill(V3.Sprite("Lamp", rect, UiFactory.RoundedRect, V3.Green, (ModeW - 18f) / 2f, 10f, 18f, 3f), 1.5f);
+        _modeArrow[index] = V3.Sprite("Arrow", rect, V3.Icon("arrowR"), V3.Ink, ModeW - 38f, (ModeH - 18f) / 2f, 18f, 18f).rectTransform;
+        // the lamp on the top edge, about its middle, over its glow
+        _modeGlow[index] = V3.Sprite("LampGlow", rect, V3.BarGlowSprite(LampH), Color.clear, 0f, 0f, 60f, V3.BarGlowSide(LampH));
+        _modeGlow[index].type = Image.Type.Sliced;
+        _modeGlow[index].rectTransform.pivot = UiFactory.Center;
+        _modeGlow[index].rectTransform.anchoredPosition = new Vector2(ModeW / 2f, -(10f + LampH / 2f));
+        _modeLamp[index] = Pill(V3.Sprite("Lamp", rect, UiFactory.RoundedRect, V3.Green, (ModeW - 18f) / 2f, 10f, 18f, 3f), 1.5f);
+        _modeLamp[index].rectTransform.pivot = new Vector2(0.5f, 1f);
+        _modeLamp[index].rectTransform.anchoredPosition = new Vector2(ModeW / 2f, -10f);
         rect.gameObject.AddComponent<V3PressTint>().Target = (Image)button.targetGraphic;
     }
 
@@ -1325,6 +1347,7 @@ public class V3Home : MonoBehaviour
                 break;
             case Stage.Idle:
                 UpdateGuide(now);
+                UpdateCue(now);
                 PlaceModes();
                 break;
             case Stage.Leaving:
@@ -1400,6 +1423,46 @@ public class V3Home : MonoBehaviour
                 _swung = false;
                 TurnTo(DirLeft);
             }
+        }
+    }
+
+    private void UpdateCue(float now)
+    {
+        // someone there and still not chosen: both keys together, now and then; Kebbi asks the first time
+        if (SomeoneFor < 0f)
+            _nudgeSpoken = false;
+        else if (SomeoneFor >= NudgeAfterSeconds && now - _nudgeT0 >= NudgeEverySeconds)
+        {
+            _nudgeT0 = now;
+            V3Sounds.Play(V3Sounds.Cue.Page, 0.6f);
+            if (!_nudgeSpoken)
+            {
+                _nudgeSpoken = true;
+                V3.Speak(V3.T("請點選雙眼檢測，或單眼檢測。", "Please press Both eyes or One eye."));
+            }
+        }
+        float n = (now - _nudgeT0) / NudgeSeconds;
+        float nudge = n >= 0f && n < 1f ? Mathf.Abs(Mathf.Sin(n * 2f * Mathf.PI)) * (1f - n) : 0f;   // two bumps, the second smaller
+        float dt = V3Motion.Step;
+        for (int i = 0; i < 2; i++)
+        {
+            // in turn: the key the E points at (not while it shows the test's steps)
+            bool mine = _phase == 0 && (i == 1) == _swung;
+            if (mine && _cue[i] < 0.02f)
+                _cueSince[i] = now;
+            _cue[i] = Mathf.Lerp(_cue[i], mine ? 1f : 0f, 1f - Mathf.Exp(-dt / 0.25f));
+            float breathe = 0.85f + 0.15f * Mathf.Sin((now - _cueSince[i]) * Mathf.PI * 2f / 1.6f);
+            float lit = Mathf.Max(_cue[i] * breathe, nudge);
+            _modeLamp[i].color = V3.A(V3.Green, Mathf.Lerp(0.35f, 1f, lit));
+            float lamp = Mathf.Lerp(18f, 110f, lit);
+            _modeLamp[i].rectTransform.sizeDelta = new Vector2(lamp, Mathf.Lerp(3f, LampH, lit));
+            _modeGlow[i].rectTransform.sizeDelta = new Vector2(lamp + 2f * V3.GlowReach, V3.BarGlowSide(LampH));
+            _modeGlow[i].color = V3.A(V3.Green, lit);
+            _lift[i] = -(6f * _cue[i] + 9f * nudge);
+            // the arrow taps forward twice as the key's turn starts, and with each bump
+            float tap = Mathf.Clamp01((now - _cueSince[i] - 0.25f) / 0.9f);
+            float forward = Mathf.Max(mine ? Mathf.Abs(Mathf.Sin(tap * 2f * Mathf.PI)) : 0f, nudge);
+            _modeArrow[i].anchoredPosition = new Vector2(ModeW - 38f + 9f * forward, -(ModeH - 18f) / 2f);
         }
     }
 

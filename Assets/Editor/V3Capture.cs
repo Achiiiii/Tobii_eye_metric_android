@@ -17,6 +17,15 @@ public static class V3Capture
     private static double[] ShotsAt = { 3.0, 4.2, 7.5, 10.0 };
     private const string ChooseKey = "V3Capture.Choose";
     private const string RingsKey = "V3Capture.Rings";
+    private const string GalleryKey = "V3Capture.Gallery";
+    // a page is shot once it has been up this long and for this many frames (the pages' entrances run by frames, and
+    // the editor may run slowly)
+    private const double GallerySettle = 2.1;
+    private const int GallerySettleFrames = 70;
+    private static double _galleryAt = -1, _stepAt;
+    private static int _galleryNext, _galleryPhase, _stepFrame;
+    private static object _presence;
+    private static (string name, Action show)[] _gallery;
     private static double _replayAt = -1, _chooseAt = -1, _ringsAt = -1;
     private static V3LiquidRing[] _rings;
     private static bool _ringLocked;
@@ -43,6 +52,8 @@ public static class V3Capture
         SessionState.SetString(ChooseKey, Arg("-choose") ?? "");
         // -rings 4: from that moment, a sample of the progress rings on top of the screen (filling, wavering, locking)
         SessionState.SetString(RingsKey, Arg("-rings") ?? "");
+        // -gallery 9: from that moment (after -choose), each inner page in turn, saved as page_NN_name.png
+        SessionState.SetString(GalleryKey, Arg("-gallery") ?? "");
         EditorSceneManager.OpenScene("Assets/Scenes/TobiiSample_new.unity");
         SetGameViewSize(1024, 600);
         EditorApplication.isPlaying = true;
@@ -65,6 +76,12 @@ public static class V3Capture
             string rings = SessionState.GetString(RingsKey, "");
             if (rings.Length > 0)
                 _ringsAt = double.Parse(rings, System.Globalization.CultureInfo.InvariantCulture);
+            string gallery = SessionState.GetString(GalleryKey, "");
+            if (gallery.Length > 0)
+            {
+                _galleryAt = double.Parse(gallery, System.Globalization.CultureInfo.InvariantCulture);
+                ShotsAt = new[] { _galleryAt + 100000.0 };
+            }
             string choose = SessionState.GetString(ChooseKey, "");
             if (choose.Length > 0)
                 _chooseAt = double.Parse(choose, System.Globalization.CultureInfo.InvariantCulture);
@@ -108,6 +125,43 @@ public static class V3Capture
             home?.GetType().GetMethod("Choose", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(home, new object[] { 0 });
         }
         string dir = SessionState.GetString(DirKey, "");
+        if (_galleryAt >= 0 && t >= _galleryAt)
+        {
+            if (_gallery == null)
+                _gallery = Gallery();
+            // nobody sits in front of the editor: keep the "still there?" card from coming up mid-run (the last page asks)
+            Set(_presence, "_absentFor", 0f);
+            EditorApplication.QueuePlayerLoopUpdate();
+            int frames = Time.frameCount - _stepFrame;
+            if (_galleryPhase == 0)
+            {
+                try { _gallery[_galleryNext].show(); }
+                catch (Exception e) { Debug.LogWarning("[V3Capture] " + _gallery[_galleryNext].name + ": " + e); }
+                _galleryPhase = 1;
+                _stepAt = t;
+                _stepFrame = Time.frameCount;
+            }
+            else if (_galleryPhase == 1 && t - _stepAt >= GallerySettle && frames >= GallerySettleFrames)
+            {
+                string path = Path.Combine(dir, $"page_{_galleryNext:00}_{_gallery[_galleryNext].name}.png");
+                ScreenCapture.CaptureScreenshot(path);
+                Debug.Log("[V3Capture] " + path);
+                _galleryPhase = 2;
+                _stepAt = t;
+                _stepFrame = Time.frameCount;
+            }
+            else if (_galleryPhase == 2 && t - _stepAt >= 0.4 && frames >= 4)
+            {
+                _galleryPhase = 0;
+                if (++_galleryNext >= _gallery.Length)
+                {
+                    SessionState.EraseString(DirKey);
+                    EditorApplication.update -= Tick;
+                    EditorApplication.Exit(0);
+                }
+            }
+            return;
+        }
         if (_next < ShotsAt.Length && t >= ShotsAt[_next])
         {
             string path = Path.Combine(dir, $"home_{_next}.png");
@@ -121,6 +175,104 @@ public static class V3Capture
             EditorApplication.update -= Tick;
             EditorApplication.Exit(0);
         }
+    }
+
+    // ==================== the page gallery ====================
+
+    private const BindingFlags Any = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+
+    private static object Get(object o, string field) => o.GetType().GetField(field, Any).GetValue(o);
+    private static void Set(object o, string field, object value) => o.GetType().GetField(field, Any).SetValue(o, value);
+    private static object Call(object o, string method, params object[] args) => o.GetType().GetMethod(method, Any).Invoke(o, args);
+
+    // Each inner page brought up directly (the flow's own state set through its fields), in both languages where the
+    // layout differs.
+    private static (string, Action)[] Gallery()
+    {
+        var q = UnityEngine.Object.FindObjectOfType<V3Questionnaire>(true);
+        var setup = UnityEngine.Object.FindObjectOfType<V3Setup>(true);
+        var position = UnityEngine.Object.FindObjectOfType<V3Position>(true);
+        var test = UnityEngine.Object.FindObjectOfType<V3Test>(true);
+        var presence = UnityEngine.Object.FindObjectOfType<V3Presence>(true);
+        _presence = presence;
+        var flow = UnityEngine.Object.FindObjectOfType<EyeMetricFlow>(true);
+        var qa = (QA)Get(q, "_qa");
+        var metric = (MetricTest)Get(test, "_test");
+        var viewType = setup.GetType().GetNestedType("View", BindingFlags.NonPublic);
+        void View(string name) => Call(setup, "Show", Enum.Parse(viewType, name));
+        void Result(MetricTest.TestMode mode, int[] levels, string message)
+        {
+            ((GameObject)Get(test, "_resultPage")).SetActive(true);
+            Call(test, "OnResult", mode, new System.Collections.Generic.List<int>(levels), message);
+        }
+        // a yes / no answer shown as chosen (as the page does for a moment before it answers)
+        void ChooseFirst()
+        {
+            var cells = (System.Collections.IList)Get(q, "_cells");
+            var first = cells[0];
+            foreach (var line in (UnityEngine.UI.Image[])Get(first, "Lines"))
+                line.enabled = true;
+            ((UnityEngine.UI.Image)Get(first, "Mark")).gameObject.SetActive(true);
+            ((V3GlassFace)Get(first, "Glass")).Lit = true;
+        }
+        const string Long = "兩眼視力差距較大，可能會影響日常看東西。建議安排眼科或驗光檢查，確認度數是否需要調整。";
+        const string Short = "很棒！你的視力在正常範圍，看遠看近都沒問題。";
+        return new (string, Action)[]
+        {
+            ("q1", () => { }),
+            ("q4", () => Call(q, "Draw", 3, false)),
+            ("q6", () => Call(q, "Draw", 5, false)),
+            ("q7", () => Call(q, "Draw", 6, false)),
+            ("q4_en", () => { V3.SetLang(1); Call(q, "Draw", 3, false); }),
+            ("q1_chosen", () => { V3.SetLang(0); Call(q, "Draw", 0, false); ChooseFirst(); }),
+            ("q4_chosen", () => { qa.ToggleQ4Option(1); qa.ToggleQ4Option(4); Call(q, "Draw", 3, false); }),
+            ("q4_chosen_en", () => { V3.SetLang(1); Call(q, "Draw", 3, false); }),
+            ("position", () => { V3.SetLang(0); qa.questionPage.SetActive(false); Set(position, "_confirmedUntil", Time.unscaledTime + 999f); }),
+            ("cover", () => { Set(position, "_confirmedUntil", -1f); Set(setup, "_side", "right"); View("Cover"); }),
+            ("calintro", () => View("CalIntro")),
+            ("calfailed", () => View("CalFailed")),
+            ("practice", () => View("Practice")),
+            ("practice_done", () => ((bool[])Get(setup, "_tileDone"))[0] = true),
+            ("countdown", () => { Set(setup, "_cdSeconds", 3f); View("Countdown"); }),
+            ("stuck", () => { View("CalRun"); ((GameObject)Get(setup, "_stuck")).SetActive(true); }),
+            ("test", () =>
+            {
+                ((GameObject)Get(setup, "_stuck")).SetActive(false);
+                View("None");
+                metric.gameObject.SetActive(true);
+                metric.StartMeticTest();
+                metric.SetOptionsVisible(true);
+            }),
+            ("result", () => { metric.gameObject.SetActive(false); Result(MetricTest.TestMode.Both, new[] { 7 }, Short); }),
+            ("result_single", () => Result(MetricTest.TestMode.Single, new[] { 7, 6 }, Long)),
+            ("result_en", () => { V3.SetLang(1); Result(MetricTest.TestMode.Single, new[] { 7, 6 }, Long); }),
+            ("pause", () =>
+            {
+                V3.SetLang(0);
+                ((GameObject)Get(test, "_resultPage")).SetActive(false);
+                typeof(PositionGuide).GetProperty("Active", Any).SetValue(null, true);
+                typeof(PositionGuide).GetProperty("Text", Any).SetValue(null, "請往左移一點");
+            }),
+            ("exit", () =>
+            {
+                typeof(PositionGuide).GetProperty("Active", Any).SetValue(null, false);
+                ((GameObject)Get(flow, "_exitDialog")).SetActive(true);
+            }),
+            ("exit_pressed", () =>
+            {
+                // the go-home key held down, the touch's light part way out (held still: the press logic stopped)
+                var key = ((GameObject)Get(flow, "_exitDialog")).GetComponentsInChildren<V3PressTint>()[1];
+                key.enabled = false;
+                key.Glass.Press = 1f;
+                key.Glass.Ripple(new Vector2(-30f, 6f), 86f, 0.26f);
+            }),
+            ("still", () =>
+            {
+                ((GameObject)Get(flow, "_exitDialog")).SetActive(false);
+                Set(presence, "_askedAt", Time.unscaledTime - 12f);
+                ((GameObject)Get(presence, "_card")).SetActive(true);
+            }),
+        };
     }
 
     private static string Arg(string name)

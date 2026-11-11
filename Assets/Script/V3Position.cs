@@ -3,7 +3,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// V3 head position page: the round camera mirror with a face target in a metal bezel on the left; on the right
+// V3 head position page: the round camera mirror with a face target in a glass rim on the left; on the right
 // the instruction, the distance scale (20-60 cm, right zone lit) and the height scale (+-25 deg, right zone as
 // HeadFollow accepts) with violet markers, the status line and the hold guide. When the eyes sit above the accepted
 // height, a "raise Kebbi" tip takes the instruction's place. DetectDistance still runs the check and the speech.
@@ -31,7 +31,6 @@ public class V3Position : MonoBehaviour
     private float _mirrorAt;
     private bool _mirrorLive;
     private RectTransform _dMark, _hMark;
-    private TextMeshProUGUI _dNote, _hNote;
     private Image _statDot;
     private TextMeshProUGUI _statText, _statSub;
     private V3.GuideParts _hold;
@@ -64,30 +63,32 @@ public class V3Position : MonoBehaviour
         V3.Note(t, 40f, 70f, 600f, "").gameObject.AddComponent<V3Loc>().Set("頭部位置  ·  自動偵測", "Head position  ·  automatic", 4f, 4f);
         V3.Key(t, "上一步", "Back", "arrowL", Color.white, 40f, 470f, 210f, false, () => _back?.Invoke());
 
-        // the round mirror in its bezel
+        // the round mirror in its glass rim
         BuildMirror(t, 76f, 120f);
-        V3.MetalRing(t, 226f, 270f, 154f, 10f);
+        V3.GlassRim(t, 226f, 270f, 153f, 8f);
 
         // the instruction (normal) / raise tip (eyes too high)
         _who = V3.Rect("Who", t, 0f, 0f, V3.W, V3.H).gameObject;
-        var title = V3.Title(_who.transform, ScaleX, 112f, 500f, 90f, V3Type.Title);
+        var title = V3.Title(_who.transform, ScaleX, 106f, 500f, 90f, V3Type.Title);
         title.gameObject.AddComponent<V3Loc>().Set("請把頭對準框框，\n臉離螢幕約 40 公分。", "Put your head in the frame,\nabout 40 cm from the screen.", 3f, 0f);
         _raise = BuildRaise(t);
 
-        _dNote = V3.Note(t, ScaleX, 220f, 300f);
+        V3.Note(t, ScaleX, 210f, 300f).gameObject.AddComponent<V3Loc>().Set("距離  ·  公分", "DISTANCE  ·  CM", 4f, 4f);
         float z0 = Mathf.InverseLerp(D0, D1, DetectDistance.MinDistanceMeters * 100f), z1 = Mathf.InverseLerp(D0, D1, DetectDistance.MaxDistanceMeters * 100f);
         _dMark = V3.Scale(t, ScaleX, 250f, ScaleW, z0, z1, new[] { "20", "30", "40", "50", "60" });
-        _hNote = V3.Note(t, ScaleX, 320f, 300f);
-        _hMark = V3.Scale(t, ScaleX, 350f, ScaleW, HX(HeadFollow.EyeLevelLowDeg), HX(HeadFollow.EyeLevelHighDeg), new[] { "LOW", "", "LEVEL", "", "HIGH" });
+        V3.Note(t, ScaleX, 310f, 300f).gameObject.AddComponent<V3Loc>().Set("高度", "HEIGHT", 4f, 4f);
+        _hMark = V3.Scale(t, ScaleX, 350f, ScaleW, HX(HeadFollow.EyeLevelLowDeg), HX(HeadFollow.EyeLevelHighDeg),
+            new[] { "低", "", "平視", "", "高" }, new[] { "LOW", "", "LEVEL", "", "HIGH" });
 
         // status line and the hold guide
-        _statDot = V3.Sprite("Dot", t, UiFactory.Circle, V3.Ink, ScaleX, 412f, 12f, 12f);
-        _statText = V3.Text("Status", t, V3.Zh, "", V3Type.Body, V3.Ink, ScaleX + 22f, 402f, 470f, 28f, TextAlignmentOptions.TopLeft);
-        _statSub = V3.Text("Sub", t, V3.ZhMedium, "", V3Type.Label, V3.Text2, ScaleX + 22f, 432f, 470f, 20f, TextAlignmentOptions.TopLeft);
+        _statDot = V3.Sprite("Dot", t, UiFactory.Circle, V3.Ink, ScaleX, 420f, 12f, 12f);
+        V3LampGlow.Attach(_statDot, 12f);
+        _statText = V3.Text("Status", t, V3.Zh, "", V3Type.Body, V3.Ink, ScaleX + 22f, 410f, 470f, 28f, TextAlignmentOptions.TopLeft);
+        _statSub = V3.Text("Sub", t, V3.ZhMedium, "", V3Type.Label, V3.Text2, ScaleX + 22f, 440f, 470f, 20f, TextAlignmentOptions.TopLeft);
         _statSub.enableAutoSizing = true;
         _statSub.fontSizeMin = V3Type.Data;
         _statSub.fontSizeMax = V3Type.Label;
-        _hold = V3.Guide(t, ScaleX, 462f, ScaleW);
+        _hold = V3.Guide(t, ScaleX, 472f, ScaleW);
     }
 
     // height on the scale: -25 deg (low) on the left to +25 deg (high) on the right
@@ -151,14 +152,10 @@ public class V3Position : MonoBehaviour
         _wasDOk = dOk;
         _wasHOk = hOk;
 
-        // the violet markers on the two scales, the readings in the notes
+        // the markers on the two scales
         bool far = _detect.Zone == DetectDistance.DistanceZone.TooFar;
         V3.SetMark(_dMark, ScaleW, Mathf.InverseLerp(D0, D1, _shownD));
-        _dNote.text = V3.T("距離 CM", "DISTANCE CM") + "   " + Mathf.RoundToInt(cm);
         V3.SetMark(_hMark, ScaleW, HX(_shownH));
-        // the eyes' height against the camera in cm at this distance
-        int offset = Mathf.RoundToInt(cm * Mathf.Tan(deg * Mathf.Deg2Rad));
-        _hNote.text = V3.T("高度 CM", "HEIGHT CM") + "   " + (offset > 0 ? "+" + offset : offset.ToString());
 
         bool raise = dOk && _detect.EyeLevel > 0 && !Confirmed;
         _raise.SetActive(raise);

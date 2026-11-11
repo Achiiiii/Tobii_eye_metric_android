@@ -47,13 +47,13 @@ public class V3Questionnaire : MonoBehaviour
     private class Cell
     {
         public Button Button;
-        public Image Bg, Box, Mark;
+        public Image Box, Mark;
         public Image[] Lines;
         public bool Radio, YesNo;
         public int Option;
         public TextMeshProUGUI Label;
-        public Image Inset;
         public Vector2 Rest;
+        public V3GlassFace Glass;
     }
 
     public static V3Questionnaire Create(V3Flow flow, QA qa, Action goHome)
@@ -74,13 +74,13 @@ public class V3Questionnaire : MonoBehaviour
     }
 
     // V3.1 layout: a mono note (question number and topic) and the question as a big title on the left, the answers
-    // as backlit windows on the right, Kebbi's line under the title, back and continue along the bottom.
+    // as glass pieces on the right, Kebbi's line under the title, back and continue along the bottom.
     private void Build()
     {
         var t = _page.transform;
         _content = V3.Full("Content", t);
         _contentGroup = _content.gameObject.AddComponent<CanvasGroup>();
-        _note = V3.Note(_content, 40f, 100f);
+        _note = V3.Note(_content, 40f, 104f);
         _title = V3.Title(_content, 40f, 132f, 480f, 120f, V3Type.Display);
         _line = V3.KebbiLine(_content, 40f, 300f, V3Type.Key, 360f);
         _answers = V3.Rect("Answers", _content, 0f, 0f, V3.W, V3.H);
@@ -112,11 +112,13 @@ public class V3Questionnaire : MonoBehaviour
     {
         var q = Questions[index];
         bool yesNo = !(index == 3 || index == 5 || index == 6);
-        string how = yesNo ? V3.T("點一下作答", "Tap to answer") : index == 6 ? V3.T("單選", "Choose one") : V3.T("可複選", "Choose all that apply");
-        _note.text = $"Q{index + 1} / 7  ·  {V3.T(q.Cat, q.CatEn)}" + (yesNo ? "" : "  ·  " + how);
+        string how = yesNo ? V3.T("點一下作答", "Tap to answer") : index == 6 ? V3.T("單選", "Choose one") : V3.T("可複選", "Choose all\nthat apply");
+        _note.text = $"Q{index + 1} / 7  ·  {V3.T(q.Cat, q.CatEn)}";
         // English wraps by itself; Chinese keeps its set line break
         _title.text = V3.Lang == 1 ? q.WordsEn.Replace('\n', ' ') : q.Words;
         _title.rectTransform.sizeDelta = new Vector2(yesNo ? 500f : 350f, 120f);
+        // Kebbi's words end well before the answers (from x 560, or 404 with many options)
+        _line.Text.rectTransform.sizeDelta = new Vector2(yesNo ? 360f : 220f, _line.Text.rectTransform.sizeDelta.y);
         // English wraps on its own at a comfortable line height; Chinese keeps its two set lines, closer together
         _title.lineSpacing = V3.Lang == 1 ? 0f : -14f;
         _title.fontSizeMax = V3.Lang == 1 ? V3Type.Display * 0.9f : V3Type.Display;
@@ -157,24 +159,23 @@ public class V3Questionnaire : MonoBehaviour
     private void AddCell(int option, string label, float x, float y, float w, float h, bool radio, bool yesNo)
     {
         var c = new Cell { Option = option, Radio = radio, YesNo = yesNo };
-        V3.PatchShadow(_answers, x, y, w, h);
-        c.Button = UiFactory.CreateButton("Answer", _answers, V3.PatchSprite, Color.white, () => OnCell(c));
+        V3.PatchShadow(_answers, x, y, w, h, false);
+        c.Button = UiFactory.CreateButton("Answer", _answers, UiFactory.White, Color.white, () => OnCell(c));
         c.Button.transition = Selectable.Transition.None;
         var rect = V3.At((RectTransform)c.Button.transform, x, y, w, h);
-        c.Bg = (Image)c.Button.targetGraphic;
-        c.Bg.type = Image.Type.Sliced;
+        c.Glass = V3GlassFace.Attach((Image)c.Button.targetGraphic, w, h);
         c.Rest = rect.anchoredPosition;
-        // pressed in: a dark inner edge along the top
-        c.Inset = V3.Box("Inset", rect, V3.A(V3.ShadowInk, 0.3f), 1f, 1f, w - 2f, 3f);
-        c.Inset.enabled = false;
-        // chosen: a green rim just outside the window, following its rounded corners
+        // chosen: a green rim just outside the glass, following its rounded corners, and its light round it
+        var glow = V3.Sprite("RimGlow", rect, V3.RimGlowSprite, V3.Green, -4f - V3.GlowReach, -4f - V3.GlowReach, w + 8f + 2f * V3.GlowReach, h + 8f + 2f * V3.GlowReach);
+        glow.type = Image.Type.Sliced;
         var rim = V3.Sprite("Rim", rect, V3.RimSprite, V3.Green, -4f, -4f, w + 8f, h + 8f);
         rim.type = Image.Type.Sliced;
-        c.Lines = new[] { rim };
+        c.Lines = new[] { glow, rim };
         if (yesNo)
         {
             V3.Text("Label", rect, V3.Zh, label, V3Type.Answer, V3.Ink, 0f, 0f, w, h, TextAlignmentOptions.Center);
             c.Mark = V3.Sprite("Badge", rect, UiFactory.Circle, V3.Green, w - 44f, 14f, 30f, 30f);
+            V3LampGlow.Attach(c.Mark, 30f);
             V3.Sprite("Check", c.Mark.transform, V3.Icon("check"), V3.Ink, 6f, 6f, 18f, 18f);
         }
         else
@@ -213,6 +214,7 @@ public class V3Questionnaire : MonoBehaviour
 
     // One size for every option: the largest (from 26 down to 18) at which each fits its window in at most two lines.
     private const float OptionSize = V3Type.Lead;
+    private const float RimClear = 11f;   // from a window's edge to its words: the glass's rim and some air
 
     private void FitOptionLabels()
     {
@@ -238,6 +240,31 @@ public class V3Questionnaire : MonoBehaviour
         foreach (var c in _cells)
             if (c.Label != null)
                 c.Label.fontSize = size;
+        // A label on two lines crowds its window: one set there by a break goes on one line where it fits a little
+        // smaller; any other gets smaller until its two lines stand clear of the glass's rim.
+        foreach (var c in _cells)
+        {
+            if (c.Label == null)
+                continue;
+            Vector2 box = c.Label.rectTransform.sizeDelta;
+            if (c.Label.text.Contains("\n"))
+            {
+                string whole = c.Label.text.Replace("\n", "");
+                for (float s = size; s >= size - 3f; s--)
+                    if (c.Label.GetPreferredValues(whole, 9999f, 0f).x * s / c.Label.fontSize <= box.x - 8f)
+                    {
+                        c.Label.text = whole;
+                        c.Label.fontSize = s;
+                        break;
+                    }
+            }
+            c.Label.ForceMeshUpdate();
+            for (float s = c.Label.fontSize; s > 18f && c.Label.textInfo.lineCount > 1 && c.Label.preferredHeight > box.y - 2f * RimClear; )
+            {
+                c.Label.fontSize = --s;
+                c.Label.ForceMeshUpdate();
+            }
+        }
     }
 
     private void Paint(int index)
@@ -247,8 +274,8 @@ public class V3Questionnaire : MonoBehaviour
             bool on = c.YesNo
                 ? _qa.BoolAnswer(index) == (c.Option == 0)
                 : _qa.IsOptionSelected(index, c.Option);
-            c.Inset.enabled = false;
             ((RectTransform)c.Button.transform).anchoredPosition = c.Rest;
+            c.Glass.Lit = on;
             foreach (var line in c.Lines)
                 line.enabled = on;
             if (c.Box != null)
@@ -275,6 +302,7 @@ public class V3Questionnaire : MonoBehaviour
             KebbiLight.Flash(KebbiLight.Green);
             foreach (var other in _cells)
             {
+                other.Glass.Lit = other == c;
                 foreach (var line in other.Lines)
                     line.enabled = other == c;
                 if (other.Mark != null)

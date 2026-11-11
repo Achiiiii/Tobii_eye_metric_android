@@ -12,7 +12,7 @@ using UnityEngine.UI;
 // faint framing of the symbol (as the home E's), a neutral ring of light where an answer is taken, and the status row
 // lighting up when the level changes. Nothing is drawn over the symbol: there is no gap between trials to show a
 // level change in the middle, so it plays in the status row.
-// The result is redrawn from MetricTest's ResultShown (values, message) as backlit windows, one per value.
+// The result is redrawn from MetricTest's ResultShown (values, message) as readouts (V3Readout), one per value.
 public class V3Test : MonoBehaviour
 {
     // answer E centres on the 1024 x 600 screen (y down)
@@ -28,7 +28,7 @@ public class V3Test : MonoBehaviour
 
     private GameObject _testView;
     private TextMeshProUGUI _tag, _level;
-    private Image[] _bar = new Image[11], _barRing = new Image[11];
+    private Image[] _bar = new Image[11], _barRing = new Image[11], _barGlow = new Image[11];
     // the symbol's framing marks (an L at each corner), snapping in a little as each trial begins
     private readonly RectTransform[] _frame = new RectTransform[8];
     private float _frameSnap = 1f;
@@ -44,9 +44,6 @@ public class V3Test : MonoBehaviour
     // face
     private Image _headLamp, _headHalo;
     private HeadFollow _head;
-    // the light box behind the symbol: the camera's clear colour while testing (the scene canvas draws over it)
-    private Color _clearWas;
-    private bool _clearSet;
     private RectTransform[] _options;
     private ButtonTrigger[] _optionTriggers;
     private Vector2[] _optionRest;
@@ -74,9 +71,12 @@ public class V3Test : MonoBehaviour
         return page;
     }
 
-    // The scene's test objects: hit areas drawn clear, the symbols in ink.
+    // The scene's test objects: its page in the light box's flat white, hit areas drawn clear, the symbols in ink.
     private void RestyleScene()
     {
+        var page = _test.GetComponent<Image>();
+        if (page != null)
+            page.color = V3.LightFlat;
         var black = _test.blackRT.GetComponent<Image>();
         if (black != null)
             black.color = V3.Ink;
@@ -106,6 +106,7 @@ public class V3Test : MonoBehaviour
         _level = V3.Text("Level", t, V3.Mono, "", V3Type.Data, V3.Ink, 128f, 26f, 110f, 30f, TextAlignmentOptions.Left, 0.12f);
         for (int i = 0; i < 11; i++)
         {
+            _barGlow[i] = V3.Shadow(t, 236f + i * 26f, 38f, 22f, 6f, 6f, 1f, 0f, Color.clear);
             _barRing[i] = Rounded(V3.Sprite("Ring", t, UiFactory.RoundedRect, V3.Green, 236f + i * 26f - 1.5f, 36.5f, 25f, 9f), 4.5f);
             _bar[i] = Rounded(V3.Sprite("Light", t, UiFactory.RoundedRect, V3.A(V3.Ink, 0.3f), 236f + i * 26f, 38f, 22f, 6f), 3f);
         }
@@ -116,6 +117,7 @@ public class V3Test : MonoBehaviour
         // the head lamp after the lights
         _headHalo = V3.Sprite("HeadHalo", t, UiFactory.Circle, V3.A(V3.GreenLit, 0.25f), 540f, 32f, 18f, 18f);
         _headLamp = V3.Sprite("HeadLamp", t, UiFactory.Circle, V3.GreenLit, 544f, 36f, 10f, 10f);
+        V3LampGlow.Attach(_headLamp, 10f);
         V3.Text("HeadLabel", t, V3.Mono, "位置", "POSITION", V3Type.Micro, V3.A(V3.Ink, 0.55f), 564f, 34f, 90f, 14f, TextAlignmentOptions.Left, 0.12f);
         // the light box's aluminium frame round the edge (the symbol and answers sit well inside it)
         V3.LightBoxFrame(t);
@@ -154,15 +156,6 @@ public class V3Test : MonoBehaviour
                 _shownLevel = -1;
             }
         }
-        // the light box white behind the symbol while testing; the camera's own colour back after
-        var cam = Camera.main;
-        if (cam != null && testing != _clearSet)
-        {
-            if (testing)
-                _clearWas = cam.backgroundColor;
-            cam.backgroundColor = testing ? V3.LightFlat : _clearWas;
-            _clearSet = testing;
-        }
         if (testing)
         {
             _flow.Plain = true;
@@ -173,8 +166,9 @@ public class V3Test : MonoBehaviour
         bool result = flow && _hasResult && _resultPage.activeInHierarchy;
         if (_resultView.activeSelf != result)
             _resultView.SetActive(result);
+        // the questions' progress has nothing more to say here
         if (result)
-            _flow.SetProgress(1f);
+            _flow.NoRuler = true;
         if (!_resultPage.activeInHierarchy)
             _hasResult = false;
     }
@@ -188,6 +182,7 @@ public class V3Test : MonoBehaviour
         for (int i = 0; i < 11; i++)
         {
             _bar[i].color = i + 1 < level ? V3.GreenLit : i + 1 == level ? Color.white : V3.A(V3.Groove, 0.3f);
+            _barGlow[i].color = V3.A(V3.Green, i + 1 < level ? 0.4f : 0f);
             _barRing[i].enabled = i + 1 == level;
         }
         float dt = V3Motion.Step;
@@ -328,10 +323,10 @@ public class V3Test : MonoBehaviour
         _resultView = V3.Full("Result", root).gameObject;
         _resultView.AddComponent<V3PageIn>();
         var t = _resultView.transform;
-        _resNote = V3.Note(t, 40f, 100f);
+        _resNote = V3.Note(t, 40f, 70f);
         _scores = V3.Rect("Scores", t, 0f, 0f, V3.W, V3.H);
-        _line = V3.KebbiLine(t, 40f, 432f, V3Type.Key, 600f);
-        V3.Key(t, "回到首頁", "Home", "home", V3.Green, 742f, 470f, 240f, false, () => _goHome?.Invoke());
+        _line = V3.KebbiLine(t, 40f, 450f, V3Type.Key, 600f);
+        V3.Key(t, "回到首頁", "Home", "home", V3.Green, 772f, 470f, 210f, false, () => _goHome?.Invoke());
         _resultView.SetActive(false);
     }
 
@@ -347,26 +342,16 @@ public class V3Test : MonoBehaviour
         _resNote.text = V3.T("視力結果", "Your result") + "  ·  " + (both ? V3.T("雙眼測驗", "both eyes") : V3.T("單眼測驗", "one eye at a time"));
         foreach (Transform child in _scores)
             Destroy(child.gameObject);
+        // one readout in the middle, or one for each eye side by side
+        const float y = 264f;
         if (both)
-            ScoreCard(V3.T("雙眼視力", "Both eyes"), levels[0], 40f);
+            V3Readout.Create(_scores, V3.W / 2f, y, V3.T("雙眼視力", "Both eyes"), levels[0]);
         else
         {
-            ScoreCard(V3.T("右眼", "Right eye"), levels[0], 40f);
-            ScoreCard(V3.T("左眼", "Left eye"), levels.Count > 1 ? levels[1] : levels[0], 362f);
+            V3Readout.Create(_scores, 300f, y, V3.T("右眼", "Right eye"), levels[0]);
+            V3Readout.Create(_scores, 724f, y, V3.T("左眼", "Left eye"), levels.Count > 1 ? levels[1] : levels[0]);
         }
         V3.SetLine(_line, V3.Lang == 1 && ResultEn.TryGetValue(message, out var en) ? en : message);
-    }
-
-    // One value: a backlit window with the eye, the level, the value large and the level as a green light guide.
-    private void ScoreCard(string label, int level, float x)
-    {
-        const float y = 136f, w = 300f, h = 270f;
-        V3.Patch(_scores, x, y, w, h);
-        V3.Text("Label", _scores, V3.Zh, label, V3Type.Key, V3.Ink, x + 26f, y + 20f, 160f, 32f, TextAlignmentOptions.TopLeft);
-        V3.Text("Level", _scores, V3.Mono, V3.T($"第 {level} 級", $"LEVEL {level}"), V3Type.Data, V3.Ink, x + w - 26f - 140f, y + 30f, 140f, 16f, TextAlignmentOptions.TopRight, 0.12f);
-        float value = MetricTest.GetEyeMetric(level);
-        V3.Text("Value", _scores, V3.Num, value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture), V3Type.Big, V3.Ink, x + 22f, y + 50f, w - 44f, 150f, TextAlignmentOptions.TopLeft, -0.02f);
-        V3.SetGuide(V3.Guide(_scores, x + 26f, y + 214f, w - 52f, true), (level - 1) / 10f);
     }
 
     // RoundedRect sliced so its corners come out at the given radius

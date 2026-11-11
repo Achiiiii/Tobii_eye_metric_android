@@ -46,7 +46,7 @@ public class V3Presence : MonoBehaviour
         UiFactory.Stretch(dim.rectTransform);
         const float w = 520f, h = 270f;
         var card = V3.Rect("Card", dim.transform, (V3.W - w) / 2f, 165f, w, h);
-        V3.Patch(card, 0f, 0f, w, h);
+        V3.GlassPanel(card, 0f, 0f, w, h);
         V3.Text("Title", card, V3.Zh, "還在嗎？", "Are you still there?", V3Type.Title, V3.Ink, 0f, 34f, w, 40f, TextAlignmentOptions.Top);
         _countdown = V3.Text("Countdown", card, V3.Zh, "", V3Type.BodyS, V3.Text2, 0f, 84f, w, 30f, TextAlignmentOptions.Top);
         // the time left as a light guide running down
@@ -78,6 +78,7 @@ public class V3Presence : MonoBehaviour
             _faceSince = -1f;
         }
 
+        V3Home.SomeoneFor = onHome && face ? now - _faceSince : -1f;
         if (onHome)
         {
             _absentFor = 0f;

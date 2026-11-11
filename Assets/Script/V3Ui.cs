@@ -6,9 +6,11 @@ using UnityEngine.EventSystems;
 using UnityEngine.TextCore.LowLevel;
 using UnityEngine.UI;
 
-// V3.1 look shared by every flow page: the page is an eye-chart light box, cards and keys are backlit windows in it
-// (radius 10, a soft contact shadow), keys carry their icon first and a violet light guide that fills while they are
-// looked at, Kebbi's lines are violet with a small voice wave, Barlow Condensed for big numbers, mono for small data. Everything is laid out in the 1024 x 600 reference space, origin top-left.
+// V3 look shared by every flow page: the page is an eye-chart light box, cards are backlit windows in it (radius 10, a
+// soft contact shadow), what is pressed or chosen (keys, answers) is a piece of milky glass with a fine rim
+// (V3GlassFace), keys carry their icon first and a glass tube that fills while they are looked at, Kebbi's lines are
+// violet with a small voice wave, Barlow Condensed for big numbers, mono for small data. Everything is laid out in the
+// 1024 x 600 reference space, origin top-left.
 public static class V3
 {
     public const float W = 1024f, H = 600f;
@@ -37,9 +39,7 @@ public static class V3
     public static readonly Color Veil = new Color32(0xF2, 0xF5, 0xFA, 0xFF);
     public static readonly Color Frame = new Color32(0xC9, 0xCE, 0xD6, 0xFF);
     public static readonly Color FrameLine = new Color32(0xFF, 0xFF, 0xFF, 0xE6);
-    // windows and keys: the backlit face and its edge, a secondary key, a face pressed in
-    public static readonly Color WindowFace = new Color32(0xFB, 0xFC, 0xFE, 0xFF);
-    public static readonly Color WindowEdge = new Color32(0xD3, 0xD8, 0xE0, 0xFF);
+    // keys: a secondary key, a face pressed in
     public static readonly Color KeySecondary = new Color32(0xED, 0xED, 0xEA, 0xFF);
     public static readonly Color Pressed = new Color32(0xF2, 0xF2, 0xEF, 0xFF);
     // grooves cut in the light box (with an alpha: a track, a light that is off)
@@ -198,8 +198,8 @@ public static class V3
         public CanvasGroup Group;
     }
 
-    // Key: a backlit window, the icon first, then the label; a glass tube along the bottom edge fills while the key is
-    // looked at (V3KeyDwell reads the ButtonTrigger). Secondary keys (back) are lower.
+    // Key: a piece of milky glass (V3GlassFace), the icon first, then the label; a glass tube along the bottom edge fills
+    // while the key is looked at (V3KeyDwell reads the ButtonTrigger). Secondary keys (back) are lower.
     public static KeyParts Key(Transform parent, string zh, string en, string icon, Color chip, float x, float y, float w = 224f, bool secondary = false, Action onClick = null)
     {
         float h = secondary ? 56f : 72f;
@@ -207,23 +207,26 @@ public static class V3
         // the key and its shadow move and hide together: both live in one container (Root)
         k.Root = Rect("Key", parent, x, y, w, h);
         k.Group = k.Root.gameObject.AddComponent<CanvasGroup>();
-        PatchShadow(k.Root, 0f, 0f, w, h);
-        k.Button = UiFactory.CreateButton("Face", k.Root, PatchSprite, Color.white, onClick != null ? new UnityEngine.Events.UnityAction(onClick) : null);
+        PatchShadow(k.Root, 0f, 0f, w, h, false);
+        k.Button = UiFactory.CreateButton("Face", k.Root, UiFactory.White, Color.white, onClick != null ? new UnityEngine.Events.UnityAction(onClick) : null);
         k.Button.transition = Selectable.Transition.None;
-        ((Image)k.Button.targetGraphic).type = Image.Type.Sliced;
+        var glass = V3GlassFace.Attach((Image)k.Button.targetGraphic, w, h);
         var face = At((RectTransform)k.Button.transform, 0f, 0f, w, h);
         float g = secondary ? 20f : 24f;
         k.Glyph = Sprite("Glyph", face, Icon(icon), Ink, 20f, (h - g) / 2f - 2f, g, g);
         k.Chip = k.Glyph;
-        var tube = Tube(face, 16f, h - 15f, w - 32f, 9f);
+        // the tube clear of the glass's rim below it
+        var tube = Tube(face, 16f, h - 18f, w - 32f, 9f);
         float lx = 20f + g + 14f;
         k.Label = Text("Label", face, Zh, zh, en, secondary ? V3Type.Body : V3Type.Key, Ink, lx, 0f, w - lx - 14f, h - 4f, TextAlignmentOptions.Left);
         // a long label (English) shrinks rather than running past the frame
         k.Label.enableAutoSizing = true;
         k.Label.fontSizeMin = V3Type.Label;
         k.Label.fontSizeMax = secondary ? V3Type.Body : V3Type.Key;
-        k.Button.gameObject.AddComponent<V3PressTint>().Target = (Image)k.Button.targetGraphic;
-        k.Button.gameObject.AddComponent<V3KeyDwell>().Init(tube, face, new Vector2(16f, h - 15f), w - 32f);
+        var press = k.Button.gameObject.AddComponent<V3PressTint>();
+        press.Target = (Image)k.Button.targetGraphic;
+        press.Glass = glass;
+        k.Button.gameObject.AddComponent<V3KeyDwell>().Init(tube, face, new Vector2(16f, h - 18f), w - 32f);
         return k;
     }
 
@@ -255,7 +258,7 @@ public static class V3
         l.Rule = Box("Rule", l.Root, new Color(1f, 1f, 1f, 0f), 0f, 0f, 1f, 1f);
         l.Text = Text("Words", l.Root, Zh, "", textSize, Violet, 102f, 0f, textWidth, 96f, TextAlignmentOptions.TopLeft);
         l.Text.enableWordWrapping = true;
-        l.Text.lineSpacing = -8f;
+        l.Text.lineSpacing = 10f;
         return l;
     }
 
@@ -293,23 +296,23 @@ public static class V3
         Hairline(parent, FrameLine, 9f, 9f, W - 18f, H - 18f);
     }
 
-    // A backlit window in the light box (cards, answers) with its contact shadow.
-    public static Image Patch(Transform parent, float x, float y, float w, float h)
+    // A dialog's panel: a slab of the keys' milky glass with a wider rim, the page behind faintly through its face.
+    public static void GlassPanel(Transform parent, float x, float y, float w, float h)
     {
-        PatchShadow(parent, x, y, w, h);
-        var image = Sprite("Patch", parent, PatchSprite, Color.white, x, y, w, h);
-        image.type = Image.Type.Sliced;
-        return image;
+        PatchShadow(parent, x, y, w, h, false);
+        V3GlassFace.Attach(Box("Glass", parent, Color.white, x, y, w, h), w, h, 14f, 5f, 0.4f);
     }
 
-    // The window's contact shadow: 0 10 18 -10 and a tight 0 2 2.
-    public static void PatchShadow(Transform parent, float x, float y, float w, float h)
+    // The window's contact shadow: 0 10 18 -10 and a tight 0 2 2 (a glass piece draws its own tight one, rounded with
+    // it: tight false).
+    public static void PatchShadow(Transform parent, float x, float y, float w, float h, bool tight = true)
     {
         Shadow(parent, x, y, w, h, 18f, -10f, 10f, A(ShadowInk, 0.18f));
-        Shadow(parent, x, y, w, h, 2f, 0f, 2f, A(ShadowInk, 0.14f));
+        if (tight)
+            Shadow(parent, x, y, w, h, 2f, 0f, 2f, A(ShadowInk, 0.14f));
     }
 
-    private static Sprite s_lightBox, s_patch, s_rim;
+    private static Sprite s_lightBox, s_rim;
 
     // #FAFBFD at the top to #ECEFF3 at the bottom.
     public static Sprite LightBoxSprite
@@ -323,7 +326,7 @@ public static class V3
         }
     }
 
-    // The chosen rim round a window: a 2.5 px outline, radius 14 (the window's 10 plus the 4 px gap), 9-sliced at 20.
+    // The chosen rim round a window: a 1.5 px outline, radius 14 (the window's 10 plus the 4 px gap), 9-sliced at 20.
     public static Sprite RimSprite
     {
         get
@@ -339,7 +342,7 @@ public static class V3
                 {
                     var q = new Vector2(Mathf.Abs(x + 0.5f - s / 2f) - (s / 2f - r), Mathf.Abs(y + 0.5f - s / 2f) - (s / 2f - r));
                     float d = Vector2.Max(q, Vector2.zero).magnitude + Mathf.Min(Mathf.Max(q.x, q.y), 0f) - r;   // < 0 inside
-                    px[y * s + x] = new Color(1f, 1f, 1f, Mathf.Clamp01(1.75f - Mathf.Abs(d + 1.25f)));
+                    px[y * s + x] = new Color(1f, 1f, 1f, Mathf.Clamp01(1.25f - Mathf.Abs(d + 0.75f)));
                 }
             tex.SetPixels(px);
             tex.Apply(false, true);
@@ -347,37 +350,78 @@ public static class V3
         }
     }
 
-    // 64 px, 9-sliced at 20: radius 10, a cool white face, a thin LED line along the top, a little shade inside the
-    // bottom edge, a recessed rim (grey edge, bright lip, cool groove).
-    public static Sprite PatchSprite
+    // The green's light round something lit (GlowAt): a tight bright halo (3 px) and a wider faint one (9 px) off its
+    // edge - for what is d px from the lit thing's edge.
+    public const float GlowReach = 22f;
+
+    public static float GlowAt(float d)
+    {
+        d = Mathf.Max(d, 0f);
+        return 0.5f * Mathf.Exp(-d * d / 9f) + 0.18f * Mathf.Exp(-d * d / 81f);
+    }
+
+    private static Sprite s_rimGlow;
+
+    // The chosen rim's light: the glow round RimSprite's outline, 9-sliced at 52, GlowReach px wider than the rim on
+    // every side.
+    public static Sprite RimGlowSprite
     {
         get
         {
-            if (s_patch != null)
-                return s_patch;
-            const int s = 64;
-            const float r = 10f;
-            var tex = new Texture2D(s, s, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
-            var px = new Color[s * s];
-            Color face = WindowFace, edge = WindowEdge, groove = MetalGroove, shade = MetalShade;
-            for (int y = 0; y < s; y++)
-                for (int x = 0; x < s; x++)
-                {
-                    var p = new Vector2(x + 0.5f, y + 0.5f);
-                    var q = new Vector2(Mathf.Abs(p.x - s / 2f) - (s / 2f - r), Mathf.Abs(p.y - s / 2f) - (s / 2f - r));
-                    float inside = -(Vector2.Max(q, Vector2.zero).magnitude + Mathf.Min(Mathf.Max(q.x, q.y), 0f) - r);
-                    Color c = Color.Lerp(face, Color.white, 0.95f * Mathf.Clamp01(1f - (s - p.y) / 7f));
-                    c = Color.Lerp(c, shade, 0.4f * Mathf.Clamp01(1f - p.y / 10f));
-                    if (inside < 1f) c = edge;
-                    else if (inside < 2f) c = Color.white;
-                    else if (inside < 3.2f) c = Color.Lerp(c, groove, 0.34f);
-                    c.a = Mathf.Clamp01(0.5f + inside);
-                    px[y * s + x] = c;
-                }
-            tex.SetPixels(px);
-            tex.Apply(false, true);
-            return s_patch = UnityEngine.Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(20f, 20f, 20f, 20f));
+            if (s_rimGlow != null)
+                return s_rimGlow;
+            const int s = 128;
+            const float r = 14f, m = GlowReach;
+            return s_rimGlow = Slice(Raster(s, p =>
+            {
+                var q = new Vector2(Mathf.Abs(p.x - s / 2f) - (s / 2f - m - r), Mathf.Abs(p.y - s / 2f) - (s / 2f - m - r));
+                float d = Vector2.Max(q, Vector2.zero).magnitude + Mathf.Min(Mathf.Max(q.x, q.y), 0f) - r;
+                return new Color(1f, 1f, 1f, GlowAt(Mathf.Abs(d + 0.75f) - 0.75f) * Mathf.Clamp01((s / 2f - Mathf.Max(Mathf.Abs(p.x - s / 2f), Mathf.Abs(p.y - s / 2f))) / 3f));
+            }), 52f);
         }
+    }
+
+    private static Sprite Slice(Sprite sprite, float border)
+    {
+        return UnityEngine.Sprite.Create(sprite.texture, sprite.rect, new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(border, border, border, border));
+    }
+
+    // The glow round a bar h px tall with round ends, GlowReach px wider on every side: BarGlowSide px tall, 9-sliced
+    // along its length so the image can be as long as the bar is.
+    public static float BarGlowSide(float h) => h + 2f * GlowReach;
+
+    public static Sprite BarGlowSprite(float h)
+    {
+        string key = "barglow" + h;
+        if (s_metal.TryGetValue(key, out var cached))
+            return cached;
+        int side = Mathf.CeilToInt(BarGlowSide(h));
+        float end = GlowReach + h / 2f;
+        var sprite = Raster(side, p =>
+        {
+            float x = Mathf.Clamp(p.x, end, side - end), d = Mathf.Sqrt((p.x - x) * (p.x - x) + (p.y - side / 2f) * (p.y - side / 2f)) - h / 2f;
+            float edge = Mathf.Min(Mathf.Min(p.x, side - p.x), Mathf.Min(p.y, side - p.y));
+            return new Color(1f, 1f, 1f, GlowAt(d) * Mathf.Clamp01(edge / 3f));
+        });
+        sprite = UnityEngine.Sprite.Create(sprite.texture, sprite.rect, new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(end + 1f, 0f, end + 1f, 0f));
+        s_metal[key] = sprite;
+        return sprite;
+    }
+
+    // The glow round a disc of the given diameter, in a square GlowReach px wider on every side.
+    public static Sprite DiscGlowSprite(float diameter)
+    {
+        string key = "glow" + diameter;
+        if (s_metal.TryGetValue(key, out var cached))
+            return cached;
+        float half = diameter / 2f + GlowReach;
+        var sprite = Raster(Mathf.CeilToInt(4f * half), p =>
+        {
+            float x = p.x / 2f - half, y = p.y / 2f - half, d = Mathf.Sqrt(x * x + y * y);
+            return new Color(1f, 1f, 1f, GlowAt(d - diameter / 2f) * Mathf.Clamp01((half - d) / 3f));
+        });
+        s_metal[key] = sprite;
+        return sprite;
     }
 
     // ==================== light guides, scales, metal ====================
@@ -390,15 +434,14 @@ public static class V3
     }
 
     // A horizontal progress guide (24 px tall box): a 12 px glass tube with the green liquid in it (V3/Tube), sparks
-    // off the liquid's front while it is on the way, ticks under it every 12 px (longer every 120) when asked.
-    public static GuideParts Guide(Transform parent, float x, float y, float w, bool ticks = false)
+    // off the liquid's front while it is on the way, the home dial's scale under it (in that many sections) when asked.
+    public static GuideParts Guide(Transform parent, float x, float y, float w, bool ticks = false, int sections = 4)
     {
         var g = new GuideParts { W = w };
         g.Root = Rect("Guide", parent, x, y, w, 24f);
         g.Tube = Tube(g.Root, 0f, 0f, w, 12f);
         if (ticks)
-            for (float t = 0f; t <= w; t += 12f)
-                Box("Tick", g.Root, A(Ink, t % 120f == 0f ? 0.6f : 0.3f), t, 16f, 1f, t % 120f == 0f ? 7f : 3f);
+            Sprite("Scale", g.Root, ScaleStrip(w, sections), Color.white, 0f, 15f, Mathf.Ceil(w) + 1f, ScaleStripH);
         V3Sparks.Attach(g.Root, () => g.F > 0.002f && g.F < 0.999f ? (new Vector2(g.W * g.F, 6f), Vector2.right) : ((Vector2, Vector2)?)null);
         SetGuide(g, 0f);
         return g;
@@ -411,11 +454,58 @@ public static class V3
     }
 
 
+    private const int ScaleStripH = 14;
+    private static readonly Dictionary<string, Sprite> s_strips = new Dictionary<string, Sprite>();
+
+    // The home dial's scale unrolled, w px long in the given sections: a fine rule, ticks of three lengths hanging from
+    // it (about 5.6 px apart, longer each quarter section, longest at each section's end), a faint engraved band and a
+    // second, fainter rule at their feet. Drawn 1:1 with every tick on a whole pixel, so it stays crisp.
+    public static Sprite ScaleStrip(float w, int sections)
+    {
+        string key = "scale" + w + "/" + sections;
+        if (s_strips.TryGetValue(key, out var cached))
+            return cached;
+        int width = Mathf.CeilToInt(w) + 1, height = ScaleStripH;
+        var px = new Color32[width * height];
+        byte r = (byte)(Ink.r * 255f), g = (byte)(Ink.g * 255f), b = (byte)(Ink.b * 255f);
+        void Put(int x, int row, float a)
+        {
+            if (x < 0 || x >= width || row < 0 || row >= height)
+                return;
+            int i = (height - 1 - row) * width + x;
+            if (a * 255f > px[i].a)
+                px[i] = new Color32(r, g, b, (byte)(a * 255f));
+        }
+        for (int x = 0; x < width; x++)
+            for (int row = 0; row < height; row++)
+                Put(x, row, row == 0 ? 0.3f : row == height - 1 ? 0.14f : 0.05f);
+        float section = w / sections;
+        int per = Mathf.Max(4, Mathf.RoundToInt(section / 5.6f / 4f) * 4);
+        for (int i = 0; i <= sections * per; i++)
+        {
+            int x = Mathf.RoundToInt(i * w / (sections * per));
+            bool major = i % per == 0, mid = i % (per / 4) == 0;
+            int len = major ? 12 : mid ? 7 : 4;
+            for (int row = 0; row < len; row++)
+            {
+                Put(x, row, major ? 0.9f : mid ? 0.62f : 0.42f);
+                if (major)
+                    Put(x + 1, row, 0.25f);
+            }
+        }
+        var tex = new Texture2D(width, height, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+        tex.SetPixels32(px);
+        tex.Apply(false, true);
+        var sprite = UnityEngine.Sprite.Create(tex, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
+        s_strips[key] = sprite;
+        return sprite;
+    }
+
     // A glass tube w x h with green liquid in it (V3/Tube, its own material); set how full through the V3Slosh.
     public static V3Slosh Tube(Transform parent, float x, float y, float w, float h)
     {
         // the liquid's light on the light box: a soft green glow under the tube, as long as the liquid
-        var glow = Shadow(parent, x, y, 0f, h, 8f, -2f, 4f, A(Green, 0f));
+        var glow = Shadow(parent, x, y, 0f, h, 10f, -1f, 3f, A(Green, 0f));
         var image = Sprite("Tube", parent, UiFactory.White, Green, x, y, w, h);
         var material = new Material(Resources.Load<Shader>("V3/Shaders/Tube"));
         material.SetVector("_Size", new Vector4(w, h, 0f, 0f));
@@ -427,9 +517,9 @@ public static class V3
         return slosh;
     }
 
-    // A metal scale: a guide groove with ticks, the right zone lit violet (from - to, 0-1), a black needle pointer
+    // A scale: a guide tube over the dial's ticks, the right zone lit violet (from - to, 0-1), a black needle pointer
     // over it and mono labels spread under it. Returns the pointer (move it with SetMark).
-    public static RectTransform Scale(Transform parent, float x, float y, float w, float zoneFrom, float zoneTo, string[] labels)
+    public static RectTransform Scale(Transform parent, float x, float y, float w, float zoneFrom, float zoneTo, string[] labels, string[] labelsEn = null)
     {
         var g = Guide(parent, x, y, w, true);
         Box("Zone", g.Root, A(Violet, 0.75f), zoneFrom * w, 2f, (zoneTo - zoneFrom) * w, 8f);
@@ -440,7 +530,11 @@ public static class V3
             float lx = labels.Length == 1 ? 0f : i * w / (labels.Length - 1);
             var align = i == 0 ? TextAlignmentOptions.TopLeft : i == labels.Length - 1 ? TextAlignmentOptions.TopRight : TextAlignmentOptions.Top;
             float left = i == 0 ? lx : i == labels.Length - 1 ? lx - 120f : lx - 60f;
-            Text("Label", g.Root, Mono, labels[i], 11f, A(Ink, 0.6f), left, 30f, 120f, 14f, align, 0.06f);
+            // words follow the language (larger: Chinese at 11 px does not read); numbers stay as they are
+            if (labelsEn != null)
+                Text("Label", g.Root, Mono, labels[i], labelsEn[i], V3Type.Data, A(Ink, 0.7f), left, 30f, 120f, 16f, align, 0.06f);
+            else
+                Text("Label", g.Root, Mono, labels[i], 11f, A(Ink, 0.6f), left, 30f, 120f, 14f, align, 0.06f);
         }
         // the pointer: a black triangle with a needle through the groove
         var mark = Rect("Mark", g.Root, 0f, -18f, 18f, 30f);
@@ -463,48 +557,44 @@ public static class V3
         return new Color(1f, 1f, 1f, y >= 1f && y <= 12f ? Mathf.Clamp01((half - Mathf.Abs(x)) * 4f + 0.5f) : 0f);
     }));
 
-    // A machined steel bezel of radius r and width w centred on (cx, cy): the home's 3D ring (V3Bezel, rendered once)
-    // over a soft contact shadow.
-    public static RawImage MetalRing(Transform parent, float cx, float cy, float r, float w)
+    // A round rim of the keys' polished glass, radius r (its middle) and width w, centred on (cx, cy): the bright line on
+    // its outer edge (brightest toward the light, top left), the pale grey-green fall across it, the fine dark line on
+    // its inner edge, a tight contact shadow round it and a soft one on what it holds.
+    public static Image GlassRim(Transform parent, float cx, float cy, float r, float w)
     {
-        float R = r + w / 2f + 12f;
-        Sprite("BezelShadow", parent, RingShadowSprite(r, w), Color.white, cx - R, cy - R, 2f * R, 2f * R);
         float half = r + w / 2f + 4f;
-        var ring = new GameObject("Bezel", typeof(RectTransform), typeof(RawImage)).GetComponent<RawImage>();
-        ring.transform.SetParent(parent, false);
-        At(ring.rectTransform, cx - half, cy - half, 2f * half, 2f * half);
-        ring.raycastTarget = false;
-        ring.texture = V3Bezel.Baked(r, w);
-        return ring;
+        return Sprite("GlassRim", parent, GlassRimSprite(r, w), Color.white, cx - half, cy - half, 2f * half, 2f * half);
     }
 
-    // The bezel's contact shadows: a tight one 2.5 px down, a wide one 5 px down.
-    public static Sprite RingShadowSprite(float r, float w)
+    private static Sprite GlassRimSprite(float r, float w)
     {
-        string key = r + "/" + w;
+        string key = "rim" + r + "/" + w;
         if (s_metal.TryGetValue(key, out var cached))
             return cached;
-        float R = r + w / 2f + 12f;
-        const int k = 2;
-        int size = Mathf.CeilToInt(2f * R * k);
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
-        var px = new Color[size * size];
-        for (int py = 0; py < size; py++)
-            for (int pxi = 0; pxi < size; pxi++)
-            {
-                float x = (pxi + 0.5f) / k - R, y = R - (py + 0.5f) / k;   // y down from the centre
-                float s1 = Mathf.Abs(Mathf.Sqrt((x - 1f) * (x - 1f) + (y - 2.5f) * (y - 2.5f)) - r) - w / 2f;
-                float s2 = Mathf.Abs(Mathf.Sqrt((x - 1f) * (x - 1f) + (y - 5f) * (y - 5f)) - r) - w / 2f;
-                px[py * size + pxi] = A(ShadowInk, Mathf.Clamp01(0.4f * Falloff(s1, 1.6f) + 0.2f * Falloff(s2, 5f)));
-            }
-        tex.SetPixels(px);
-        tex.Apply(false, true);
-        var sprite = UnityEngine.Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        float outer = r + w / 2f, inner = r - w / 2f, half = outer + 4f;
+        Vector2 light = new Vector2(-0.5f, 0.8f).normalized;
+        Color hair = new Color(0.58f, 0.65f, 0.63f);
+        var sprite = Raster(Mathf.CeilToInt(4f * half), p =>
+        {
+            float x = p.x / 2f - half, y = p.y / 2f - half, d = Mathf.Sqrt(x * x + y * y);
+            float e = outer - d;
+            float cover = Mathf.Clamp01(e * 2f + 0.5f) * Mathf.Clamp01((d - inner) * 2f + 0.5f);
+            float lit = Mathf.Clamp01((d > 0f ? (x * light.x + y * light.y) / d : 0f) * 0.5f + 0.5f);
+            Color c = Color.Lerp(new Color(0.92f, 0.95f, 0.94f), new Color(0.80f, 0.87f, 0.85f), Mathf.Clamp01(e / w)) * Mathf.Lerp(0.9f, 1.05f, lit);
+            c = Color.Lerp(c, Color.white, 0.75f * Mathf.Clamp01(1f - Mathf.Abs(e - 0.7f) / 0.8f) * Mathf.Lerp(0.5f, 1f, lit));
+            c = Color.Lerp(c, hair, 0.55f * Mathf.Clamp01(1f - Mathf.Abs(e - (w - 0.5f)) / 0.75f));
+            // the shadows: tight round the outside (a little deeper below), soft on what is inside
+            float below = Mathf.Sqrt(x * x + (y + 0.8f) * (y + 0.8f)) - outer;
+            float shade = d > r ? 0.16f * Mathf.Clamp01(1f - Mathf.Max(below, 0f) / 2.4f)
+                : 0.2f * Mathf.Clamp01(1f - Mathf.Max(inner - Mathf.Sqrt(x * x + (y - 1.5f) * (y - 1.5f)), 0f) / 5f);
+            shade *= 1f - cover;
+            float a = cover + shade;
+            Color rgb = a > 0f ? (c * cover + ShadowInk * shade) / a : ShadowInk;
+            return new Color(rgb.r, rgb.g, rgb.b, a);
+        });
         s_metal[key] = sprite;
         return sprite;
     }
-
-    private static float Falloff(float b, float s) => b <= 0f ? 1f : Mathf.Exp(-b * b / (2f * s * s));
 
     // A small mono note (page labels like "Q2 / 7  ·  眼科病史").
     public static TextMeshProUGUI Note(Transform parent, float x, float y, float w = 600f, string text = "")
@@ -680,7 +770,8 @@ public static class V3
     }
 }
 
-// The glass tube along a key's bottom edge: how far the gaze dwell on it has run.
+// The glass tube along a key's bottom edge: how far the gaze dwell on it has run - shown only on keys that can be
+// chosen by looking (a ButtonTrigger on them); a touch key has no empty tube.
 public class V3KeyDwell : MonoBehaviour
 {
     private V3Slosh _tube;
@@ -698,7 +789,14 @@ public class V3KeyDwell : MonoBehaviour
     {
         if (_trigger == null)
             _trigger = GetComponent<ButtonTrigger>();
-        _f = _trigger != null ? Mathf.Clamp01(_trigger.Progress) : 0f;
+        bool gaze = _trigger != null && _trigger.enabled;
+        if (_tube.gameObject.activeSelf != gaze)
+        {
+            _tube.gameObject.SetActive(gaze);
+            if (_tube.Glow != null)
+                _tube.Glow.gameObject.SetActive(gaze);
+        }
+        _f = gaze ? Mathf.Clamp01(_trigger.Progress) : 0f;
         _tube.Fill = _f;
     }
 }
@@ -848,9 +946,9 @@ public class V3Slosh : MonoBehaviour
         _material.SetFloat("_Flash", flash >= 0f && flash < 1f ? Mathf.Sin(flash * Mathf.PI) : 0f);
         if (Glow != null)
         {
-            Glow.sizeDelta = new Vector2(Mathf.Max(0f, Width * _shown) + 16f, Glow.sizeDelta.y);
+            Glow.sizeDelta = new Vector2(Mathf.Max(0f, Width * _shown) + 18f, Glow.sizeDelta.y);
             var c = GlowImage.color;
-            c.a = _shown > 0.002f ? 0.16f + 0.2f * (flash >= 0f && flash < 1f ? Mathf.Sin(flash * Mathf.PI) : 0f) : 0f;
+            c.a = _shown > 0.002f ? 0.34f + 0.2f * (flash >= 0f && flash < 1f ? Mathf.Sin(flash * Mathf.PI) : 0f) : 0f;
             GlowImage.color = c;
         }
     }
@@ -994,15 +1092,18 @@ public class V3Follow : MonoBehaviour
     }
 }
 
-// Pressed state for V3 keys: the glass face sinks a little and greys while held, springing back past its size when
-// let go, and a ring of green light spreads from where it was touched.
+// Pressed state for V3 keys: the face sinks a little and darkens while held, springing back past its size when let
+// go, and a disc of green light spreads from where it was touched. A glass key (Glass) does both inside itself: it
+// shades along its top as if pressed in, and the light follows its rounded shape.
 public class V3PressTint : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerExitHandler
 {
     private const float Sink = 0.035f;
     public Image Target;
+    public V3GlassFace Glass;
     private Color _up;
     private bool _down, _centred;
     private float _depth, _speed, _rippleT = 1f;
+    private Vector2 _rippleAt;
     private RectTransform _ripple;
     private Image _rippleImage;
 
@@ -1023,6 +1124,11 @@ public class V3PressTint : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
         transform.localScale = Vector3.one;
         if (_rippleImage != null)
             _rippleImage.enabled = false;
+        if (Glass != null)
+        {
+            Glass.Press = 0f;
+            Glass.Ripple(Vector2.zero, 0f, 0f);
+        }
     }
 
     private void Ripple(PointerEventData e)
@@ -1031,6 +1137,13 @@ public class V3PressTint : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
         // only on keys, not the small round buttons
         if (rect.rect.width < 60f)
             return;
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(rect, e.position, e.pressEventCamera, out var local);
+        _rippleT = 0f;
+        if (Glass != null)
+        {
+            _rippleAt = local - rect.rect.center;
+            return;
+        }
         if (_ripple == null)
         {
             if (GetComponent<RectMask2D>() == null)
@@ -1039,12 +1152,10 @@ public class V3PressTint : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
             _ripple = _rippleImage.rectTransform;
             _ripple.SetAsFirstSibling();
         }
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(rect, e.position, e.pressEventCamera, out var local);
         _ripple.anchorMin = _ripple.anchorMax = rect.pivot;
         _ripple.pivot = UiFactory.Center;
         _ripple.anchoredPosition = local;
         _rippleImage.enabled = true;
-        _rippleT = 0f;
     }
 
     private void Update()
@@ -1062,13 +1173,21 @@ public class V3PressTint : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
         _speed += ((_down ? 1f : 0f) - _depth) * 900f * dt - _speed * 32f * dt;
         _depth += _speed * dt;
         rect.localScale = Vector3.one * (1f - Sink * _depth);
+        if (Glass != null)
+            Glass.Press = Mathf.Clamp01(_depth);
         if (_rippleT < 1f)
         {
             _rippleT = Mathf.Min(1f, _rippleT + dt / V3Motion.Slow);
             float k = 1f - Mathf.Pow(1f - _rippleT, 3f);
-            _ripple.sizeDelta = Vector2.one * Mathf.Lerp(16f, 2.4f * rect.rect.width, k);
-            _rippleImage.color = V3.A(V3.Green, 0.3f * (1f - _rippleT));
-            _rippleImage.enabled = _rippleT < 1f;
+            float size = Mathf.Lerp(16f, 2.4f * rect.rect.width, k), alpha = 0.3f * (1f - _rippleT);
+            if (Glass != null)
+                Glass.Ripple(_rippleAt, size / 2f, alpha);
+            else
+            {
+                _ripple.sizeDelta = Vector2.one * size;
+                _rippleImage.color = V3.A(V3.Green, alpha);
+                _rippleImage.enabled = _rippleT < 1f;
+            }
         }
     }
 
@@ -1082,7 +1201,8 @@ public class V3PressTint : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
             V3Sounds.Play(V3Sounds.Cue.Press);
         }
         _down = down;
-        Target.color = down ? V3.Pressed : _up;
+        if (Glass == null)
+            Target.color = down ? V3.Pressed : _up;
     }
 }
 
@@ -1187,6 +1307,10 @@ public class V3CardIn : MonoBehaviour
         _t = 0f;
         V3Focus.Hold(this);
         Apply(0f);
+        // a light passes across the card's glass as it comes up
+        var glass = _card != null ? _card.Find("Glass") : null;
+        if (glass != null && glass.TryGetComponent<V3GlassFace>(out var face))
+            face.Sweep();
     }
 
     private void OnDisable() => V3Focus.Release(this);
@@ -1329,10 +1453,28 @@ public class V3LiquidRing : MonoBehaviour
         material.SetFloat("_R", radius * size / 120f);
         material.SetFloat("_T", half * size / 120f);
         material.SetColor("_Track", track);
+        material.SetFloat("_Glow", 1f);
         image.material = material;
         var ring = image.gameObject.AddComponent<V3LiquidRing>();
         ring._material = material;
         return ring;
+    }
+
+    // An open arc of the ring: span (0-1 of the circle) from startDeg (clockwise from the top), its radius and half
+    // thickness in px. Fill counts in parts of the whole circle.
+    public static V3LiquidRing Gauge(Transform parent, float size, float radius, float half, Color track, float span, float startDeg)
+    {
+        var ring = Create(parent, size, radius * 120f / size, half * 120f / size, track);
+        ring._material.SetFloat("_Span", span);
+        ring._material.SetFloat("_Start", startDeg * Mathf.Deg2Rad);
+        ring._material.SetFloat("_Px", 1f);
+        return ring;
+    }
+
+    private void OnDestroy()
+    {
+        if (_material != null)
+            Destroy(_material);
     }
 
     public void Lock() => _lock = 0f;
@@ -1400,5 +1542,114 @@ public class V3GazeSteadiness
         _samples.Clear();
         Steady = 1f;
         Lean = Vector2.zero;
+    }
+}
+
+// A small round light's glow: laid just under it, it shows while the light is on and green (the green is light; the
+// violet and the ink are not given one).
+public class V3LampGlow : MonoBehaviour
+{
+    private Image _lamp, _glow;
+
+    public static void Attach(Image lamp, float diameter)
+    {
+        var glow = UiFactory.CreateImage("Glow", lamp.transform.parent, V3.DiscGlowSprite(diameter), Color.clear);
+        glow.transform.SetSiblingIndex(lamp.transform.GetSiblingIndex());
+        float box = diameter + 2f * V3.GlowReach;
+        var rect = glow.rectTransform;
+        rect.anchorMin = rect.anchorMax = lamp.rectTransform.anchorMin;
+        rect.pivot = UiFactory.Center;
+        rect.sizeDelta = new Vector2(box, box);
+        var l = lamp.gameObject.AddComponent<V3LampGlow>();
+        l._lamp = lamp;
+        l._glow = glow;
+    }
+
+    private void LateUpdate()
+    {
+        var c = _lamp.color;
+        bool green = _lamp.enabled && c.a > 0.5f && c.g > c.r + 0.25f && c.g > c.b;
+        _glow.enabled = green;
+        if (!green)
+            return;
+        _glow.color = c;
+        var lamp = _lamp.rectTransform;
+        // centred on the lamp, wherever it is put
+        _glow.rectTransform.anchoredPosition = lamp.anchoredPosition + Vector2.Scale(lamp.rect.size, UiFactory.Center - lamp.pivot);
+    }
+
+    private void OnDisable()
+    {
+        if (_glow != null)
+            _glow.enabled = false;
+    }
+}
+
+// A pressable piece (keys, answers) drawn as a block of the E's milky glass (V3/GlassKey): Lit lights it from inside
+// when it is chosen (eased), Press shades it while it is held, Ripple spreads a touch's green light through it. It
+// draws its own tight contact shadow, rounded with it, so it is laid on the window's soft shadow only
+// (V3.PatchShadow, tight false).
+public class V3GlassFace : MonoBehaviour
+{
+    private const float SheenSeconds = 0.7f;
+    private Material _material;
+    private float _lit, _sheen = -1f;
+
+    public bool Lit { get; set; }
+
+    public float Press
+    {
+        set
+        {
+            if (_material != null)
+                _material.SetFloat("_Press", value);
+        }
+    }
+
+    // radius, the rim's width (px) and how much of what is behind shows through the face (0: none)
+    public static V3GlassFace Attach(Image image, float w, float h, float radius = 8f, float edge = 4f, float clear = 0f)
+    {
+        var face = image.gameObject.AddComponent<V3GlassFace>();
+        face._material = new Material(Resources.Load<Shader>("V3/Shaders/GlassKey"));
+        face._material.SetVector("_Size", new Vector4(w, h, 0f, 0f));
+        face._material.SetFloat("_Radius", radius);
+        face._material.SetFloat("_Edge", edge);
+        face._material.SetFloat("_Clear", clear);
+        image.sprite = UiFactory.White;
+        image.type = Image.Type.Simple;
+        image.material = face._material;
+        return face;
+    }
+
+    // A disc of green light: its centre (px from the middle, y up), radius (px) and strength (0: none).
+    public void Ripple(Vector2 at, float radius, float strength)
+    {
+        if (_material != null)
+            _material.SetVector("_Ripple", new Vector4(at.x, at.y, radius, strength));
+    }
+
+    // A light passes across the glass once.
+    public void Sweep() => _sheen = 0f;
+
+    private void LateUpdate()
+    {
+        if (_sheen >= 0f)
+        {
+            _sheen += V3Motion.Step / SheenSeconds;
+            _material.SetFloat("_Sheen", _sheen < 1f ? Mathf.Lerp(-0.2f, 1.2f, _sheen * _sheen * (3f - 2f * _sheen)) : -1f);
+            if (_sheen >= 1f)
+                _sheen = -1f;
+        }
+        float lit = Mathf.MoveTowards(_lit, Lit ? 1f : 0f, V3Motion.Step / V3Motion.Quick);
+        if (lit == _lit)
+            return;
+        _lit = lit;
+        _material.SetFloat("_Lit", V3Motion.EaseOut(_lit));
+    }
+
+    private void OnDestroy()
+    {
+        if (_material != null)
+            Destroy(_material);
     }
 }

@@ -1,11 +1,14 @@
 // V3 home: the E as a block of milky ground glass, the frost thinner toward the top left and densest toward the bottom
 // right: the faces show what is behind them on the home - the light box, the headline and the two bezels - blurred
-// under an opal white with a fine sandblasted grain, with light scattered inside the frosted part
-// (brighter toward the top) and a faint green light along the middle of each stroke. The edges (_Edge = 1) are
-// polished: the backdrop seen through thick glass, darkened to a grey-green that outlines the letter, the studio's
-// reflections at grazing angles and a fine highlight.
-// Nothing is grabbed from the screen: the backdrop is rebuilt here from the headline's own pre-blurred coverage texture
-// (V3Home's blur level 3) and the bezels' known circles, which keeps it cheap on Kebbi.
+// under an opal white with a fine sandblasted grain, with light scattered inside the frosted part (brighter toward the
+// top), a faint green light along the middle of each stroke, a little shade just inside the border (the glass's
+// thickness) and a fine dark line where the face meets the bevel. The edges (_Edge = 1) are polished glass lit from
+// behind by the light box: the backdrop seen through them a little bent and pale grey-green, brighter toward the outer
+// edge as the light comes through it, a fine bright line along the outer crease, and the studio's strip lights
+// reflected crisply in the bevels. The lines are placed by the letter's own shape (its distance field on the mesh's
+// face plane), measured in screen pixels. Nothing is grabbed from the screen: the backdrop is rebuilt here from the
+// headline's own pre-blurred coverage texture (V3Home's blur level 3) and the bezels' known circles, which keeps it
+// cheap on Kebbi.
 Shader "V3/Frost"
 {
     Properties
@@ -44,6 +47,7 @@ Shader "V3/Frost"
                 float3 worldPos : TEXCOORD1;
                 float3 obj : TEXCOORD2;
                 float4 screen : TEXCOORD3;
+                float3 objNormal : TEXCOORD4;
             };
 
             v2f vert(appdata_base v)
@@ -53,8 +57,25 @@ Shader "V3/Frost"
                 o.normal = UnityObjectToWorldNormal(v.normal);
                 o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
                 o.obj = v.vertex.xyz;
+                o.objNormal = v.normal;
                 o.screen = ComputeScreenPos(o.pos);
                 return o;
+            }
+
+            float EBox(float2 p, float2 c, float2 h)
+            {
+                float2 d = abs(p - c) - h;
+                return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+            }
+
+            // the letter on the mesh's face plane (x across, z up; 1 unit = the letter's width): < 0 on the face, 0 at
+            // the face's border, the bevel's outer crease at 0.032 (V3Home.BuildEMesh)
+            float SdE(float2 q)
+            {
+                float d = EBox(q, float2(-0.4, 0.0), float2(0.1, 0.5));
+                d = min(d, EBox(q, float2(0.0, -0.4), float2(0.5, 0.1)));
+                d = min(d, EBox(q, float2(0.0, 0.0), float2(0.5, 0.1)));
+                return min(d, EBox(q, float2(0.0, 0.4), float2(0.5, 0.1)));
             }
 
             float Ring(float d, float r, float w, float soft)
@@ -102,6 +123,8 @@ Shader "V3/Frost"
                 float ndl = saturate(dot(n, l) * 0.5 + 0.5);
                 float fr = pow(1.0 - ndv, 4.0);
                 float3 milk = float3(0.984, 0.987, 0.990);
+                // the letter's shape in screen pixels: how far in from the face's border, out along the bevel
+                float sd = SdE(i.obj.xz), unitPx = max(length(fwidth(i.obj.xz)) * 0.7, 1e-5);
                 float3 col;
                 if (_Edge < 0.5)
                 {
@@ -122,16 +145,32 @@ Shader "V3/Frost"
                     col += _LightColor0.rgb * pow(saturate(dot(n, h)), lerp(60.0, 10.0, f)) * lerp(0.22, 0.04, f);
                     // the light inside, faint, where the frost catches it along the middle of the strokes
                     col = lerp(col, L, smoothstep(0.62, 1.0, glow) * 0.1 * f);
+                    // the glass's thickness just inside the border, and the fine dark line where the face meets the bevel
+                    float inPx = max(-sd, 0.0) / unitPx;
+                    col *= 1.0 - 0.08 * exp(-inPx / 6.0);
+                    col *= 1.0 - 0.34 * saturate(1.0 - inPx / 1.2);
                 }
                 else
                 {
-                    // the polished edges: thick glass seen from the side - the home behind bent a little and darkened
-                    // to a grey-green by the thickness, which draws the letter's outline - the studio at grazing
-                    // angles and a fine bright line where the bevels face the key light
-                    col = Backdrop(px + float2(n.x, -n.y) * 8.0, 3.0) * float3(0.66, 0.74, 0.72);
-                    col *= lerp(0.8, 1.0, ndl);
-                    col = lerp(col, V3StudioSharp(reflect(-v, n), 0.03), saturate(fr * 0.5 + 0.04));
-                    col += _LightColor0.rgb * pow(saturate(dot(n, h)), 120.0) * 0.9;
+                    // the polished edges, lit from behind by the light box: the home seen through them a little bent and
+                    // pale grey-green, brighter toward the outer edge where the light comes through; the walls (side
+                    // faces) glow most. A fine bright line along the bevel's outer crease, and the studio's strip lights
+                    // reflected crisply in the bevels.
+                    bool wall = abs(i.objNormal.y) < 0.3;
+                    float out01 = wall ? 1.0 : saturate(sd / 0.032);
+                    col = Backdrop(px + float2(n.x, -n.y) * 8.0, 3.0) * float3(0.80, 0.88, 0.86);
+                    col *= lerp(0.84, 1.02, ndl);
+                    col = lerp(col * 0.9, col * 1.06 + float3(0.035, 0.05, 0.045), out01);
+                    // the walls are lit from behind: only the studio's lights show in them, never its dark room
+                    float3 refl = V3StudioSharp(reflect(-v, n), 0.02);
+                    if (wall)
+                        refl = max(refl, col);
+                    col = lerp(col, refl, saturate(fr * 0.55 + (wall ? 0.06 : 0.2)));
+                    // (full out to the crease and past it: the antialiased edge pixels are shaded just outside the
+                    // bevel, and would otherwise miss the line and show a broken dark one)
+                    float crease = wall ? 0.0 : saturate(1.0 - max((0.032 - sd) / unitPx - 0.8, 0.0));
+                    col = lerp(col, float3(1.0, 1.0, 1.0), crease * lerp(0.35, 0.8, ndl));
+                    col += _LightColor0.rgb * pow(saturate(dot(n, h)), 140.0) * 0.9;
                 }
                 return fixed4(col, 1.0);
             }
