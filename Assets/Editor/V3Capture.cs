@@ -18,6 +18,7 @@ public static class V3Capture
     private const string ChooseKey = "V3Capture.Choose";
     private const string RingsKey = "V3Capture.Rings";
     private const string GalleryKey = "V3Capture.Gallery";
+    private const string SettingsKey = "V3Capture.Settings";
     // a page is shot once it has been up this long and for this many frames (the pages' entrances run by frames, and
     // the editor may run slowly)
     private const double GallerySettle = 2.1;
@@ -26,7 +27,7 @@ public static class V3Capture
     private static int _galleryNext, _galleryPhase, _stepFrame;
     private static object _presence;
     private static (string name, Action show)[] _gallery;
-    private static double _replayAt = -1, _chooseAt = -1, _ringsAt = -1;
+    private static double _replayAt = -1, _chooseAt = -1, _ringsAt = -1, _settingsAt = -1;
     private static V3LiquidRing[] _rings;
     private static bool _ringLocked;
     private static double _start = -1;
@@ -54,6 +55,8 @@ public static class V3Capture
         SessionState.SetString(RingsKey, Arg("-rings") ?? "");
         // -gallery 9: from that moment (after -choose), each inner page in turn, saved as page_NN_name.png
         SessionState.SetString(GalleryKey, Arg("-gallery") ?? "");
+        // -settings 12: open the settings card over the home at that moment
+        SessionState.SetString(SettingsKey, Arg("-settings") ?? "");
         EditorSceneManager.OpenScene("Assets/Scenes/TobiiSample_new.unity");
         SetGameViewSize(1024, 600);
         EditorApplication.isPlaying = true;
@@ -82,6 +85,9 @@ public static class V3Capture
                 _galleryAt = double.Parse(gallery, System.Globalization.CultureInfo.InvariantCulture);
                 ShotsAt = new[] { _galleryAt + 100000.0 };
             }
+            string settings = SessionState.GetString(SettingsKey, "");
+            if (settings.Length > 0)
+                _settingsAt = double.Parse(settings, System.Globalization.CultureInfo.InvariantCulture);
             string choose = SessionState.GetString(ChooseKey, "");
             if (choose.Length > 0)
                 _chooseAt = double.Parse(choose, System.Globalization.CultureInfo.InvariantCulture);
@@ -117,6 +123,11 @@ public static class V3Capture
             _rings[2].Fill = Mathf.Clamp01(k / 1.2f);
             if (k > 1.2f && !_ringLocked && (_ringLocked = true))
                 _rings[2].Lock();
+        }
+        if (_settingsAt >= 0 && t >= _settingsAt)
+        {
+            _settingsAt = -1;
+            V3SettingsPage.Open(UnityEngine.Object.FindObjectOfType<V3Home>().transform);
         }
         if (_chooseAt >= 0 && t >= _chooseAt)
         {
@@ -199,7 +210,7 @@ public static class V3Capture
         var qa = (QA)Get(q, "_qa");
         var metric = (MetricTest)Get(test, "_test");
         var viewType = setup.GetType().GetNestedType("View", BindingFlags.NonPublic);
-        void View(string name) => Call(setup, "Show", Enum.Parse(viewType, name));
+        void View(string name) => Call(setup, "Show", Enum.Parse(viewType, name), true);
         void Result(MetricTest.TestMode mode, int[] levels, string message)
         {
             ((GameObject)Get(test, "_resultPage")).SetActive(true);

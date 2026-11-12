@@ -16,6 +16,8 @@ public class KebbiSound : MonoBehaviour
 
     // overall volume of the cues (0-1)
     public static float Volume = 1f;
+    // The app's setting: off, no cue plays.
+    public static bool Enabled = true;
 
     private static KebbiSound s_instance;
     private static readonly Dictionary<string, AudioClip> s_clips = new Dictionary<string, AudioClip>();
@@ -46,6 +48,8 @@ public class KebbiSound : MonoBehaviour
 
     public static void Play(string name, float volume = 1f)
     {
+        if (!Enabled)
+            return;
         if (s_instance == null)
             return;
         var clip = Clip(name);

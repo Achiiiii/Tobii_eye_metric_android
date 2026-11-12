@@ -2,7 +2,7 @@
 // calibration rings), the round sibling of V3/Tube. A white outline keeps it clear on any background; the tube is faint
 // glass over a track colour (_Track) with a fine highlight along its outer top; the liquid (the vertex colour) fills
 // clockwise from the top to _Fill, its front a rounded meniscus with a bright edge, darker toward the inside, a band of
-// light refracted along the inner wall, a current and small bubbles running along it. It answers the gaze: _Steady
+// light refracted along the inner wall. It answers the gaze: _Steady
 // (0-1) is how still the eyes are - the liquid is brightest and its front calm when they are still, duller and
 // trembling when they wander - and _Lean (-1..1, y up) where the gaze is drifting, where the glass catches the light.
 // Events (V3LiquidRing drives them): _Sweep, a light running through the liquid to its front (0-1, < 0 none); _Lock,
@@ -60,8 +60,6 @@ Shader "V3/RingTube"
                 return o;
             }
 
-            float Hash(float n) { return frac(sin(n) * 43758.5453); }
-
             float4 Over(float4 under, float3 rgb, float a)
             {
                 float outA = a + under.a * (1.0 - a);
@@ -101,19 +99,9 @@ Shader "V3/RingTube"
                 float along = u <= fill ? 1.0 : 0.0;
                 float body = max(along * tube, saturate((_T - cap) / px + 0.5)) * step(0.004, fill);
                 float3 lc = i.color.rgb * lerp(0.76, 1.08, saturate(across * 0.5 + 0.5));
-                lc *= 0.94 + 0.1 * Hash(floor(u * 90.0 - t * 6.0));
                 lc *= lerp(0.8, 1.06, _Steady);
                 // light refracted along the inner wall
                 lc = lerp(lc, float3(1.0, 1.0, 1.0), 0.3 * saturate(1.0 - abs(across + 0.45) / 0.3));
-                // bubbles running along the liquid
-                for (int b = 0; b < 4; b++)
-                {
-                    float bu = frac(Hash(b * 5.3) + t * (0.05 + 0.03 * Hash(b * 2.1))) * fill;
-                    float ba = _Start + bu * 6.28318;
-                    float2 bp = float2(sin(ba), cos(ba)) * (_R + (Hash(b * 9.7) - 0.5) * _T);
-                    float bd = length(p - bp);
-                    lc = lerp(lc, float3(1.0, 1.0, 1.0), 0.6 * saturate(1.0 - abs(bd - 0.9 * px) / (0.55 * px)));
-                }
                 // the sweep running through to the front
                 float du = abs(u - _Sweep * fill);
                 lc = lerp(lc, float3(1.0, 1.0, 1.0), 0.55 * step(0.0, _Sweep) * exp(-pow(min(du, 1.0 - du) * 6.28318 * _R / (4.0 * _T), 2.0)));

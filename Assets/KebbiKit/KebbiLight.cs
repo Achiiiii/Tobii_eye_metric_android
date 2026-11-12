@@ -14,7 +14,26 @@ public class KebbiLight : MonoBehaviour
     private static readonly Nuwa.LEDPosition[] Body = { Nuwa.LEDPosition.Chest, Nuwa.LEDPosition.LeftHand, Nuwa.LEDPosition.RightHand };
 
     private static KebbiLight s_instance;
-    private static bool s_taken;
+    private static bool s_taken, s_wanted, s_enabled = true;
+
+    // The app's setting: off, the lights stay with the system whatever the app asks for.
+    public static bool Enabled
+    {
+        get => s_enabled;
+        set
+        {
+            if (s_enabled == value)
+                return;
+            s_enabled = value;
+            if (value && s_wanted)
+                Take();
+            else if (!value && s_taken)
+            {
+                s_taken = false;
+                Nuwa.enableSystemLED();
+            }
+        }
+    }
     private static Color s_base = Violet;
     private static bool s_breathing = true;
     private Coroutine _flash;
@@ -31,6 +50,9 @@ public class KebbiLight : MonoBehaviour
     // The app controls the lights (the system's own patterns stop).
     public static void Take()
     {
+        s_wanted = true;
+        if (!s_enabled)
+            return;
         s_taken = true;
         Nuwa.disableSystemLED();
         Apply();
@@ -39,6 +61,7 @@ public class KebbiLight : MonoBehaviour
     // The lights go back to the system.
     public static void Release()
     {
+        s_wanted = false;
         s_taken = false;
         Nuwa.enableSystemLED();
     }

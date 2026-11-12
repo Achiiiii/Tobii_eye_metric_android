@@ -25,8 +25,8 @@ public static class V3
     public static readonly Color HeadInk = new Color32(0x3A, 0x3D, 0x43, 0xFF);      // the home's headline
     public static readonly Color Text2 = new Color32(0x5A, 0x5F, 0x63, 0xFF);        // secondary lines
     // light: green as a light source (liquid in the tubes, light guides, lamps); GreenLit for small solid marks lit by
-    // it (arcs, checks, small lights), as the liquid shows it; GreenPale for its hottest, palest part (sparks, glows)
-    public static readonly Color Green = new Color32(0x5F, 0xE3, 0xAE, 0xFF);
+    // it (arcs, checks, small lights), as the liquid shows it; GreenPale for its hottest, palest part (glows)
+    public static readonly Color Green = new Color32(0x3F, 0xD0, 0x9A, 0xFF);
     public static readonly Color GreenLit = new Color(Green.r * 0.84f, Green.g * 0.84f, Green.b * 0.84f, 1f);
     public static readonly Color GreenPale = new Color32(0xDB, 0xFF, 0xF0, 0xFF);
     public static readonly Color Violet = new Color32(0x6E, 0x56, 0xCF, 0xFF);
@@ -44,9 +44,8 @@ public static class V3
     public static readonly Color Pressed = new Color32(0xF2, 0xF2, 0xEF, 0xFF);
     // grooves cut in the light box (with an alpha: a track, a light that is off)
     public static readonly Color Groove = new Color32(0x1C, 0x22, 0x2C, 0xFF);
-    // metal: brushed steel, the machined groove and its shade, the key's centre dot and lit rim, a silver disc
+    // metal: brushed steel, a machined groove's shade, the key's centre dot and lit rim, a silver disc
     public static readonly Color Steel = new Color32(0xE2, 0xE5, 0xEA, 0xFF);
-    public static readonly Color MetalGroove = new Color32(0x96, 0xA5, 0xBE, 0xFF);
     public static readonly Color MetalShade = new Color32(0xB9, 0xC8, 0xDE, 0xFF);
     public static readonly Color MetalDot = new Color32(0x78, 0x8C, 0xAA, 0xFF);
     public static readonly Color MetalRim = new Color32(0xED, 0xF2, 0xF9, 0xFF);
@@ -300,13 +299,19 @@ public static class V3
     public static void GlassPanel(Transform parent, float x, float y, float w, float h)
     {
         PatchShadow(parent, x, y, w, h, false);
-        V3GlassFace.Attach(Box("Glass", parent, Color.white, x, y, w, h), w, h, 14f, 5f, 0.4f);
+        V3GlassFace.Attach(Box("Glass", parent, Color.white, x, y, w, h), w, h, 18f, 0.4f);
     }
 
     // The window's contact shadow: 0 10 18 -10 and a tight 0 2 2 (a glass piece draws its own tight one, rounded with
     // it: tight false).
     public static void PatchShadow(Transform parent, float x, float y, float w, float h, bool tight = true)
     {
+        if (!tight)
+        {
+            // under glass: one shadow, softer and further off
+            Shadow(parent, x, y, w, h, 26f, -10f, 12f, A(ShadowInk, 0.2f));
+            return;
+        }
         Shadow(parent, x, y, w, h, 18f, -10f, 10f, A(ShadowInk, 0.18f));
         if (tight)
             Shadow(parent, x, y, w, h, 2f, 0f, 2f, A(ShadowInk, 0.14f));
@@ -326,7 +331,7 @@ public static class V3
         }
     }
 
-    // The chosen rim round a window: a 1.5 px outline, radius 14 (the window's 10 plus the 4 px gap), 9-sliced at 20.
+    // The chosen rim round a window: a 1.5 px outline, radius 18 (round the glass's corners, a 4 px gap out), 9-sliced at 24.
     public static Sprite RimSprite
     {
         get
@@ -334,7 +339,7 @@ public static class V3
             if (s_rim != null)
                 return s_rim;
             const int s = 64;
-            const float r = 14f;
+            const float r = 18f;
             var tex = new Texture2D(s, s, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
             var px = new Color[s * s];
             for (int y = 0; y < s; y++)
@@ -346,7 +351,7 @@ public static class V3
                 }
             tex.SetPixels(px);
             tex.Apply(false, true);
-            return s_rim = UnityEngine.Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(20f, 20f, 20f, 20f));
+            return s_rim = UnityEngine.Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(24f, 24f, 24f, 24f));
         }
     }
 
@@ -362,8 +367,8 @@ public static class V3
 
     private static Sprite s_rimGlow;
 
-    // The chosen rim's light: the glow round RimSprite's outline, 9-sliced at 52, GlowReach px wider than the rim on
-    // every side.
+    // The chosen rim's light: the glow round RimSprite's outline, kept close to it (half the usual reach), 9-sliced at
+    // 52, GlowReach px wider than the rim on every side.
     public static Sprite RimGlowSprite
     {
         get
@@ -371,12 +376,12 @@ public static class V3
             if (s_rimGlow != null)
                 return s_rimGlow;
             const int s = 128;
-            const float r = 14f, m = GlowReach;
+            const float r = 18f, m = GlowReach;
             return s_rimGlow = Slice(Raster(s, p =>
             {
                 var q = new Vector2(Mathf.Abs(p.x - s / 2f) - (s / 2f - m - r), Mathf.Abs(p.y - s / 2f) - (s / 2f - m - r));
                 float d = Vector2.Max(q, Vector2.zero).magnitude + Mathf.Min(Mathf.Max(q.x, q.y), 0f) - r;
-                return new Color(1f, 1f, 1f, GlowAt(Mathf.Abs(d + 0.75f) - 0.75f) * Mathf.Clamp01((s / 2f - Mathf.Max(Mathf.Abs(p.x - s / 2f), Mathf.Abs(p.y - s / 2f))) / 3f));
+                return new Color(1f, 1f, 1f, GlowAt((Mathf.Abs(d + 0.75f) - 0.75f) * 2f) * Mathf.Clamp01((s / 2f - Mathf.Max(Mathf.Abs(p.x - s / 2f), Mathf.Abs(p.y - s / 2f))) / 3f));
             }), 52f);
         }
     }
@@ -433,8 +438,8 @@ public static class V3
         public float W, F;
     }
 
-    // A horizontal progress guide (24 px tall box): a 12 px glass tube with the green liquid in it (V3/Tube), sparks
-    // off the liquid's front while it is on the way, the home dial's scale under it (in that many sections) when asked.
+    // A horizontal progress guide (24 px tall box): a 12 px glass tube with the green liquid in it (V3/Tube), the home
+    // dial's scale under it (in that many sections) when asked.
     public static GuideParts Guide(Transform parent, float x, float y, float w, bool ticks = false, int sections = 4)
     {
         var g = new GuideParts { W = w };
@@ -442,7 +447,6 @@ public static class V3
         g.Tube = Tube(g.Root, 0f, 0f, w, 12f);
         if (ticks)
             Sprite("Scale", g.Root, ScaleStrip(w, sections), Color.white, 0f, 15f, Mathf.Ceil(w) + 1f, ScaleStripH);
-        V3Sparks.Attach(g.Root, () => g.F > 0.002f && g.F < 0.999f ? (new Vector2(g.W * g.F, 6f), Vector2.right) : ((Vector2, Vector2)?)null);
         SetGuide(g, 0f);
         return g;
     }
@@ -703,6 +707,16 @@ public static class V3
                 rings = new[] { new Vector3(16, 11, 5.3f) }; break;
             case "target": lines = new[] { new float[] { 16, 3, 16, 9 }, new float[] { 16, 23, 16, 29 }, new float[] { 3, 16, 9, 16 }, new float[] { 23, 16, 29, 16 } }; stroke = 2.4f;
                 rings = new[] { new Vector3(16, 16, 8f) }; break;
+            case "gear":
+                lines = new float[8][];
+                for (int i = 0; i < 8; i++)
+                {
+                    float a = i * Mathf.PI / 4f, cx = Mathf.Cos(a), sy = Mathf.Sin(a);
+                    lines[i] = new[] { 16f + 9.5f * cx, 16f + 9.5f * sy, 16f + 12.6f * cx, 16f + 12.6f * sy };
+                }
+                rings = new[] { new Vector3(16, 16, 7.6f), new Vector3(16, 16, 2.4f) };
+                stroke = 2.8f;
+                break;
             case "exit": lines = new[] { new float[] { 13, 5, 5, 5, 5, 27, 13, 27 }, new float[] { 19, 11, 24, 16, 19, 21 }, new float[] { 24, 16, 12, 16 } }; stroke = 2.9f; break;
             case "eye": lines = EyeOutline(16f, 16f, 13.5f, 8.5f); rings = new[] { new Vector3(16, 16, 4f) }; stroke = 2.4f; break;
             default: lines = new float[0][]; break;
@@ -782,7 +796,6 @@ public class V3KeyDwell : MonoBehaviour
     public void Init(V3Slosh tube, RectTransform face, Vector2 at, float width)
     {
         _tube = tube;
-        V3Sparks.Attach(face, () => _f > 0.01f && _f < 1f ? (new Vector2(at.x + width * _f, at.y + 4.5f), Vector2.right) : ((Vector2, Vector2)?)null);
     }
 
     private void LateUpdate()
@@ -798,106 +811,6 @@ public class V3KeyDwell : MonoBehaviour
         }
         _f = gaze ? Mathf.Clamp01(_trigger.Progress) : 0f;
         _tube.Fill = _f;
-    }
-}
-
-// Sparks off the head of a progress guide: small green lights shed behind and to the sides of the moving head,
-// slowing and fading out over about .7 s (a few white-hot ones among them). Tip gives the head's position in the
-// parent's top-left space (y down) and its forward direction, or null while there is nothing to show. The sparks
-// live on their own canvas so they do not rebuild the page every frame.
-public class V3Sparks : MonoBehaviour
-{
-    private const int Pool = 28;
-    private Func<(Vector2 pos, Vector2 dir)?> _tip;
-    private float _rate, _due;
-    private readonly RectTransform[] _dots = new RectTransform[Pool];
-    private readonly Image[] _images = new Image[Pool];
-    private readonly Vector2[] _pos = new Vector2[Pool], _vel = new Vector2[Pool];
-    private readonly float[] _age = new float[Pool], _life = new float[Pool], _size = new float[Pool];
-    private readonly bool[] _hot = new bool[Pool];
-
-    public static V3Sparks Attach(RectTransform parent, Func<(Vector2 pos, Vector2 dir)?> tip, float rate = 40f)
-    {
-        var layer = V3.Rect("Sparks", parent, 0f, 0f, 0f, 0f);
-        layer.gameObject.AddComponent<Canvas>();
-        var sparks = layer.gameObject.AddComponent<V3Sparks>();
-        sparks._tip = tip;
-        sparks._rate = rate;
-        for (int i = 0; i < Pool; i++)
-        {
-            var image = V3.Sprite("Spark", layer, UiFactory.Circle, V3.Green, 0f, 0f, 4f, 4f);
-            image.raycastTarget = false;
-            image.rectTransform.pivot = UiFactory.Center;
-            image.enabled = false;
-            sparks._dots[i] = image.rectTransform;
-            sparks._images[i] = image;
-            sparks._age[i] = sparks._life[i] = 1f;
-        }
-        return sparks;
-    }
-
-    private void OnDisable()
-    {
-        for (int i = 0; i < Pool; i++)
-        {
-            _images[i].enabled = false;
-            _age[i] = _life[i];
-        }
-        _due = 0f;
-    }
-
-    private void Update()
-    {
-        float dt = Mathf.Min(0.05f, Time.unscaledDeltaTime);
-        var tip = _tip?.Invoke();
-        if (tip.HasValue)
-        {
-            _due += _rate * dt;
-            while (_due >= 1f)
-            {
-                _due -= 1f;
-                Emit(tip.Value.pos, tip.Value.dir.normalized);
-            }
-        }
-        else
-            _due = 0f;
-        for (int i = 0; i < Pool; i++)
-        {
-            if (_age[i] >= _life[i])
-                continue;
-            _age[i] += dt;
-            if (_age[i] >= _life[i])
-            {
-                _images[i].enabled = false;
-                continue;
-            }
-            _vel[i] *= Mathf.Exp(-2.8f * dt);
-            _pos[i] += _vel[i] * dt;
-            float k = _age[i] / _life[i], size = _size[i] * (1f - 0.55f * k);
-            _dots[i].anchoredPosition = new Vector2(_pos[i].x, -_pos[i].y);
-            _dots[i].sizeDelta = new Vector2(size, size);
-            var c = _hot[i] ? Color.Lerp(V3.GreenPale, V3.Green, k) : V3.Green;
-            c.a = Mathf.Pow(1f - k, 1.4f);
-            _images[i].color = c;
-        }
-    }
-
-    private void Emit(Vector2 pos, Vector2 dir)
-    {
-        int slot = 0;
-        for (int i = 0; i < Pool; i++)
-        {
-            if (_age[i] >= _life[i]) { slot = i; break; }
-            if (_age[i] / _life[i] > _age[slot] / _life[slot]) slot = i;
-        }
-        var normal = new Vector2(-dir.y, dir.x);
-        _pos[slot] = pos + normal * UnityEngine.Random.Range(-1.5f, 1.5f);
-        _vel[slot] = -dir * UnityEngine.Random.Range(6f, 42f) + normal * UnityEngine.Random.Range(-30f, 30f);
-        _life[slot] = UnityEngine.Random.Range(0.45f, 0.95f);
-        _size[slot] = UnityEngine.Random.Range(2.2f, 4.8f);
-        _hot[slot] = UnityEngine.Random.value < 0.3f;
-        _age[slot] = 0f;
-        _images[slot].enabled = true;
     }
 }
 
@@ -1606,14 +1519,13 @@ public class V3GlassFace : MonoBehaviour
         }
     }
 
-    // radius, the rim's width (px) and how much of what is behind shows through the face (0: none)
-    public static V3GlassFace Attach(Image image, float w, float h, float radius = 8f, float edge = 4f, float clear = 0f)
+    // the corner radius (px) and how much of what is behind shows through the face (0: none)
+    public static V3GlassFace Attach(Image image, float w, float h, float radius = 12f, float clear = 0f)
     {
         var face = image.gameObject.AddComponent<V3GlassFace>();
         face._material = new Material(Resources.Load<Shader>("V3/Shaders/GlassKey"));
         face._material.SetVector("_Size", new Vector4(w, h, 0f, 0f));
         face._material.SetFloat("_Radius", radius);
-        face._material.SetFloat("_Edge", edge);
         face._material.SetFloat("_Clear", clear);
         image.sprite = UiFactory.White;
         image.type = Image.Type.Simple;

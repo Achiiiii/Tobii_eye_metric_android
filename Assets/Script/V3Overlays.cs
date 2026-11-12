@@ -113,17 +113,19 @@ public class V3Overlays : MonoBehaviour
     // ==================== HUD ====================
 
     // The scene's round grey HUD buttons become 30 px white discs with an ink glyph (the thin V3.1 top row):
-    // exit at the far right, recalibrate left of it, the violet signal bars left of that.
-    public static void RestyleHud(Button exit, RectTransform network, GameObject recalibrate)
+    // one group at the right: exit at the far right, the settings left of it, then the violet signal bars, and
+    // recalibrate (when it shows) left of those.
+    public static void RestyleHud(Button exit, RectTransform network, GameObject recalibrate, GameObject settings)
     {
         Disc((RectTransform)exit.transform, new Vector2(-40f, -26f), V3.Icon("exit"));
-        Disc((RectTransform)recalibrate.transform, new Vector2(-40f - 36f - 10f, -26f), UiFactory.RefreshArrow);
+        Disc((RectTransform)settings.transform, new Vector2(-40f - 36f - 10f, -26f), V3.Icon("gear"));
+        Disc((RectTransform)recalibrate.transform, new Vector2(-40f - 3f * (36f + 10f), -26f), UiFactory.RefreshArrow);
         var networkImage = network.GetComponent<Image>();
         if (networkImage != null)
             networkImage.color = new Color(1f, 1f, 1f, 0f);
         network.anchorMin = network.anchorMax = Vector2.one;
         network.pivot = Vector2.one;
-        network.anchoredPosition = new Vector2(-40f - 36f - 10f - 36f - 12f, -26f);
+        network.anchoredPosition = new Vector2(-40f - 2f * (36f + 10f), -26f);
     }
 
     private static void Disc(RectTransform rect, Vector2 position, Sprite glyph)

@@ -110,8 +110,13 @@ public static class Nuwa
     // The last line handed to startTTS (the app estimates from it how long the robot will speak).
     public static string LastTTS;
 
+    // Set by the app's settings: nothing is spoken while true.
+    public static bool Muted;
+
     public static void startTTS(string tts)
     {
+        if (Muted)
+            return;
         LastTTS = tts;
         if (onStartTTs != null) onStartTTs();
 

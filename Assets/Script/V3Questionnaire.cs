@@ -70,6 +70,8 @@ public class V3Questionnaire : MonoBehaviour
         V3Flow.Conceal(qa.questionPage);
         qa.SpeechText = i => i >= 0 && i < Questions.Length ? Questions[i].Words : null;
         qa.QuestionShown += page.OnQuestionShown;
+        // the language changed (the settings): the question that is up is drawn again in it
+        V3.LangChanged += () => { if (page != null && page._page.activeSelf && !page._busy) page.Draw(qa.Current, false); };
         return page;
     }
 

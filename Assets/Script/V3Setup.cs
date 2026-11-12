@@ -112,6 +112,14 @@ public class V3Setup : MonoBehaviour
         cal.GazeIntroEnded += () => { if (page._view == View.Practice) page.Show(View.None); };
         cal.TestCountdownStarted += page.OnCountdownStarted;
         cal.TestCountdownEnded += () => { if (page._view == View.Countdown) page.Show(View.None); };
+        // the language changed (the settings): the page that is up gets its words again
+        V3.LangChanged += () =>
+        {
+            if (page == null || page._view == View.None)
+                return;
+            page.Show(page._view, false);
+            page.PaintCountdown();
+        };
         return page;
     }
 
@@ -170,7 +178,7 @@ public class V3Setup : MonoBehaviour
         // the screen in miniature: 272 x 160 (1024 x 600)
         const float sx = 644f, sy = 170f, sw = 272f, sh = 160f;
         V3.PatchShadow(t, sx, sy, sw, sh, false);
-        V3GlassFace.Attach(V3.Box("Glass", t, Color.white, sx, sy, sw, sh), sw, sh, 10f, 5f, 0.3f);
+        V3GlassFace.Attach(V3.Box("Glass", t, Color.white, sx, sy, sw, sh), sw, sh, 12f, 0.3f);
         V3.Sprite("Reticle", t, V3Instruments.Reticle((int)sw, (int)sh), Color.white, sx, sy, sw, sh);
         // the five dots in their order (centre, top left, top right, bottom right, bottom left)
         _calMap = V3.Rect("Map", t, 0f, 0f, V3.W, V3.H).gameObject;
@@ -233,7 +241,7 @@ public class V3Setup : MonoBehaviour
             var button = UiFactory.CreateButton("Tile", t, UiFactory.White, Color.white, () => OnTileDone(index));
             button.transition = Selectable.Transition.None;
             var tile = V3.At((RectTransform)button.transform, x, TileY, 180f, 180f);
-            _tileGlass[i] = V3GlassFace.Attach((Image)button.targetGraphic, 180f, 180f, 10f, 5f);
+            _tileGlass[i] = V3GlassFace.Attach((Image)button.targetGraphic, 180f, 180f, 16f);
             _tiles[i] = button.gameObject.AddComponent<ButtonTrigger>();
             // chosen: the green rim and its light, as round a chosen answer
             var glow = V3.Sprite("RimGlow", tile, V3.RimGlowSprite, V3.Green, -4f - V3.GlowReach, -4f - V3.GlowReach, 188f + 2f * V3.GlowReach, 188f + 2f * V3.GlowReach);
@@ -365,16 +373,21 @@ public class V3Setup : MonoBehaviour
     {
         _side = side;
         _cdSeconds = seconds;
-        string tag = side == "left" ? V3.T("左眼測驗", "Left eye") : side == "both" ? V3.T("雙眼測驗", "Both eyes") : V3.T("右眼測驗", "Right eye");
-        _cdTag.text = tag;
-        _cdCover.SetActive(side != "both");
-        _cdCoverText.text = side == "left" ? V3.T("記得遮住右眼", "Keep your right eye covered") : V3.T("記得遮住左眼", "Keep your left eye covered");
+        PaintCountdown();
         Show(View.Countdown);
+    }
+
+    private void PaintCountdown()
+    {
+        _cdTag.text = _side == "left" ? V3.T("左眼測驗", "Left eye") : _side == "both" ? V3.T("雙眼測驗", "Both eyes") : V3.T("右眼測驗", "Right eye");
+        _cdCover.SetActive(_side != "both");
+        _cdCoverText.text = _side == "left" ? V3.T("記得遮住右眼", "Keep your right eye covered") : V3.T("記得遮住左眼", "Keep your left eye covered");
     }
 
     // ==================== state ====================
 
-    private void Show(View view)
+    // fresh false: only the words again (the language changed) - the page's clock, lights and speech carry on.
+    private void Show(View view, bool fresh = true)
     {
         // the cover page (before each eye's calibration): a rough demonstration of covering an eye
         if (view == View.Cover && _view != View.Cover)
@@ -383,7 +396,8 @@ public class V3Setup : MonoBehaviour
             KebbiMotion.Play("cover_eye");
         }
         _view = view;
-        _viewSince = Time.unscaledTime;
+        if (fresh)
+            _viewSince = Time.unscaledTime;
         V3Flow.SheenOffSetup = view == View.CalRun || view == View.Countdown;
         bool single = _test.Mode == MetricTest.TestMode.Single;
         _coverPage.SetActive(view == View.Cover);
@@ -424,8 +438,11 @@ public class V3Setup : MonoBehaviour
         {
             bool failed = view == View.CalFailed;
             _retry.Root.gameObject.SetActive(failed);
-            _calLit = 0;
-            SetCalLights(failed ? 5 : 0, failed ? V3.Red : V3.Violet);
+            if (fresh)
+            {
+                _calLit = 0;
+                SetCalLights(failed ? 5 : 0, failed ? V3.Red : V3.Violet);
+            }
             _calAutoKey.SetActive(!failed);
             V3.SetGuide(_calHold, 0f);
             string which = !single ? V3.T("雙眼", "both eyes") : _side == "left" ? V3.T("第 2 眼，共 2 眼", "eye 2 of 2") : V3.T("第 1 眼，共 2 眼", "eye 1 of 2");
@@ -433,9 +450,9 @@ public class V3Setup : MonoBehaviour
             _calTitle.fontSizeMax = V3Type.Display;
             _calTitle.text = failed ? V3.T("校正沒有成功", "Calibration did not succeed") : V3.T("接下來頭不要動，\n用眼睛依序看圓點。", "Keep your head still,\nlook at each dot.");
             _calLine.Root.gameObject.SetActive(!failed);
-            if (failed)
+            if (failed && fresh)
                 V3.Speak(V3.T("這次校正沒有成功，沒關係，請按重新校正，再看一次圓點。", "Calibration did not succeed. Press Recalibrate and look at the dots again."));
-            else
+            else if (!failed)
                 V3.SetLine(_calLine, V3.T("圓點出現時，看著它直到變綠", "Look at each dot until it turns green"));
         }
         if (view == View.Practice)

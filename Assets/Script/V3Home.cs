@@ -67,8 +67,7 @@ public class V3Home : MonoBehaviour
 
     // chrome
     private TextMeshProUGUI _appName, _jointCheck;
-    private RectTransform _appIcon, _knob;
-    private TextMeshProUGUI _langZh, _langEn;
+    private RectTransform _appIcon;
     private TextMeshProUGUI[] _modeLabels = new TextMeshProUGUI[2];
     private bool _selecting;
 
@@ -921,8 +920,8 @@ public class V3Home : MonoBehaviour
 
     // ==================== mode keys ====================
 
-    private static readonly float[] ModeX = { 40f, 744f };
-    private const float ModeY = 460f, ModeW = 240f, ModeH = 74f;
+    private static readonly float[] ModeX = { 56f, 728f };
+    private const float ModeY = 470f, ModeW = 240f, ModeH = 74f;
 
     private void BuildModes()
     {
@@ -1008,22 +1007,6 @@ public class V3Home : MonoBehaviour
             bars[i] = V3.Box("Bar", wave, V3.Violet, i * 4.5f, 10f, 2.5f, 4f).rectTransform;
         wave.gameObject.AddComponent<V3Wave>().Bars = bars;
         _appName.gameObject.AddComponent<V3Follow>().Init(_appName, _appIcon, 8f);
-
-        // zh / EN toggle: a white 88 x 30 pill with an ink pill knob sliding between the two cells
-        var lang = V3.Rect("Lang", _chromeGroup.transform, 832f, 26f, 104f, 36f);
-        Pill(V3.Sprite("Fill", lang, UiFactory.RoundedRect, Color.white, 0f, 0f, 104f, 36f), 18f);
-        _knob = Pill(V3.Sprite("Knob", lang, UiFactory.RoundedRect, V3.Ink, 3f, 3f, 49f, 30f), 15f).rectTransform;
-        // a touch anywhere on the switch changes to the other language
-        var toggle = UiFactory.CreateButton("LangToggle", lang, UiFactory.White, new Color(1f, 1f, 1f, 0f), () =>
-        {
-            V3Sounds.Play(V3Sounds.Cue.Toggle);
-            KebbiMotion.Play("ok");
-            V3.SetLang(1 - V3.Lang);
-        });
-        toggle.transition = Selectable.Transition.None;
-        V3.At((RectTransform)toggle.transform, 0f, 0f, 104f, 36f);
-        _langZh = LangLabel(lang, 3f, "中文");
-        _langEn = LangLabel(lang, 52f, "EN");
 
         // a short caption at the right, under the RIGHT marker, balancing the headline
         V3.Text("CaptionCode", _chromeGroup.transform, V3.Mono, "VISUAL ACUITY", V3Type.Micro, V3.A(V3.Ink, 0.55f), 790f, 372f, 200f, 14f, TextAlignmentOptions.TopLeft, 0.08f);
@@ -1114,13 +1097,6 @@ public class V3Home : MonoBehaviour
         return image;
     }
 
-    private static TextMeshProUGUI LangLabel(Transform parent, float x, string text)
-    {
-        var label = V3.Text("Label", parent, V3.Zh, text, V3Type.Label, V3.Text2, x, 3f, 49f, 30f, TextAlignmentOptions.Center);
-        label.raycastTarget = false;
-        return label;
-    }
-
     private void ApplyLanguage()
     {
         _appName.text = V3.T("眼動視力檢測", "Eye-Tracking Vision Test");
@@ -1132,8 +1108,6 @@ public class V3Home : MonoBehaviour
             label.fontSize = V3.Lang == 1 ? V3Type.Body : V3Type.Lead;
             label.characterSpacing = V3.Lang == 1 ? 0f : 4f;
         }
-        _langZh.color = V3.Lang == 0 ? Color.white : V3.Text2;
-        _langEn.color = V3.Lang == 1 ? Color.white : V3.Text2;
     }
 
     private void Awake() => V3.LangChanged += OnLangChanged;
@@ -1212,9 +1186,6 @@ public class V3Home : MonoBehaviour
 
         UpdateHeadline(dt, idle);
         UpdateCallout(dt);
-        // knob slides between the language cells
-        float knobX = 3f + V3.Lang * 49f;
-        _knob.anchoredPosition = new Vector2(Mathf.Lerp(_knob.anchoredPosition.x, knobX, 1f - Mathf.Exp(-dt / 0.06f)), _knob.anchoredPosition.y);
     }
 
     // ==================== intro, guidance, selection, leaving ====================
@@ -1296,7 +1267,7 @@ public class V3Home : MonoBehaviour
                 _loadClock += Mathf.Min(dt, 1f / 30f) * (_pace == ReturnPace ? 2f : 1f);
                 t = _loadClock;
                 float p = Mathf.Clamp01(t / (LoadSeconds - 0.1f));
-                p = p < 0.5f ? 4f * p * p * p : 1f - Mathf.Pow(-2f * p + 2f, 3f) / 2f;
+                p = EaseInOut(p);
                 _pct.text = Mathf.RoundToInt(p * 100f) + "%";
                 _dropMat.SetFloat("_Gather", p);
                 // the whole dial grows in behind a head running round with the percentage
@@ -1365,7 +1336,7 @@ public class V3Home : MonoBehaviour
     private void UpdateLeaving(float now, float t)
     {
         float run = Mathf.Clamp01((t - 0.1f) / 0.5f);
-        DrawDial(1f - (run < 0.5f ? 4f * run * run * run : 1f - Mathf.Pow(-2f * run + 2f, 3f) / 2f));
+        DrawDial(1f - EaseInOut(run));
 
         float k = Mathf.Clamp01((t - 0.65f) / 0.75f);
         _eZoom = 1f + k * k * k * 26f;
@@ -1466,6 +1437,13 @@ public class V3Home : MonoBehaviour
         }
     }
 
+    // A strong ease in and out (quintic): slow off the mark, fast through the middle, slow home.
+    private static float EaseInOut(float x)
+    {
+        x = Mathf.Clamp01(x);
+        return x < 0.5f ? 16f * x * x * x * x * x : 1f - Mathf.Pow(-2f * x + 2f, 5f) / 2f;
+    }
+
     private void PlaceModes()
     {
         for (int i = 0; i < 2; i++)
@@ -1479,8 +1457,9 @@ public class V3Home : MonoBehaviour
     private static readonly Dictionary<string, Sprite> s_rings = new Dictionary<string, Sprite>();
 
     // The mode key: a backlit window (ModeW x ModeH, corner radius 10) - brightest in the middle with a cool falloff to
-    // the edge, a fine diffuser dot screen, a thin LED line along the top, a recessed rim (bright lip, cool groove) and
-    // a little shade inside the bottom edge.
+    // the edge, a fine diffuser dot screen, a thin LED line along the top and a little shade inside the bottom edge -
+    // in the frame of the inner pages' glass keys: a hairline on the outer edge (darker away from the light), a cool
+    // grey band 3 px wide lit from the top left, and a fine highlight where it meets the face.
     private static Sprite KeySprite()
     {
         if (s_key != null)
@@ -1488,21 +1467,32 @@ public class V3Home : MonoBehaviour
         int w = (int)ModeW, h = (int)ModeH;
         var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
         var px = new Color[w * h];
-        Color centre = Color.white, edge = V3.MetalRim, dot = V3.MetalDot, groove = V3.MetalGroove, shade = V3.MetalShade;
+        Color centre = Color.white, edge = V3.MetalRim, dot = V3.MetalDot, shade = V3.MetalShade;
+        Color bandDark = new Color(0.66f, 0.70f, 0.74f), bandLight = new Color(0.83f, 0.86f, 0.885f), hair = new Color(0.46f, 0.51f, 0.56f);
+        Vector2 light = new Vector2(-0.5f, 0.8f).normalized;
+        float Sd(Vector2 at)
+        {
+            var k = new Vector2(Mathf.Abs(at.x - w / 2f) - (w / 2f - 10f), Mathf.Abs(at.y - h / 2f) - (h / 2f - 10f));
+            return Vector2.Max(k, Vector2.zero).magnitude + Mathf.Min(Mathf.Max(k.x, k.y), 0f) - 10f;
+        }
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
                 var p = new Vector2(x + 0.5f, y + 0.5f);
-                var q = new Vector2(Mathf.Abs(p.x - w / 2f) - (w / 2f - 10f), Mathf.Abs(p.y - h / 2f) - (h / 2f - 10f));
-                float d = Vector2.Max(q, Vector2.zero).magnitude + Mathf.Min(Mathf.Max(q.x, q.y), 0f) - 10f;
-                float inside = -d;
+                float d = Sd(p), inside = -d;
+                var n = new Vector2(Sd(p + new Vector2(0.5f, 0f)) - d, Sd(p + new Vector2(0f, 0.5f)) - d).normalized;
+                float lam = Vector2.Dot(n, light);   // 1 toward the light (top left), -1 away
                 var r = new Vector2((p.x - w / 2f) / (w * 0.55f), (p.y - h * 0.42f) / (h * 0.8f));
                 Color c = Color.Lerp(centre, edge, Mathf.Clamp01(r.magnitude));
                 if (x % 4 < 1 && y % 4 < 1) c = Color.Lerp(c, dot, 0.15f);
                 c = Color.Lerp(c, Color.white, 0.95f * Mathf.Clamp01(1f - (h - p.y) / 7f));
                 c = Color.Lerp(c, shade, 0.4f * Mathf.Clamp01(1f - p.y / 9f));
-                if (inside < 1f) c = Color.white;
-                else if (inside < 2.2f) c = Color.Lerp(c, groove, 0.34f);
+                // the frame: the band, its outer hairline and the highlight where it meets the face
+                const float frame = 3f;
+                c = Color.Lerp(Color.Lerp(bandDark, bandLight, Mathf.Clamp01(0.5f + 0.5f * lam)), c, Mathf.SmoothStep(0f, 1f, (inside - (frame - 0.6f)) / 1.2f));
+                c = Color.Lerp(c, hair, Mathf.Lerp(0.5f, 0.95f, Mathf.Clamp01(0.5f - 0.5f * lam)) * Mathf.Clamp01(1f - Mathf.Abs(inside - 0.5f) / 0.8f));
+                float shine = 0.35f + 0.65f * Mathf.Clamp01(Mathf.Pow(Mathf.Clamp01(lam), 1.5f) + 0.7f * Mathf.Pow(Mathf.Clamp01(-lam), 4f));
+                c = Color.Lerp(c, Color.white, shine * Mathf.Clamp01(1f - Mathf.Abs(inside - frame - 0.4f) / 0.8f));
                 c.a = Mathf.Clamp01(0.5f - d);
                 px[y * w + x] = c;
             }

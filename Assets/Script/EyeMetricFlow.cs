@@ -30,8 +30,7 @@ public class EyeMetricFlow : MonoBehaviour
     private V3Flow _v3;
     private V3Setup _v3Setup;
     private RectTransform _networkIcon;
-    private HudSlot _exitSlot, _networkSlot;
-    private GameObject _recalibrateButton;
+    private GameObject _recalibrateButton, _settingsButton;
     private GameObject _exitDialog;
     private GazeDebugOverlay _debugOverlay;
     private HeadFollow _headFollow;
@@ -74,13 +73,12 @@ public class EyeMetricFlow : MonoBehaviour
         // Focuses the camera on the user's face at each head distance check.
         FaceFocus.Create(transform, detectDistance, _headFollow, FindObjectOfType<AndroidWebcamCaptureClient>());
         BuildHud(hudCanvas.transform);
-        V3Overlays.RestyleHud(exitButton, _networkIcon, _recalibrateButton);
+        V3Overlays.RestyleHud(exitButton, _networkIcon, _recalibrateButton, _settingsButton);
         V3Overlays.Create(transform, _headFollow);
 
         GazeVisual.Attach(gazePointer);
         GazeDwellIndicator.Attach(gazePointer.transform);
 
-        _home.ShownChanged += ArrangeHudForHome;
         _modeMenu.SetActive(true);
     }
 
@@ -190,6 +188,7 @@ public class EyeMetricFlow : MonoBehaviour
     private void BuildHome()
     {
         _home = V3Home.Create(transform, gazePointer, SelectMode);
+        V3Settings.Load();
         _modeMenu = _home.gameObject;
     }
 
@@ -227,44 +226,15 @@ public class EyeMetricFlow : MonoBehaviour
         _recalibrateButton = recalibrate.gameObject;
         _recalibrateButton.SetActive(false);
 
+        // The settings (language, volume, Kebbi's effects), on every page.
+        var settings = UiFactory.CreateButton("SettingsButton", parent, UiFactory.Circle, IconBackground, () =>
+        {
+            V3Sounds.Play(V3Sounds.Cue.Select);
+            V3SettingsPage.Open(transform);
+        });
+        _settingsButton = settings.gameObject;
+
         BuildExitDialog(parent);
-    }
-
-    // On the V3 home exit keeps its corner and the zh/EN toggle sits left of it (x 800-926), so the
-    // network glyph moves left of the toggle, centred on the chrome row (y 56); elsewhere it goes back.
-    private struct HudSlot
-    {
-        public bool Saved;
-        public Vector2 AnchorMin, AnchorMax, Pivot, Position, Size;
-    }
-
-    private void ArrangeHudForHome(bool home)
-    {
-        MoveHudIcon(_networkIcon, ref _networkSlot, home, 832f - 12f);
-    }
-
-    private static void MoveHudIcon(RectTransform rect, ref HudSlot slot, bool home, float rightEdge)
-    {
-        if (!slot.Saved)
-        {
-            slot = new HudSlot { Saved = true, AnchorMin = rect.anchorMin, AnchorMax = rect.anchorMax, Pivot = rect.pivot, Position = rect.anchoredPosition, Size = rect.sizeDelta };
-        }
-        if (home)
-        {
-            Vector2 size = rect.rect.size;
-            rect.anchorMin = rect.anchorMax = Vector2.one;
-            rect.pivot = new Vector2(1f, 0.5f);
-            rect.sizeDelta = size;
-            rect.anchoredPosition = new Vector2(rightEdge - 1024f, -44f);
-        }
-        else
-        {
-            rect.anchorMin = slot.AnchorMin;
-            rect.anchorMax = slot.AnchorMax;
-            rect.pivot = slot.Pivot;
-            rect.sizeDelta = slot.Size;
-            rect.anchoredPosition = slot.Position;
-        }
     }
 
     private void ToggleDebugOverlay()
@@ -295,6 +265,7 @@ public class EyeMetricFlow : MonoBehaviour
 
     private void OnExitPressed()
     {
+        V3SettingsPage.Close();
         if (_modeMenu.activeSelf)
             ExitApp();
         else
@@ -336,6 +307,7 @@ public class EyeMetricFlow : MonoBehaviour
 
     private void GoHome()
     {
+        V3SettingsPage.Close();
         ResetTestSession();
         _exitDialog.SetActive(false);
         _recalibrateButton.SetActive(false);
@@ -452,6 +424,9 @@ public class EyeMetricFlow : MonoBehaviour
         if (hidden)
             _recalibrateWasOn = _recalibrateButton.activeSelf;
         exitButton.gameObject.SetActive(!hidden);
+        _settingsButton.SetActive(!hidden);
+        if (hidden)
+            V3SettingsPage.Close();
         _networkIcon.gameObject.SetActive(!hidden);
         _recalibrateButton.SetActive(!hidden && _recalibrateWasOn);
     }

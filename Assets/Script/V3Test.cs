@@ -7,7 +7,7 @@ using UnityEngine.UI;
 
 // V3 test and result pages. The test stays MetricTest's own: same symbol, sizes, rules, timing
 // and gaze-dwell buttons. Only the look changes: the light box (a flat light-box white behind the symbol, the frame
-// round the edge), a status row (eye, level, 11 small lights, the head lamp), the four answer E's bare (same size as
+// round the edge), a status row (eye, level, 11 small lights), the four answer E's bare (same size as
 // the symbol, the ophthalmologist's design) placed 80 px in from the edges and pressed like keys while looked at, a
 // faint framing of the symbol (as the home E's), a neutral ring of light where an answer is taken, and the status row
 // lighting up when the level changes. Nothing is drawn over the symbol: there is no gap between trials to show a
@@ -40,10 +40,6 @@ public class V3Test : MonoBehaviour
     private int _shownLevel = -1;
     private float _levelT = 1f;
     private Image _levelSweep;
-    // the head lamp: green while in place, violet (as on the pause card) when drifting toward the pause, grey without a
-    // face
-    private Image _headLamp, _headHalo;
-    private HeadFollow _head;
     private RectTransform[] _options;
     private ButtonTrigger[] _optionTriggers;
     private Vector2[] _optionRest;
@@ -66,6 +62,8 @@ public class V3Test : MonoBehaviour
         page.BuildTest(root);
         page.BuildResult(root);
         test.ResultShown += page.OnResult;
+        // the language changed (the settings): the result that is up is drawn again in it
+        V3.LangChanged += () => { if (page != null && page._hasResult && page._resultLevels != null) page.DrawResult(); };
         V3Flow.Conceal(resultPage);
         page.RestyleScene();
         return page;
@@ -114,11 +112,6 @@ public class V3Test : MonoBehaviour
         _level.rectTransform.pivot = new Vector2(0f, 0.5f);
         _level.rectTransform.anchoredPosition += new Vector2(0f, -15f);
         _levelSweep = Rounded(V3.Sprite("Sweep", t, UiFactory.RoundedRect, V3.A(V3.GreenLit, 0f), 236f, 37f, 22f, 8f), 4f);
-        // the head lamp after the lights
-        _headHalo = V3.Sprite("HeadHalo", t, UiFactory.Circle, V3.A(V3.GreenLit, 0.25f), 540f, 32f, 18f, 18f);
-        _headLamp = V3.Sprite("HeadLamp", t, UiFactory.Circle, V3.GreenLit, 544f, 36f, 10f, 10f);
-        V3LampGlow.Attach(_headLamp, 10f);
-        V3.Text("HeadLabel", t, V3.Mono, "位置", "POSITION", V3Type.Micro, V3.A(V3.Ink, 0.55f), 564f, 34f, 90f, 14f, TextAlignmentOptions.Left, 0.12f);
         // the light box's aluminium frame round the edge (the symbol and answers sit well inside it)
         V3.LightBoxFrame(t);
         for (int i = 0; i < _frame.Length; i++)
@@ -130,7 +123,6 @@ public class V3Test : MonoBehaviour
         _takenImage = V3.Sprite("Taken", t, V3Setup.RingSprite(50f, 2.2f), V3.A(V3.Violet, 0f), 0f, 0f, 10f, 10f);
         _taken = _takenImage.rectTransform;
         _taken.pivot = UiFactory.Center;
-        _head = FindObjectOfType<HeadFollow>();
         _test.SymbolShown += () => _frameSnap = 0f;
         _test.SideChosen += side =>
         {
@@ -189,7 +181,6 @@ public class V3Test : MonoBehaviour
         UpdateLevelChange(level, dt);
         UpdateFrame(dt);
         UpdateTaken(dt);
-        UpdateHeadLamp();
 
         if (!_laidOut)
             LayOutOptions();
@@ -283,22 +274,6 @@ public class V3Test : MonoBehaviour
         _takenImage.color = V3.A(V3.Violet, 0.55f * (1f - _takenT));
     }
 
-    // In place: lateral within half the pause's limit (10 deg) and distance within half of its 5 cm; violet beyond, grey
-    // without a face.
-    private void UpdateHeadLamp()
-    {
-        Color c;
-        if (_head == null || !_head.HasFace)
-            c = V3.A(V3.Ink, 0.3f);
-        else
-        {
-            float off = Mathf.Max(Mathf.Abs(_head.LateralOffsetDeg) / 10f, Mathf.Abs(_head.DistanceOffset * 100f) / 5f);
-            c = off < 0.5f ? V3.GreenLit : V3.Violet;
-        }
-        _headLamp.color = c;
-        _headHalo.color = V3.A(c, 0.25f + 0.1f * Mathf.Sin(Time.unscaledTime * 3f));
-    }
-
     // Puts each answer E at its V3 position (screen space), whatever the scene's hit areas are.
     private void LayOutOptions()
     {
@@ -338,7 +313,21 @@ public class V3Test : MonoBehaviour
         KebbiMotion.Allowed = true;
         KebbiMotion.Play("clap");
         KebbiLight.Breathe(KebbiLight.Green);
-        bool both = mode == MetricTest.TestMode.Both;
+        _resultMode = mode;
+        _resultLevels = levels;
+        _resultMessage = message;
+        DrawResult();
+    }
+
+    private MetricTest.TestMode _resultMode;
+    private List<int> _resultLevels;
+    private string _resultMessage;
+
+    private void DrawResult()
+    {
+        var levels = _resultLevels;
+        string message = _resultMessage;
+        bool both = _resultMode == MetricTest.TestMode.Both;
         _resNote.text = V3.T("視力結果", "Your result") + "  ·  " + (both ? V3.T("雙眼測驗", "both eyes") : V3.T("單眼測驗", "one eye at a time"));
         foreach (Transform child in _scores)
             Destroy(child.gameObject);

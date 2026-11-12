@@ -102,9 +102,12 @@ public class KebbiMotion : MonoBehaviour
         s_instance = go.AddComponent<KebbiMotion>();
     }
 
+    // The app's setting: off, no gesture plays at all.
+    public static bool Enabled = true;
+
     public static void Play(string name)
     {
-        if (s_instance == null || !s_allowed || s_reading || !Gestures.TryGetValue(name, out var poses))
+        if (s_instance == null || !Enabled || !s_allowed || s_reading || !Gestures.TryGetValue(name, out var poses))
             return;
         if (s_instance._running != null)
             s_instance.StopCoroutine(s_instance._running);
