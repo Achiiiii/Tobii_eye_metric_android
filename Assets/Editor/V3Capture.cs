@@ -244,6 +244,13 @@ public static class V3Capture
             ("calfailed", () => View("CalFailed")),
             ("practice", () => View("Practice")),
             ("practice_done", () => ((bool[])Get(setup, "_tileDone"))[0] = true),
+            // the start key being looked at: its light part way round (held there - the look has "left" it long ago)
+            ("practice_dwell", () =>
+            {
+                var trigger = (ButtonTrigger)Get(setup, "_startTrigger");
+                Set(trigger, "_dwellTime", 0.9f);
+                Set(trigger, "_exitTime", -1000f);
+            }),
             ("countdown", () => { Set(setup, "_cdSeconds", 3f); View("Countdown"); }),
             ("stuck", () => { View("CalRun"); ((GameObject)Get(setup, "_stuck")).SetActive(true); }),
             ("test", () =>

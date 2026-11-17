@@ -38,7 +38,7 @@ public class V3Setup : MonoBehaviour
     private readonly Image[] _calCore = new Image[5], _calHalo = new Image[5];
     private readonly float[] _calLitAt = new float[5];
     private int _calLit;
-    private V3.GuideParts _calHold;
+    private V3GlassFace _calHold;
     private V3.KeyParts _retry;
     private GameObject _calMap;
 
@@ -193,15 +193,14 @@ public class V3Setup : MonoBehaviour
             _calCore[i] = V3.Sprite("Core", _calMap.transform, UiFactory.Circle, Color.clear, dots[i].x - 6f, dots[i].y - 6f, 12f, 12f);
             V3.Text("N", _calMap.transform, V3.Mono, (i + 1).ToString(), V3Type.Data, V3.Text2, dots[i].x + 11f, dots[i].y - 16f, 20f, 14f);
         }
-        // starting by itself: a glass piece in the key's place, the key's size - the words, the seconds left, a thick
-        // liquid guide
+        // starting by itself: a glass piece in the key's place, the key's size - the words and the seconds left, the
+        // seconds running round its frame as a key's dwell does
         _calAutoKey = V3.Rect("AutoStart", t, 772f, 470f, 210f, 72f).gameObject;
         var auto = _calAutoKey.transform;
         V3.PatchShadow(auto, 0f, 0f, 210f, 72f, false);
-        V3GlassFace.Attach(V3.Box("Glass", auto, Color.white, 0f, 0f, 210f, 72f), 210f, 72f);
-        V3.Text("Label", auto, V3.Zh, "自動開始", "Auto start", V3Type.Key, V3.Ink, 20f, 0f, 130f, 58f, TextAlignmentOptions.Left);
-        _calAuto = V3.Text("Seconds", auto, V3.Num, "3", V3Type.Display, V3.Ink, 128f, 4f, 64f, 54f, TextAlignmentOptions.Right);
-        _calHold = V3.Guide(auto, 16f, 51f, 178f);
+        _calHold = V3GlassFace.Attach(V3.Box("Glass", auto, Color.white, 0f, 0f, 210f, 72f), 210f, 72f);
+        V3.Text("Label", auto, V3.Zh, "自動開始", "Auto start", V3Type.Key, V3.Ink, 20f, 0f, 130f, 72f, TextAlignmentOptions.Left);
+        _calAuto = V3.Text("Seconds", auto, V3.Num, "3", V3Type.Display, V3.Ink, 128f, 2f, 62f, 72f, TextAlignmentOptions.Right);
         // only the dots again: the head position was already confirmed
         _retry = V3.Key(t, "重新校正", "Recalibrate", "target", V3.Green, 772f, 470f, 210f, false, () => { if (_view == View.CalFailed) _cal.RetryCalibration(); });
     }
@@ -444,7 +443,7 @@ public class V3Setup : MonoBehaviour
                 SetCalLights(failed ? 5 : 0, failed ? V3.Red : V3.Violet);
             }
             _calAutoKey.SetActive(!failed);
-            V3.SetGuide(_calHold, 0f);
+            _calHold.Trace = 0f;
             string which = !single ? V3.T("雙眼", "both eyes") : _side == "left" ? V3.T("第 2 眼，共 2 眼", "eye 2 of 2") : V3.T("第 1 眼，共 2 眼", "eye 1 of 2");
             _calNote.text = V3.T("眼睛校正", "Calibration") + "  ·  " + (failed ? V3.T("需要重來", "try again") : which);
             _calTitle.fontSizeMax = V3Type.Display;
@@ -481,7 +480,7 @@ public class V3Setup : MonoBehaviour
                     lens.Ease();
                 break;
             case View.CalIntro:
-                V3.SetGuide(_calHold, t / CalIntroSeconds);
+                _calHold.Trace = Mathf.Clamp01(t / CalIntroSeconds);
                 _calAuto.text = Mathf.Max(1, Mathf.CeilToInt(CalIntroSeconds - t)).ToString();
                 SetCalLights(Mathf.Min(5, 1 + Mathf.FloorToInt(t / CalIntroSeconds * 5f)), V3.Violet);
                 if (t >= CalIntroSeconds && !_nextSent)

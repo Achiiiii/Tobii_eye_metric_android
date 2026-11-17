@@ -8,9 +8,9 @@ using UnityEngine.UI;
 
 // V3 look shared by every flow page: the page is an eye-chart light box, cards are backlit windows in it (radius 10, a
 // soft contact shadow), what is pressed or chosen (keys, answers) is a piece of milky glass with a fine rim
-// (V3GlassFace), keys carry their icon first and a glass tube that fills while they are looked at, Kebbi's lines are
-// violet with a small voice wave, Barlow Condensed for big numbers, mono for small data. Everything is laid out in the
-// 1024 x 600 reference space, origin top-left.
+// (V3GlassFace), keys carry their icon first and a green light that runs round their frame while they are looked at,
+// Kebbi's lines are violet with a small voice wave, Barlow Condensed for big numbers, mono for small data. Everything is
+// laid out in the 1024 x 600 reference space, origin top-left.
 public static class V3
 {
     public const float W = 1024f, H = 600f;
@@ -197,8 +197,9 @@ public static class V3
         public CanvasGroup Group;
     }
 
-    // Key: a piece of milky glass (V3GlassFace), the icon first, then the label; a glass tube along the bottom edge fills
-    // while the key is looked at (V3KeyDwell reads the ButtonTrigger). Secondary keys (back) are lower.
+    // Key: a piece of milky glass (V3GlassFace), the icon and the label centred on it; while the key is looked at, the
+    // green's light runs round its frame from the top left (V3KeyDwell reads the ButtonTrigger; only keys chosen by
+    // looking have it). Secondary keys (back) are lower.
     public static KeyParts Key(Transform parent, string zh, string en, string icon, Color chip, float x, float y, float w = 224f, bool secondary = false, Action onClick = null)
     {
         float h = secondary ? 56f : 72f;
@@ -212,12 +213,10 @@ public static class V3
         var glass = V3GlassFace.Attach((Image)k.Button.targetGraphic, w, h);
         var face = At((RectTransform)k.Button.transform, 0f, 0f, w, h);
         float g = secondary ? 20f : 24f;
-        k.Glyph = Sprite("Glyph", face, Icon(icon), Ink, 20f, (h - g) / 2f - 2f, g, g);
+        k.Glyph = Sprite("Glyph", face, Icon(icon), Ink, 20f, (h - g) / 2f, g, g);
         k.Chip = k.Glyph;
-        // the tube clear of the glass's rim below it
-        var tube = Tube(face, 16f, h - 18f, w - 32f, 9f);
         float lx = 20f + g + 14f;
-        k.Label = Text("Label", face, Zh, zh, en, secondary ? V3Type.Body : V3Type.Key, Ink, lx, 0f, w - lx - 14f, h - 4f, TextAlignmentOptions.Left);
+        k.Label = Text("Label", face, Zh, zh, en, secondary ? V3Type.Body : V3Type.Key, Ink, lx, 0f, w - lx - 14f, h, TextAlignmentOptions.Left);
         // a long label (English) shrinks rather than running past the frame
         k.Label.enableAutoSizing = true;
         k.Label.fontSizeMin = V3Type.Label;
@@ -225,7 +224,7 @@ public static class V3
         var press = k.Button.gameObject.AddComponent<V3PressTint>();
         press.Target = (Image)k.Button.targetGraphic;
         press.Glass = glass;
-        k.Button.gameObject.AddComponent<V3KeyDwell>().Init(tube, face, new Vector2(16f, h - 18f), w - 32f);
+        k.Button.gameObject.AddComponent<V3KeyDwell>().Init(glass);
         return k;
     }
 
@@ -784,18 +783,16 @@ public static class V3
     }
 }
 
-// The glass tube along a key's bottom edge: how far the gaze dwell on it has run - shown only on keys that can be
-// chosen by looking (a ButtonTrigger on them); a touch key has no empty tube.
+// The light round a key's frame: how far the gaze dwell on it has run - shown only on keys that can be
+// chosen by looking (a ButtonTrigger on them); a touch key never lights.
 public class V3KeyDwell : MonoBehaviour
 {
-    private V3Slosh _tube;
-    private float _f;
+    private V3GlassFace _glass;
     private ButtonTrigger _trigger;
 
-    // the tube at (x, y) in the key's face, w wide
-    public void Init(V3Slosh tube, RectTransform face, Vector2 at, float width)
+    public void Init(V3GlassFace glass)
     {
-        _tube = tube;
+        _glass = glass;
     }
 
     private void LateUpdate()
@@ -803,14 +800,7 @@ public class V3KeyDwell : MonoBehaviour
         if (_trigger == null)
             _trigger = GetComponent<ButtonTrigger>();
         bool gaze = _trigger != null && _trigger.enabled;
-        if (_tube.gameObject.activeSelf != gaze)
-        {
-            _tube.gameObject.SetActive(gaze);
-            if (_tube.Glow != null)
-                _tube.Glow.gameObject.SetActive(gaze);
-        }
-        _f = gaze ? Mathf.Clamp01(_trigger.Progress) : 0f;
-        _tube.Fill = _f;
+        _glass.Trace = gaze ? Mathf.Clamp01(_trigger.Progress) : 0f;
     }
 }
 
@@ -1506,9 +1496,21 @@ public class V3GlassFace : MonoBehaviour
 {
     private const float SheenSeconds = 0.7f;
     private Material _material;
-    private float _lit, _sheen = -1f;
+    private float _lit, _sheen = -1f, _trace;
 
     public bool Lit { get; set; }
+
+    // how far the green's light has run round the frame (0-1), from the top left, clockwise
+    public float Trace
+    {
+        set
+        {
+            if (_material == null || value == _trace)
+                return;
+            _trace = value;
+            _material.SetFloat("_Trace", value);
+        }
+    }
 
     public float Press
     {
