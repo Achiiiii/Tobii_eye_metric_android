@@ -98,7 +98,7 @@ public class V3Flow : MonoBehaviour
         float w = V3.W - 80f;
         _ruler = V3.Guide(root, 40f, 66f, w, true, 7);
         for (int i = 1; i <= 7; i++)
-            V3.Text("No", _ruler.Root, V3.Mono, i.ToString("00"), V3Type.Micro, V3.A(V3.Ink, 0.66f), w * i / 7f - 34f, 19f, 30f, 11f, TextAlignmentOptions.Right);
+            V3.Text("No", _ruler.Root, V3.Mono, i.ToString("00"), V3Type.Data, V3.A(V3.Ink, 0.7f), w * i / 7f - 34f, 18f, 30f, 14f, TextAlignmentOptions.Right);
     }
 
     // After the pages' Update: apply this frame's requests, then clear them for the next frame.

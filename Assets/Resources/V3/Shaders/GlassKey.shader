@@ -99,12 +99,18 @@ Shader "V3/GlassKey"
                 float inside = smoothstep(frame - 0.6, frame + 0.6, e);   // past the frame, on the face
                 // the dwell's light round the frame: fading in over 24 px from its start (filled in as the head comes
                 // round, so the ring closes without a seam) and out over 16 px ahead of a brighter head
-                float total;
-                float s = Along(p - n * d, h, r, total);
-                float run = s - _Trace * total;
-                float tail = lerp(smoothstep(0.0, 24.0, s), 1.0, smoothstep(0.8, 1.0, _Trace));
-                float traced = saturate(_Trace * 40.0) * (1.0 - smoothstep(-10.0, 6.0, run)) * tail;
-                float head = saturate(_Trace * 40.0) * exp(-(run + 4.0) * (run + 4.0) / 80.0) * tail;
+                // (round the last 3 %, the head fades and the soft front closes, so the full ring is even)
+                float traced = 0.0, head = 0.0;
+                if (_Trace > 0.0)
+                {
+                    float total;
+                    float s = Along(p - n * d, h, r, total);
+                    float closing = smoothstep(0.97, 1.0, _Trace);
+                    float run = s - _Trace * total - 12.0 * closing;
+                    float tail = lerp(smoothstep(0.0, 24.0, s), 1.0, smoothstep(0.8, 1.0, _Trace));
+                    traced = saturate(_Trace * 40.0) * (1.0 - smoothstep(-10.0, 6.0, run)) * tail;
+                    head = saturate(_Trace * 40.0) * exp(-(run + 4.0) * (run + 4.0) / 80.0) * tail * (1.0 - closing);
+                }
                 // the face: even, nearly white, a little lighter toward the top, a fine grain, and a soft light just
                 // inside the edge
                 float3 face = float3(0.958, 0.964, 0.970) * lerp(0.985, 1.015, i.uv.y);

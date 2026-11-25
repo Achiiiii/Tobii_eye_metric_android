@@ -251,7 +251,7 @@ public static class V3Capture
                 Set(trigger, "_dwellTime", 0.9f);
                 Set(trigger, "_exitTime", -1000f);
             }),
-            ("countdown", () => { Set(setup, "_cdSeconds", 3f); View("Countdown"); }),
+            ("countdown", () => { Set(setup, "_cdSeconds", 3f); Set(setup, "_side", "both"); View("Countdown"); Call(setup, "PaintCountdown"); }),
             ("stuck", () => { View("CalRun"); ((GameObject)Get(setup, "_stuck")).SetActive(true); }),
             ("test", () =>
             {

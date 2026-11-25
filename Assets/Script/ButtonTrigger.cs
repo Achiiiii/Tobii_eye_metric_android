@@ -21,8 +21,12 @@ public class ButtonTrigger : MonoBehaviour
     // For drawing: whether the gaze is on the button, and how far its dwell has got (0-1).
     public bool Gazed => _isEnter;
     public float Progress => _dwellTime / _triggerTime;
-    // Brief gaze jitter outside the button should not throw away dwell progress.
+    // Brief gaze jitter outside the button should not throw away dwell progress: it holds for the grace time, then
+    // runs back at DrainRate times the speed it built up, so a gaze that wanders off and comes back carries on from
+    // what is left instead of starting over. Glancing between options still cannot add up to a selection: each look
+    // away longer than the grace loses twice what the same time looking would gain.
     private readonly float _exitGraceTime = 0.3f;
+    private const float DrainRate = 2f;
 
     void Start()
     {
@@ -65,27 +69,35 @@ public class ButtonTrigger : MonoBehaviour
 
     void Update()
     {
+        if (!_isEnter && _dwellTime <= 0f)
+            return;
+        // no selection now: nothing builds up, and nothing left over is kept
+        if (Paused || Time.time < s_cooldownUntil || !btn.IsInteractable() || (_isEnter && !GazeSelectionGate.Allows()))
+        {
+            if (_dwellTime > 0f)
+                ResetDwell();
+            return;
+        }
+
         if (_isEnter)
         {
-            if (Paused || Time.time < s_cooldownUntil || !btn.IsInteractable() || !GazeSelectionGate.Allows())
-            {
-                if (_dwellTime > 0f)
-                    ResetDwell();
-                return;
-            }
-
             _exitTime = 0f;
             _dwellTime += Time.deltaTime;
             GazeDwellIndicator.Report(this, _dwellTime / _triggerTime);
             if (_dwellTime >= _triggerTime)
                 Trigger();
+            return;
         }
-        else if (_dwellTime > 0f)
-        {
-            _exitTime += Time.deltaTime;
-            if (_exitTime >= _exitGraceTime)
-                ResetDwell();
-        }
+
+        _exitTime += Time.deltaTime;
+        if (_exitTime < _exitGraceTime)
+            return;
+        _dwellTime -= Time.deltaTime * DrainRate;
+        if (_dwellTime <= 0f)
+            ResetDwell();
+        else if (!GazeDwellIndicator.ShowsOther(this))
+            // the ring on the gaze dot runs back with it, unless the eyes are already filling another button
+            GazeDwellIndicator.Report(this, _dwellTime / _triggerTime);
     }
 
     private void OnTriggerEnter2D(Collider2D other)

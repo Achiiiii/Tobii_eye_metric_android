@@ -191,7 +191,7 @@ public class V3Setup : MonoBehaviour
             V3.Sprite("Dot", _calMap.transform, UiFactory.Circle, Color.white, dots[i].x - 6f, dots[i].y - 6f, 12f, 12f);
             _calHalo[i] = V3.Sprite("Halo", _calMap.transform, UiFactory.Circle, Color.clear, dots[i].x - 15f, dots[i].y - 15f, 30f, 30f);
             _calCore[i] = V3.Sprite("Core", _calMap.transform, UiFactory.Circle, Color.clear, dots[i].x - 6f, dots[i].y - 6f, 12f, 12f);
-            V3.Text("N", _calMap.transform, V3.Mono, (i + 1).ToString(), V3Type.Data, V3.Text2, dots[i].x + 11f, dots[i].y - 16f, 20f, 14f);
+            V3.Text("N", _calMap.transform, V3.Mono, (i + 1).ToString(), V3Type.Small, V3.Text2, dots[i].x + 11f, dots[i].y - 18f, 22f, 18f);
         }
         // starting by itself: a glass piece in the key's place, the key's size - the words and the seconds left, the
         // seconds running round its frame as a key's dwell does
@@ -609,10 +609,10 @@ public class V3Setup : MonoBehaviour
 
         V3.SetKeyEnabled(_start, tilesDone);
         _pracSub.text = V3.T("視線練習  ·  用眼睛操作", "Gaze practice  ·  use your eyes") + (tilesDone || TileX.Length == 1 ? "" : $"  ·  {done} / {TileX.Length}");
-        _pracText.text = tilesDone ? V3.T("很好！現在看著「開始測驗」", "Well done! Now look at \"Start test\"") : V3.T("看著標示的 E，直到它被按下去", "Look at the marked E until it presses down");
+        _pracText.text = tilesDone ? V3.T("現在看著「開始測驗」", "Now look at \"Start test\"") : V3.T("看著標示的 E，直到它被按下去", "Look at the marked E until it presses down");
         // the title says what to do; Kebbi's line comes only once it is done
         _pracLine.Root.gameObject.SetActive(tilesDone);
-        string words = V3.T("做得很好！\n準備開始測驗。", "Well done!\nReady for the test.");
+        string words = V3.T("做得很好！", "Well done!");
         if (tilesDone && _pracLine.Text.text != words)
             V3.SetLine(_pracLine, words);
     }

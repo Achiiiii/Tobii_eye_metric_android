@@ -51,6 +51,9 @@ public class GazeDwellIndicator : MonoBehaviour
     // True while the finish of a completed selection plays; the owner is already cleared then.
     public static bool IsCompleting => _instance != null && _instance._completing;
 
+    // True while the ring shows another button's selection.
+    public static bool ShowsOther(Object owner) => _instance != null && _instance._owner != null && _instance._owner != owner;
+
     public static void Report(Object owner, float progress)
     {
         if (_instance != null)

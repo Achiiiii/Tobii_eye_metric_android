@@ -101,7 +101,7 @@ public class V3Test : MonoBehaviour
         var t = _testView.transform;
         // the eye, the level, then eleven small lights (done green, the current one ringed, the rest dark)
         _tag = V3.Note(t, 40f, 34f, 120f);
-        _level = V3.Text("Level", t, V3.Mono, "", V3Type.Data, V3.Ink, 128f, 26f, 110f, 30f, TextAlignmentOptions.Left, 0.12f);
+        _level = V3.Text("Level", t, V3.Mono, "", V3Type.Small, V3.Ink, 128f, 26f, 110f, 30f, TextAlignmentOptions.Left, 0.12f);
         for (int i = 0; i < 11; i++)
         {
             _barGlow[i] = V3.Shadow(t, 236f + i * 26f, 38f, 22f, 6f, 6f, 1f, 0f, Color.clear);
@@ -301,7 +301,11 @@ public class V3Test : MonoBehaviour
         _resNote = V3.Note(t, 40f, 70f);
         _scores = V3.Rect("Scores", t, 0f, 0f, V3.W, V3.H);
         _line = V3.KebbiLine(t, 40f, 450f, V3Type.Key, 600f);
-        V3.Key(t, "回到首頁", "Home", "home", V3.Green, 772f, 470f, 210f, false, () => _goHome?.Invoke());
+        // started by the robot's flow: the key closes the app, which hands the result back and lets the flow go on
+        if (RobotDataSender.StartedForResult)
+            V3.Key(t, "完成", "Done", "check", V3.Green, 772f, 470f, 210f, false, () => _goHome?.Invoke());
+        else
+            V3.Key(t, "回到首頁", "Home", "home", V3.Green, 772f, 470f, 210f, false, () => _goHome?.Invoke());
         _resultView.SetActive(false);
     }
 
@@ -340,7 +344,17 @@ public class V3Test : MonoBehaviour
             V3Readout.Create(_scores, 300f, y, V3.T("右眼", "Right eye"), levels[0]);
             V3Readout.Create(_scores, 724f, y, V3.T("左眼", "Left eye"), levels.Count > 1 ? levels[1] : levels[0]);
         }
-        V3.SetLine(_line, V3.Lang == 1 && ResultEn.TryGetValue(message, out var en) ? en : message);
+        string words = V3.Lang == 1 && ResultEn.TryGetValue(message, out var en) ? en : message;
+        // long words (English) a little smaller; a block of three lines or more rises so it ends level with the key's
+        // foot (y 542) instead of running toward the screen's edge
+        _line.Text.fontSize = V3Type.Key;
+        V3.SetLine(_line, words);
+        if (_line.Root.sizeDelta.y > 80f)
+        {
+            _line.Text.fontSize = V3Type.Body;
+            V3.SetLine(_line, words);
+        }
+        _line.Root.anchoredPosition = new Vector2(40f, -Mathf.Min(450f, 542f - _line.Root.sizeDelta.y));
     }
 
     // RoundedRect sliced so its corners come out at the given radius

@@ -66,7 +66,7 @@ public class EyeMetricFlow : MonoBehaviour
         V3Position.Create(_v3, detectDistance, _headFollow, canvasTrackBox, metricTest, BackToQuestionnaire);
         _v3Setup = V3Setup.Create(_v3, gazeCalibrationManager, metricTest, mainCanvas, Recalibrate, GoHome);
         V3Presence.Create(transform, _headFollow, _modeMenu, GoHome);
-        V3Test.Create(_v3, metricTest, resultPage, GoHome);
+        V3Test.Create(_v3, metricTest, resultPage, () => { if (RobotDataSender.StartedForResult) ExitApp(); else GoHome(); });
         PositionGuide.Create(transform, _headFollow, metricTest);
         _driftCorrector = DriftCorrector.Create(transform, gazePointer, metricTest, _headFollow, gazeCalibrationManager);
         OptionReveal.Create(transform, metricTest, _driftCorrector, _headFollow, gazePointer);

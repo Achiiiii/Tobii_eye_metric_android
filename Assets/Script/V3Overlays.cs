@@ -37,12 +37,12 @@ public class V3Overlays : MonoBehaviour
         UiFactory.Stretch(dim.rectTransform);
         var card = V3.Rect("Card", _pause.transform, 232f, 110f, 560f, 380f);
         V3.GlassPanel(card, 0f, 0f, 560f, 380f);
-        V3.Note(card, TrackX, 30f, 400f).gameObject.AddComponent<V3Loc>().Set("測驗暫停中", "Test paused", 4f, 4f);
-        var title = V3.Text("Title", card, V3.Zh, "請回到剛才的位置", "Please go back to where you were", V3Type.Title, V3.Ink, TrackX, 56f, 500f, 44f, TextAlignmentOptions.TopLeft);
+        // as the other cards: the title and the line under it centred at the top
+        var title = V3.Text("Title", card, V3.Zh, "請回到剛才的位置", "Please go back to where you were", V3Type.Title, V3.Ink, TrackX, 36f, TrackW, 40f, TextAlignmentOptions.Top);
         title.enableAutoSizing = true;
         title.fontSizeMin = V3Type.Key;
         title.fontSizeMax = V3Type.Title;
-        V3.Text("Sub", card, V3.Zh, "回到綠框裡，保持一下就會繼續", "Get back into the green zone and hold still", V3Type.BodyS, V3.Text2, TrackX, 112f, 500f, 26f, TextAlignmentOptions.TopLeft);
+        V3.Text("Sub", card, V3.ZhMedium, "測驗暫停中，回到綠框裡保持一下就會繼續", "Test paused. Get back into the green zone and hold still.", V3Type.BodyS, V3.Text2, TrackX, 88f, TrackW, 26f, TextAlignmentOptions.Top);
         // in-place zone: +-4 deg sideways (~3 cm at 45 cm), +-3 cm near-far
         float z0 = X(-3f) / TrackW, z1 = X(3f) / TrackW;
         _marks[0] = V3.Scale(card, TrackX, 166f, TrackW, z0, z1, new[] { "左", "", "", "", "右" }, new[] { "LEFT", "", "", "", "RIGHT" });
@@ -67,7 +67,15 @@ public class V3Overlays : MonoBehaviour
         }
         if (!on)
             return;
-        _pauseText.text = V3.Lang == 1 ? English(PositionGuide.Text) : PositionGuide.Text;
+        string words = V3.Lang == 1 ? English(PositionGuide.Text) : PositionGuide.Text;
+        if (_pauseText.text != words)
+        {
+            _pauseText.text = words;
+            // the status line centred in the card, its light before the words
+            float x = TrackX + (TrackW - Mathf.Min(_pauseText.GetPreferredValues(words).x, 470f) - 22f) / 2f;
+            _pauseDot.rectTransform.anchoredPosition = new Vector2(x, -308f);
+            _pauseText.rectTransform.anchoredPosition = new Vector2(x + 22f, -298f);
+        }
         _pauseText.color = PositionGuide.Good ? V3.Ink : V3.Violet;
         _pauseDot.color = PositionGuide.Good ? V3.Green : V3.Violet;
         // Tobii's x grows toward the user's right; shown as in a mirror (their right on the right)
@@ -75,6 +83,10 @@ public class V3Overlays : MonoBehaviour
         V3.SetMark(_marks[0], TrackW, X(lateralCm) / TrackW);
         V3.SetMark(_marks[1], TrackW, X(PositionGuide.DistanceCm) / TrackW);
         V3.SetGuide(_hold, PositionGuide.HoldFraction);
+        // the hold's tube only while it runs: empty, it would read as a stray line
+        bool holding = PositionGuide.HoldFraction > 0.001f;
+        if (_hold.Root.gameObject.activeSelf != holding)
+            _hold.Root.gameObject.SetActive(holding);
     }
 
     private static string English(string zh)

@@ -29,8 +29,10 @@ public static class V3
     public static readonly Color Green = new Color32(0x3F, 0xD0, 0x9A, 0xFF);
     public static readonly Color GreenLit = new Color(Green.r * 0.84f, Green.g * 0.84f, Green.b * 0.84f, 1f);
     public static readonly Color GreenPale = new Color32(0xDB, 0xFF, 0xF0, 0xFF);
+    // Kebbi's voice and what to do now (where to look, what to cover, where to sit); never a status
     public static readonly Color Violet = new Color32(0x6E, 0x56, 0xCF, 0xFF);
     public static readonly Color Red = new Color32(0xE5, 0x48, 0x4D, 0xFF);
+    public static readonly Color PanelTint = new Color(0.972f, 0.976f, 0.982f, 1f);  // the dialogs' glass
     // the light box: its lit face (top to bottom), the flat white behind the test, the veil a card lays over a page,
     // the aluminium frame and its fine white inner line
     public static readonly Color LightTop = new Color32(0xFA, 0xFB, 0xFD, 0xFF);
@@ -231,7 +233,10 @@ public static class V3
     public static void SetKeyEnabled(KeyParts k, bool on)
     {
         k.Button.interactable = on;
-        k.Group.alpha = on ? 1f : 0.35f;
+        // off: still readable from a metre away - the words and icon grey, the glass a little faded
+        k.Group.alpha = on ? 1f : 0.8f;
+        k.Label.color = on ? Ink : Text2;
+        k.Glyph.color = on ? Ink : Text2;
     }
 
     public class LineParts
@@ -298,7 +303,8 @@ public static class V3
     public static void GlassPanel(Transform parent, float x, float y, float w, float h)
     {
         PatchShadow(parent, x, y, w, h, false);
-        V3GlassFace.Attach(Box("Glass", parent, Color.white, x, y, w, h), w, h, 18f, 0.4f);
+        // a touch greyer than the glass keys laid on it, so they stand out
+        V3GlassFace.Attach(Box("Glass", parent, PanelTint, x, y, w, h), w, h, 18f, 0.4f);
     }
 
     // The window's contact shadow: 0 10 18 -10 and a tight 0 2 2 (a glass piece draws its own tight one, rounded with
@@ -535,9 +541,9 @@ public static class V3
             float left = i == 0 ? lx : i == labels.Length - 1 ? lx - 120f : lx - 60f;
             // words follow the language (larger: Chinese at 11 px does not read); numbers stay as they are
             if (labelsEn != null)
-                Text("Label", g.Root, Mono, labels[i], labelsEn[i], V3Type.Data, A(Ink, 0.7f), left, 30f, 120f, 16f, align, 0.06f);
+                Text("Label", g.Root, Mono, labels[i], labelsEn[i], V3Type.Small, A(Ink, 0.75f), left, 30f, 120f, 18f, align, 0.06f);
             else
-                Text("Label", g.Root, Mono, labels[i], 11f, A(Ink, 0.6f), left, 30f, 120f, 14f, align, 0.06f);
+                Text("Label", g.Root, Mono, labels[i], V3Type.Small, A(Ink, 0.7f), left, 30f, 120f, 18f, align, 0.06f);
         }
         // the pointer: a black triangle with a needle through the groove
         var mark = Rect("Mark", g.Root, 0f, -18f, 18f, 30f);
@@ -602,7 +608,7 @@ public static class V3
     // A small mono note (page labels like "Q2 / 7  ·  眼科病史").
     public static TextMeshProUGUI Note(Transform parent, float x, float y, float w = 600f, string text = "")
     {
-        return Text("Note", parent, Mono, text, V3Type.Data, Ink, x, y, w, 16f, TextAlignmentOptions.TopLeft, 0.04f);
+        return Text("Note", parent, Mono, text, V3Type.Small, Ink, x, y, w, 18f, TextAlignmentOptions.TopLeft, 0.04f);
     }
 
     // A page title: Noto Sans TC, wrapping, shrinking to fit.
@@ -1283,7 +1289,8 @@ public static class V3Type
 {
     public const float Dial = 7f;       // the dial's engraving and degree numbers
     public const float Micro = 10f;     // mono labels on scales
-    public const float Data = 12f;      // mono data: level, notes
+    public const float Data = 12f;      // mono data on the home
+    public const float Small = 14f;     // the inner pages' small mono data: notes, scale names, readout marks
     public const float Label = 16f;     // app name, chips, small labels
     public const float BodyS = 18f;     // secondary lines, tips, the percentage
     public const float Body = 20f;      // status lines, secondary keys

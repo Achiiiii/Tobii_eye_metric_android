@@ -68,14 +68,11 @@ public static class V3Instruments
         }
     }
 
-    // One lens of a trial frame centred on (cx, cy): the frame's axis scale round its top, the eye seen through the clear
-    // lens (or only its smudge through the frosted one, the palm on it), the glass, and a glass rim of radius r, width w
-    // over its edge.
+    // One lens of a trial frame centred on (cx, cy): the eye seen through the clear lens (or only its smudge through the
+    // frosted one, the palm on it), the glass, and a glass rim of radius r, width w over its edge.
     public static Lens CreateLens(Transform parent, float cx, float cy, float r, float w, Sprite palm)
     {
         var lens = new Lens();
-        float half = r + w / 2f + 16f;
-        V3.Sprite("Axis", parent, ArcScale(half, r + w / 2f + 5f, -54f, 4.5f, 24, 6, 3, false), Color.white, cx - half, cy - half, 2f * half, 2f * half);
         lens.Eye = V3.Sprite("Eye", parent, V3.Icon("eye"), V3.Ink, cx - 46f, cy - 46f, 92f, 92f);
         float glass = r - w / 2f + 1f, box = 2f * (glass + 1f);
         var image = V3.Sprite("Lens", parent, UiFactory.White, Color.white, cx - box / 2f, cy - box / 2f, box, box);
@@ -219,7 +216,7 @@ public class V3Readout : MonoBehaviour
         for (int i = 1; i <= Levels; i++)
         {
             var p = Polar(136f, Deg(i));
-            V3.Text("Mark", root, V3.Mono, Value(i), V3Type.Data, V3.A(V3.Ink, i == level ? 1f : 0.55f), p.x - 20f, p.y - 8f, 40f, 16f, TextAlignmentOptions.Center);
+            V3.Text("Mark", root, V3.Mono, Value(i), V3Type.Small, V3.A(V3.Ink, i == level ? 1f : 0.7f), p.x - 22f, p.y - 9f, 44f, 18f, TextAlignmentOptions.Center);
         }
         // the reading's own tick, lit
         var index = V3.Box("Index", root, V3.GreenLit, 0f, 0f, 2f, 14f).rectTransform;
